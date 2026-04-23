@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import ConflictError, NotFoundError
-from app.domains.evaluation.twin_evidence_health import build_doctwin_evidence_health_summary
+from app.domains.evaluation.doctwin_evidence_health import build_doctwin_evidence_health_summary
 from app.models.source import Source
 from app.models.twin import Twin, TwinConfig
 from app.models.user import User
@@ -188,8 +188,7 @@ async def update_doctwin_config(
 async def _unique_doctwin_slug(
     base: str, workspace_id: uuid.UUID, db: AsyncSession
 ) -> str:
-    import random
-    import string
+    import random, string
     slug = base
     for _ in range(10):
         result = await db.execute(
