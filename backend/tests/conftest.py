@@ -13,6 +13,6 @@ import os
 os.environ.setdefault("APP_SECRET_KEY", "pytest-app-secret-key-minimum-32-chars")
 os.environ.setdefault(
     "DATABASE_URL",
-    "postgresql+asyncpg://twin_user:twin_pass@localhost:5433/twin_db",
+    "postgresql+asyncpg://doctwin_user:doctwin_pass@localhost:5434/doctwin_db",
 )
 os.environ.setdefault("JWT_SECRET_KEY", "pytest-jwt-secret-key-minimum-32-chars")

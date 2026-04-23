@@ -19,7 +19,6 @@ from sqlalchemy.orm import selectinload
 from app.core.logging import get_logger
 from app.models.source import Source, SourceIndexMode, SourceStatus, SourceType
 from app.models.twin import Twin
-from app.models.workspace import Workspace
 
 logger = get_logger(__name__)
 
@@ -36,8 +35,8 @@ class ValidationError(Exception):
     pass
 
 
-async def assert_twin_owned_by(
-    twin_id: uuid.UUID,
+async def assert_doctwin_owned_by(
+    doctwin_id: uuid.UUID,
     user_id: uuid.UUID,
     db: AsyncSession,
 ) -> Twin:
@@ -50,11 +49,11 @@ async def assert_twin_owned_by(
     result = await db.execute(
         select(Twin)
         .options(selectinload(Twin.workspace))
-        .where(Twin.id == twin_id)
+        .where(Twin.id == doctwin_id)
     )
     twin = result.scalar_one_or_none()
     if twin is None:
-        raise NotFoundError(f"Twin {twin_id} not found")
+        raise NotFoundError(f"Twin {doctwin_id} not found")
     if twin.workspace.owner_id != user_id:
         raise ForbiddenError("You do not own this twin's workspace")
     return twin
@@ -86,17 +85,17 @@ async def assert_source_owned_by(
 
 
 async def list_sources(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     user_id: uuid.UUID,
     db: AsyncSession,
 ) -> list[Source]:
     """List all sources attached to a twin. Verifies ownership."""
-    await assert_twin_owned_by(twin_id, user_id, db)
+    await assert_doctwin_owned_by(doctwin_id, user_id, db)
 
     result = await db.execute(
         select(Source)
         .where(
-            Source.twin_id == twin_id,
+            Source.doctwin_id == doctwin_id,
             Source.name != "__memory__",
         )
         .order_by(Source.created_at)
@@ -105,18 +104,18 @@ async def list_sources(
 
 
 async def list_legacy_backfill_candidates(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     user_id: uuid.UUID,
     db: AsyncSession,
 ) -> list[Source]:
     """
     Return legacy-index sources that are eligible for a backfill re-sync.
     """
-    await assert_twin_owned_by(twin_id, user_id, db)
+    await assert_doctwin_owned_by(doctwin_id, user_id, db)
     result = await db.execute(
         select(Source)
         .where(
-            Source.twin_id == twin_id,
+            Source.doctwin_id == doctwin_id,
             Source.name != "__memory__",
         )
         .order_by(Source.created_at)
@@ -126,7 +125,7 @@ async def list_legacy_backfill_candidates(
 
 
 async def attach_source(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     user_id: uuid.UUID,
     source_type: SourceType,
     name: str,
@@ -140,12 +139,12 @@ async def attach_source(
     Validates input, creates the Source record, and returns it.
     The caller is responsible for enqueuing the background ingestion job.
     """
-    await assert_twin_owned_by(twin_id, user_id, db)
+    await assert_doctwin_owned_by(doctwin_id, user_id, db)
     _validate_connection_config(source_type, connection_config)
 
     source = Source(
         id=uuid.uuid4(),
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         source_type=source_type,
         name=name,
         status=SourceStatus.pending,
@@ -160,7 +159,7 @@ async def attach_source(
         "source_attached",
         source_id=str(source.id),
         source_type=source_type.value,
-        twin_id=str(twin_id),
+        doctwin_id=str(doctwin_id),
     )
     return source
 
@@ -191,7 +190,7 @@ async def detach_source(
     logger.info(
         "source_detached",
         source_id=str(source_id),
-        twin_id=str(source.twin_id),
+        doctwin_id=str(source.doctwin_id),
     )
 
 
@@ -258,10 +257,10 @@ async def mark_source_failed(source_id: str, error: str, db: AsyncSession) -> No
     await update_source_status(source_id, SourceStatus.failed, error[:2000], db)
 
 
-async def mark_processing_sources_ready(twin_id: str, db: AsyncSession) -> int:
+async def mark_processing_sources_ready(doctwin_id: str, db: AsyncSession) -> int:
     result = await db.execute(
         select(Source).where(
-            Source.twin_id == uuid.UUID(twin_id),
+            Source.doctwin_id == uuid.UUID(doctwin_id),
             Source.status == SourceStatus.processing,
             Source.name != "__memory__",
         )
@@ -275,13 +274,13 @@ async def mark_processing_sources_ready(twin_id: str, db: AsyncSession) -> int:
 
 
 async def mark_processing_sources_failed(
-    twin_id: str,
+    doctwin_id: str,
     error: str,
     db: AsyncSession,
 ) -> int:
     result = await db.execute(
         select(Source).where(
-            Source.twin_id == uuid.UUID(twin_id),
+            Source.doctwin_id == uuid.UUID(doctwin_id),
             Source.status == SourceStatus.processing,
             Source.name != "__memory__",
         )
@@ -303,13 +302,7 @@ def _validate_connection_config(source_type: SourceType, config: dict) -> None:
     Raises ValidationError on invalid input.
     Does NOT validate secrets — only structure.
     """
-    if source_type == SourceType.github_repo:
-        if not config.get("repo_url"):
-            raise ValidationError("github_repo source requires 'repo_url'")
-        if not config.get("branch"):
-            raise ValidationError("github_repo source requires 'branch'")
-
-    elif source_type == SourceType.pdf:
+    if source_type == SourceType.pdf:
         if not config.get("file_path"):
             raise ValidationError("pdf source requires 'file_path'")
 
@@ -329,17 +322,8 @@ def _validate_connection_config(source_type: SourceType, config: dict) -> None:
         if not config.get("url"):
             raise ValidationError("url source requires 'url'")
 
-    elif source_type == SourceType.manual:
-        if not config.get("content"):
-            raise ValidationError("manual source requires 'content'")
-
-    # gitlab_repo follows same pattern as github_repo
-    elif source_type == SourceType.gitlab_repo:
-        if not config.get("repo_url"):
-            raise ValidationError("gitlab_repo source requires 'repo_url'")
-        if not config.get("branch"):
-            raise ValidationError("gitlab_repo source requires 'branch'")
-
+    elif source_type == SourceType.manual and not config.get("content"):
+        raise ValidationError("manual source requires 'content'")
 
 def _sanitize_connection_config(config: dict) -> dict:
     """

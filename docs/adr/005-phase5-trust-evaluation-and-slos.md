@@ -7,7 +7,7 @@
 
 ## Context
 
-Phases 0 through 4 gave docubase strict evidence contracts, deterministic
+Phases 0 through 4 gave docbase strict evidence contracts, deterministic
 implementation indexes, hybrid retrieval, evidence-bound answering, and
 evidence-backed memory. The remaining gap was operational trust:
 

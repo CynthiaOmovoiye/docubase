@@ -12,13 +12,13 @@ import enum
 import uuid
 from typing import TYPE_CHECKING
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from pgvector.sqlalchemy import Vector
 
-from app.core.db import Base
 from app.core.config import get_settings
+from app.core.db import Base
 from app.models.base import TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 settings = get_settings()
 
 
-class ChunkType(str, enum.Enum):
+class ChunkType(enum.StrEnum):
     """
     What kind of knowledge this chunk represents.
 
@@ -40,7 +40,7 @@ class ChunkType(str, enum.Enum):
     LLM-generated (produced by domains/memory/extractor.py — post-ingestion):
       change_entry, risk_note, decision_record, hotspot, memory_brief,
       feature_summary, auth_flow, onboarding_map
-      These chunks always have source_ref = "__memory__/{twin_id}" to
+      These chunks always have source_ref = "__memory__/{doctwin_id}" to
       distinguish them from file-derived chunks and allow targeted deletion.
     """
     # ── Deterministic chunk types ────────────────────────────────────────────
@@ -68,7 +68,7 @@ class ChunkType(str, enum.Enum):
     onboarding_map = "onboarding_map"   # Evidence-backed newcomer reading map
 
 
-class ChunkLineage(str, enum.Enum):
+class ChunkLineage(enum.StrEnum):
     """
     Evidence lineage for a chunk.
 

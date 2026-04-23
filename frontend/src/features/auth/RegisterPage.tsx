@@ -43,7 +43,7 @@ export default function RegisterPage() {
               </linearGradient>
             </defs>
           </svg>
-          <span style={styles.logoText}>docubase</span>
+          <span style={styles.logoText}>docbase</span>
         </Link>
 
         <h1 style={styles.heading}>Create your account</h1>

@@ -1,4 +1,4 @@
-# CLAUDE.md — docubase
+# CLAUDE.md — docbase
 
 This file is read by Claude at the start of every session on this project.
 It defines the product identity, engineering standards, operating posture, and non-negotiable rules.
@@ -7,7 +7,7 @@ It defines the product identity, engineering standards, operating posture, and n
 
 ## Project identity
 
-This project is **docubase** — AI-powered conversational twins for repositories, portfolios, and career profiles.
+This project is **docbase** — AI-powered conversational twins for repositories, portfolios, and career profiles.
 
 The product allows users to create AI-powered twins for repositories, projects, portfolios, resumes, and career profiles. These twins answer questions from approved knowledge sources without exposing raw sensitive content, proprietary implementation details, or private code.
 
@@ -70,7 +70,7 @@ Consistently apply strong judgment in:
 
 ## Product model
 
-docubase is an **engineering memory layer**, not a code search tool.
+docbase is an **engineering memory layer**, not a code search tool.
 The core product artifact is the **Project Memory Brief** — a living, generated document
 attached to each twin that explains architecture, risks, recent changes, and onboarding path.
 
@@ -84,16 +84,14 @@ Top-level concepts:
 - ShareSurface
 - EmbedSurface
 
-**Important rule:** A repository is not the top-level product abstraction. A repository is a source type attached to a twin.
+**Important rule:** A single file tree or vendor folder is not the top-level product abstraction. Each source type attaches to a twin as indexed knowledge.
 
 Source types include:
-- GitHub repository (`github_repo`)
-- GitLab repository (`gitlab_repo`)
+- Google Drive file or folder (`google_drive`)
 - PDF resume or document (`pdf`)
 - Markdown documentation (`markdown`)
 - Website content (`url`)
 - Manual notes (`manual`)
-- Structured profile data (`profile`)
 
 ---
 
@@ -120,10 +118,10 @@ Preserve strong separation between these domains. Do not mix them carelessly.
 
 ## Engineering Memory Layer
 
-docubase's core differentiator is *engineering memory* — synthesized project knowledge that
+docbase's core differentiator is *engineering memory* — synthesized project knowledge that
 answers WHY, not just WHERE. The product architecture reflects this.
 
-### New chunk types (LLM-generated, `source_ref = "__memory__/{twin_id}"`)
+### New chunk types (LLM-generated, `source_ref = "__memory__/{doctwin_id}"`)
 | Type | Produced by | Answers |
 |------|-------------|---------|
 | `change_entry` | `memory/extractor.py` | "What changed recently?" |
@@ -137,11 +135,11 @@ answers WHY, not just WHERE. The product architecture reflects this.
 - ARQ job: `generate_memory_brief` in `app/jobs/ingestion.py`
 - Orchestrated by `app/domains/memory/service.run_memory_extraction()`
 - Idempotent: delete-then-insert on every run
-- Redis lock (`memory_lock:{twin_id}`, 600s TTL) via `app.core.redis.get_redis()`
-- Generated chunks use `source_ref = "__memory__/{twin_id}"` to distinguish from file-derived chunks
+- Redis lock (`memory_lock:{doctwin_id}`, 600s TTL) via `app.core.redis.get_redis()`
+- Generated chunks use `source_ref = "__memory__/{doctwin_id}"` to distinguish from file-derived chunks
 
 ### Memory Brief artifact
-- Stored in `twin_configs.memory_brief` (Text column, system-authored)
+- Stored in `doctwin_configs.memory_brief` (Text column, system-authored)
 - NOT in `custom_context` (that field is owner-editable)
 - Injected into system prompt as `<memory_brief>` XML block — sanitized before injection
 - Visible to twin owners only — never on public share surfaces (`PublicTwinConfigResponse`)
@@ -153,8 +151,8 @@ answers WHY, not just WHERE. The product architecture reflects this.
 - top_k override per intent (e.g. `onboarding` gets 16 chunks, `change_query` gets 12)
 
 ### Key design decisions
-- Memory Brief stored in `twin_configs.memory_brief`, NOT as a Chunk — must be loaded unconditionally on every chat turn
-- Generated chunks use deterministic synthetic source_id: `uuid5(NAMESPACE_DNS, "memory:{twin_id}")` — no real Source row
+- Memory Brief stored in `doctwin_configs.memory_brief`, NOT as a Chunk — must be loaded unconditionally on every chat turn
+- Generated chunks use deterministic synthetic source_id: `uuid5(NAMESPACE_DNS, "memory:{doctwin_id}")` — no real Source row
 - Intent boost is +0.15 additive (not a hard filter) — results always return even if preferred types don't exist yet
 - `generate_answer()` `memory_brief=None` default means existing callers are never broken
 
@@ -317,7 +315,7 @@ Bias toward:
 - Mixing policy logic into unrelated code
 - Building features without thinking through owner flow AND visitor flow
 - Overstating what the AI can safely know or reveal
-- Treating docubase as a code search tool — the differentiator is synthesized engineering memory, not retrieval
+- Treating docbase as a code search tool — the differentiator is synthesized engineering memory, not retrieval
 - Generating the Memory Brief inline during ingestion — it must be a separate async ARQ job
 - Writing LLM-generated content into `custom_context` — that field is owner-controlled; use `memory_brief` on `TwinConfig`
 

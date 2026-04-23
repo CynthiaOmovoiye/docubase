@@ -32,15 +32,15 @@ _MAX_PDF_BYTES = 20 * 1024 * 1024  # 20 MB
 router = APIRouter()
 
 
-@router.get("/twin/{twin_id}", response_model=list[SourceResponse])
+@router.get("/twin/{doctwin_id}", response_model=list[SourceResponse])
 async def list_sources(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """List all sources attached to a twin."""
     try:
-        sources = await sources_svc.list_sources(twin_id, current_user.id, db)
+        sources = await sources_svc.list_sources(doctwin_id, current_user.id, db)
     except sources_svc.NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except sources_svc.ForbiddenError as exc:
@@ -49,9 +49,9 @@ async def list_sources(
     return [SourceResponse.from_source(s) for s in sources]
 
 
-@router.post("/twin/{twin_id}", status_code=status.HTTP_201_CREATED, response_model=SourceResponse)
+@router.post("/twin/{doctwin_id}", status_code=status.HTTP_201_CREATED, response_model=SourceResponse)
 async def attach_source(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     body: AttachSourceRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -62,7 +62,7 @@ async def attach_source(
     """
     try:
         source = await sources_svc.attach_source(
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             user_id=current_user.id,
             source_type=body.source_type,
             name=body.name,
@@ -127,7 +127,7 @@ async def trigger_sync(
 ):
     """Manually trigger a re-ingestion for this source."""
     try:
-        source = await sources_svc.get_source(source_id, current_user.id, db)
+        await sources_svc.get_source(source_id, current_user.id, db)
     except sources_svc.NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except sources_svc.ForbiddenError as exc:
@@ -146,18 +146,18 @@ async def trigger_sync(
 
 
 @router.post(
-    "/twin/{twin_id}/backfill-legacy",
+    "/twin/{doctwin_id}/backfill-legacy",
     response_model=BackfillLegacySourcesResponse,
 )
 async def backfill_legacy_sources(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Queue a trust-layer backfill for all eligible legacy-index sources on a twin."""
     try:
         candidates = await sources_svc.list_legacy_backfill_candidates(
-            twin_id,
+            doctwin_id,
             current_user.id,
             db,
         )
@@ -173,7 +173,7 @@ async def backfill_legacy_sources(
         await _enqueue_ingestions(source_ids)
 
     return BackfillLegacySourcesResponse(
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         queued_sources=len(source_ids),
         source_ids=[uuid.UUID(source_id) for source_id in source_ids],
         message=(
@@ -185,12 +185,12 @@ async def backfill_legacy_sources(
 
 
 @router.post(
-    "/twin/{twin_id}/upload-pdf",
+    "/twin/{doctwin_id}/upload-pdf",
     status_code=status.HTTP_201_CREATED,
     response_model=SourceResponse,
 )
 async def upload_pdf_source(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     name: str = Form(..., description="Human-readable name for this source"),
     file: UploadFile = File(..., description="PDF file to upload (max 20 MB)"),
     current_user: User = Depends(get_current_user),
@@ -247,7 +247,7 @@ async def upload_pdf_source(
     # Attach as a PDF source
     try:
         source = await sources_svc.attach_source(
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             user_id=current_user.id,
             source_type=SourceType.pdf,
             name=name,

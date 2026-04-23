@@ -15,7 +15,7 @@ from app.models.chat import MessageRole
 class CreateSessionResponse(BaseModel):
     session_id: uuid.UUID
     workspace_id: uuid.UUID
-    twin_id: uuid.UUID | None
+    doctwin_id: uuid.UUID | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -25,7 +25,7 @@ class CreateSessionResponse(BaseModel):
         return cls(
             session_id=session.id,  # type: ignore[attr-defined]
             workspace_id=session.workspace_id,  # type: ignore[attr-defined]
-            twin_id=session.twin_id,  # type: ignore[attr-defined]
+            doctwin_id=session.doctwin_id,  # type: ignore[attr-defined]
             created_at=session.created_at,  # type: ignore[attr-defined]
         )
 
@@ -46,7 +46,7 @@ class MessageResponse(BaseModel):
     session_id: uuid.UUID
     role: MessageRole
     content: str
-    routed_twin_id: uuid.UUID | None
+    routed_doctwin_id: uuid.UUID | None
     created_at: datetime
     answer_diagnostics: dict | None = Field(
         default=None,
@@ -67,7 +67,7 @@ class MessageResponse(BaseModel):
             session_id=message.session_id,  # type: ignore[attr-defined]
             role=message.role,  # type: ignore[attr-defined]
             content=message.content,  # type: ignore[attr-defined]
-            routed_twin_id=message.routed_twin_id,  # type: ignore[attr-defined]
+            routed_doctwin_id=message.routed_doctwin_id,  # type: ignore[attr-defined]
             created_at=message.created_at,  # type: ignore[attr-defined]
             answer_diagnostics=answer_diagnostics,
         )

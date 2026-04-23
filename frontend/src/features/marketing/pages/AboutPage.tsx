@@ -22,7 +22,7 @@ export default function AboutPage() {
             We built the introduction<br />your work deserves.
           </h1>
           <p style={{ fontSize: "18px", color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
-            Great work speaks for itself — but only if someone can hear it. docubase gives your repositories, portfolios, and career profiles a voice that's intelligent, safe, and always available.
+            Great work speaks for itself — but only if someone can hear it. docbase gives your repositories, portfolios, and career profiles a voice that's intelligent, safe, and always available.
           </p>
         </div>
 
@@ -47,7 +47,7 @@ export default function AboutPage() {
                 The same problem shows up in hiring. A developer's best work is often locked inside a private codebase they can't share. A recruiter gets a PDF resume that says nothing about how they actually think. The interview is the first real conversation — but it shouldn't be.
               </p>
               <p>
-                docubase is the layer between your work and the people who need to understand it. An AI twin that knows your project, speaks for it accurately, and never exposes what shouldn't be exposed.
+                docbase is the layer between your work and the people who need to understand it. An AI twin that knows your project, speaks for it accurately, and never exposes what shouldn't be exposed.
               </p>
             </div>
           </div>
@@ -62,7 +62,7 @@ export default function AboutPage() {
             {[
               {
                 title: "Your code is yours",
-                body: "We are not in the business of collecting or reselling your knowledge. docubase is a layer of safe presentation — not a data broker.",
+                body: "We are not in the business of collecting or reselling your knowledge. docbase is a layer of safe presentation — not a data broker.",
               },
               {
                 title: "Safe defaults matter",
@@ -74,7 +74,7 @@ export default function AboutPage() {
               },
               {
                 title: "Quality takes honesty",
-                body: "docubase won't make up answers or speculate beyond what it knows. When it doesn't have enough context, it says so.",
+                body: "docbase won't make up answers or speculate beyond what it knows. When it doesn't have enough context, it says so.",
               },
             ].map(p => (
               <div key={p.title} style={{
@@ -101,7 +101,7 @@ export default function AboutPage() {
             <h2 style={{ fontFamily: "var(--font-display)", fontSize: "28px", fontWeight: 700, letterSpacing: "-0.02em", marginBottom: "var(--space-6)" }}>Where we are going</h2>
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-5)", fontSize: "16px", lineHeight: 1.8, color: "var(--color-text-secondary)" }}>
               <p>
-                docubase started as a tool for repositories. But the underlying idea — a safe, conversational AI twin for any knowledge source — applies far beyond code.
+                docbase started as a tool for repositories. But the underlying idea — a safe, conversational AI twin for any knowledge source — applies far beyond code.
               </p>
               <p>
                 We are building toward a broader platform where a twin can represent a project, a career, a team's delivery record, a product's knowledge base, or any structured body of work. The core principle stays constant: approved knowledge, safe exposure, grounded answers.

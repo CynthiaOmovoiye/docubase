@@ -9,7 +9,7 @@ before any filesystem access to prevent path traversal attacks.
 """
 
 import os
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from app.connectors.base import BaseConnector, ConnectorResult, RawFile
 from app.core.config import get_settings

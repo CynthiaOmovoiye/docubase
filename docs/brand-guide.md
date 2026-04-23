@@ -1,4 +1,4 @@
-# Brand Guide — docubase
+# Brand Guide — docbase
 
 Version 1.1 | April 2026
 
@@ -6,7 +6,7 @@ Version 1.1 | April 2026
 
 ## 1. Product Name
 
-### **docubase**
+### **docbase**
 
 Pronounced: *oh-pus EK-oh*
 
@@ -15,13 +15,13 @@ Pronounced: *oh-pus EK-oh*
 - *Echo* — Greek, the voice that answers back. The conversational layer. Visitors ask; your work responds.
 - Together: **your work, speaking back** — an intelligent twin that holds a conversation on your behalf.
 
-**Why docubase:**
+**Why docbase:**
 - Encodes all three core product aspects in two words: work, twin, conversation
 - Not boxed into developer or repo territory — covers career twins, portfolio twins, project twins equally
 - No real brand footprint in the SaaS or AI space — fully ownable
 - Internationally readable — both roots are recognisable across languages
-- Works as a domain: `docubase.app`, `docubase.io`, `docubase.dev`
-- Scales to every use case: an docubase for your project, your career, your portfolio, your knowledge
+- Works as a domain: `docbase.app`, `docbase.io`, `docbase.dev`
+- Scales to every use case: an docbase for your project, your career, your portfolio, your knowledge
 
 **Tagline:** *Your work, in conversation.*
 
@@ -42,13 +42,13 @@ Pronounced: *oh-pus EK-oh*
 | **AnimaVox** | *anima* (soul, essence) + *vox* — more poetic, career-facing |
 | **OpusVox** | *opus* + *vox* — "the work, given voice" — close second |
 
-**Decision:** docubase is the name. The tagline "Your work, in conversation" is a direct English translation of the name itself.
+**Decision:** docbase is the name. The tagline "Your work, in conversation" is a direct English translation of the name itself.
 
 ---
 
 ## 2. Brand Personality
 
-docubase should feel like the smartest person in the room who never makes you feel small.
+docbase should feel like the smartest person in the room who never makes you feel small.
 
 Four personality traits that must coexist in every design and copy decision:
 
@@ -66,9 +66,9 @@ Four personality traits that must coexist in every design and copy decision:
 - Confident, not arrogant
 - Human, not robotic
 
-**What docubase is NOT:**
+**What docbase is NOT:**
 - Not a chatbot service
-- Not a GitHub wrapper
+- Not a thin wrapper around a single vendor's hosting product
 - Not a documentation tool
 - Not a portfolio template
 
@@ -132,12 +132,12 @@ Color choices are inspired by the idea of **bioluminescence** — light that com
 
 ---
 
-### Gradient — the docubase signature
+### Gradient — the docbase signature
 
-The docubase gradient is used sparingly: landing page hero, empty state illustrations, and the workspace page header. It should feel like light seen through deep water.
+The docbase gradient is used sparingly: landing page hero, empty state illustrations, and the workspace page header. It should feel like light seen through deep water.
 
 ```
-docubase-gradient: linear-gradient(135deg, #6366F1 0%, #14B8A6 100%)
+docbase-gradient: linear-gradient(135deg, #6366F1 0%, #14B8A6 100%)
 ```
 
 Used on:
@@ -336,7 +336,7 @@ The public twin page and workspace page follow the same shell:
 ```
 ┌─────────────────────────────────┐
 │  Header: Twin name + description│  56px height, subtle border-bottom
-│  (docubase logo, bottom-right)     │
+│  (docbase logo, bottom-right)     │
 ├─────────────────────────────────┤
 │                                 │
 │                                 │
@@ -404,7 +404,7 @@ All animations use `ease-out` for enter transitions. `ease-in` for exit. Never u
 3. Placeholder text fades slightly (opacity 0.6 → 0.4)
 
 **Empty state (no twins yet):**
-The docubase gradient blob animates slowly — a gentle, breathing pulse, scale 1 → 1.03 → 1 on 4s loop, `ease-in-out`. Not distracting, just alive.
+The docbase gradient blob animates slowly — a gentle, breathing pulse, scale 1 → 1.03 → 1 on 4s loop, `ease-in-out`. Not distracting, just alive.
 
 **Page load — skeleton screens:**
 Cards render as skeleton placeholders before data loads.
@@ -435,12 +435,12 @@ Icons in buttons: always left of label text, never right (except the send button
 
 ## 9. Illustration / Visual style
 
-No complex illustrations. docubase uses **geometric, abstract shapes** as visual accents — not mascots, not character illustrations.
+No complex illustrations. docbase uses **geometric, abstract shapes** as visual accents — not mascots, not character illustrations.
 
 The primary visual device is a **soft radial gradient orb** — representing a twin, a node of intelligence.
 
 Orb properties:
-- Base: docubase gradient (`#6366F1 → #14B8A6`)
+- Base: docbase gradient (`#6366F1 → #14B8A6`)
 - Soft gaussian blur: `filter: blur(60px)`
 - Opacity: 0.35 at rest, 0.45 on hover contexts
 - Used behind hero text on landing page, behind empty states, behind the welcome screen
@@ -474,7 +474,7 @@ This keeps the visual language consistent, scalable, and impossible to accidenta
 - Twin's `accentColor` overrides Iris if set
 - Maximum whitespace
 - Only the twin name, description, and chat — nothing else
-- docubase branding is subtle (small logo, bottom-right footer)
+- docbase branding is subtle (small logo, bottom-right footer)
 
 ### Public workspace page (`/w/:slug`)
 - Light mode default
@@ -489,7 +489,7 @@ This keeps the visual language consistent, scalable, and impossible to accidenta
 - Panel: `radius-lg`, `shadow-lg`, light mode only
 - Header bar: twin name, close button
 - Chat interface inside
-- Powered by docubase — small link in footer
+- Powered by docbase — small link in footer
 
 ---
 

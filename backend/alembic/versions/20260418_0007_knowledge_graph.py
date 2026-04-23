@@ -31,7 +31,7 @@ def upgrade() -> None:
     op.execute("""
         CREATE TABLE graph_entities (
             id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            twin_id         UUID NOT NULL REFERENCES twins(id) ON DELETE CASCADE,
+            doctwin_id         UUID NOT NULL REFERENCES twins(id) ON DELETE CASCADE,
             name            VARCHAR(512) NOT NULL,
             entity_type     VARCHAR(64)  NOT NULL,
             description     TEXT,
@@ -41,13 +41,13 @@ def upgrade() -> None:
         )
     """)
     op.execute(
-        "CREATE INDEX ix_graph_entities_twin_id ON graph_entities(twin_id)"
+        "CREATE INDEX ix_graph_entities_doctwin_id ON graph_entities(doctwin_id)"
     )
 
     op.execute("""
         CREATE TABLE graph_relationships (
             id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            twin_id             UUID NOT NULL REFERENCES twins(id) ON DELETE CASCADE,
+            doctwin_id             UUID NOT NULL REFERENCES twins(id) ON DELETE CASCADE,
             source_entity_id    UUID NOT NULL REFERENCES graph_entities(id) ON DELETE CASCADE,
             target_entity_id    UUID NOT NULL REFERENCES graph_entities(id) ON DELETE CASCADE,
             relationship_type   VARCHAR(64) NOT NULL,
@@ -57,7 +57,7 @@ def upgrade() -> None:
         )
     """)
     op.execute(
-        "CREATE INDEX ix_graph_relationships_twin_id ON graph_relationships(twin_id)"
+        "CREATE INDEX ix_graph_relationships_doctwin_id ON graph_relationships(doctwin_id)"
     )
     op.execute(
         "CREATE INDEX ix_graph_relationships_source ON graph_relationships(source_entity_id)"

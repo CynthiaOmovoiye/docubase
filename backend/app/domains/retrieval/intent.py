@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import json
 import re
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, field_validator
 
@@ -39,7 +39,7 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
-class QueryIntent(str, Enum):
+class QueryIntent(StrEnum):
     change_query  = "change_query"   # "what changed", "last week", "recent commits"
     risk_query    = "risk_query"     # "risky", "fragile", "could break"
     architecture  = "architecture"   # "architecture", "overview", "how is this structured"

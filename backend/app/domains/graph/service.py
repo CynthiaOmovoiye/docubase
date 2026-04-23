@@ -40,7 +40,7 @@ _ENTITY_SIMILARITY_THRESHOLD = 0.15
 
 
 async def rebuild_graph(
-    twin_id: str,
+    doctwin_id: str,
     extraction: GraphExtractionResult,
     db: AsyncSession,
 ) -> None:
@@ -51,12 +51,12 @@ async def rebuild_graph(
     Embeds each entity's (name + description) for later similarity search.
     Relationships are only inserted when both endpoint entities are present.
     """
-    twin_uuid = uuid.UUID(twin_id)
+    doctwin_uuid = uuid.UUID(doctwin_id)
 
     await db.execute(
-        delete(GraphRelationship).where(GraphRelationship.twin_id == twin_uuid)
+        delete(GraphRelationship).where(GraphRelationship.doctwin_id == doctwin_uuid)
     )
-    await db.execute(delete(GraphEntity).where(GraphEntity.twin_id == twin_uuid))
+    await db.execute(delete(GraphEntity).where(GraphEntity.doctwin_id == doctwin_uuid))
     await db.flush()
 
     if not extraction.entities:
@@ -70,10 +70,10 @@ async def rebuild_graph(
     ]
     batch_result = await embed_batch_with_failover(embed_texts, task="document", db=db)
 
-    for entity, embedding in zip(extraction.entities, batch_result.embeddings):
+    for entity, embedding in zip(extraction.entities, batch_result.embeddings, strict=False):
 
         row = GraphEntity(
-            twin_id=twin_uuid,
+            doctwin_id=doctwin_uuid,
             name=entity.name,
             entity_type=entity.entity_type,
             description=entity.description,
@@ -96,7 +96,7 @@ async def rebuild_graph(
 
         db.add(
             GraphRelationship(
-                twin_id=twin_uuid,
+                doctwin_id=doctwin_uuid,
                 source_entity_id=src.id,
                 target_entity_id=tgt.id,
                 relationship_type=rel.relationship_type,
@@ -108,7 +108,7 @@ async def rebuild_graph(
     await db.commit()
     logger.info(
         "graph_rebuilt",
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         entities=len(entity_rows),
         relationships=len(extraction.relationships),
     )
@@ -116,7 +116,7 @@ async def rebuild_graph(
 
 async def find_entities_for_query(
     query: str,
-    twin_id: str,
+    doctwin_id: str,
     db: AsyncSession,
     top_k: int = 5,
 ) -> list[GraphEntity]:
@@ -124,7 +124,7 @@ async def find_entities_for_query(
     Find entities most relevant to a query using embedding cosine similarity.
     Returns [] if the graph has no entities or embedding fails.
     """
-    profiles = await _load_graph_profiles(twin_id, db)
+    profiles = await _load_graph_profiles(doctwin_id, db)
     if not profiles:
         return []
 
@@ -136,7 +136,7 @@ async def find_entities_for_query(
         SELECT id, name, entity_type, description, source_refs,
                1 - (embedding <=> :embedding ::vector) AS score
         FROM graph_entities
-        WHERE twin_id = :twin_id
+        WHERE doctwin_id = :doctwin_id
           AND embedding IS NOT NULL
           AND COALESCE(embedding_provider, :legacy_provider) = :provider
           AND COALESCE(embedding_model, :legacy_model) = :model
@@ -152,7 +152,7 @@ async def find_entities_for_query(
         except Exception as exc:
             logger.warning(
                 "graph_query_embed_failed",
-                twin_id=twin_id,
+                doctwin_id=doctwin_id,
                 provider=profile.provider,
                 model=profile.model,
                 error=str(exc),
@@ -164,7 +164,7 @@ async def find_entities_for_query(
             result = await db.execute(
                 sql,
                 {
-                    "twin_id": str(twin_id),
+                    "doctwin_id": str(doctwin_id),
                     "embedding": emb_literal,
                     "threshold": _ENTITY_SIMILARITY_THRESHOLD,
                     "top_k": top_k,
@@ -178,7 +178,7 @@ async def find_entities_for_query(
             )
             rows = result.fetchall()
         except Exception as exc:
-            logger.warning("graph_entity_search_failed", twin_id=twin_id, error=str(exc))
+            logger.warning("graph_entity_search_failed", doctwin_id=doctwin_id, error=str(exc))
             await db.rollback()
             continue
 
@@ -189,7 +189,7 @@ async def find_entities_for_query(
             candidate_scores[row.id] = score
             candidates[row.id] = GraphEntity(
                 id=row.id,
-                twin_id=uuid.UUID(twin_id),
+                doctwin_id=uuid.UUID(doctwin_id),
                 name=row.name,
                 entity_type=row.entity_type,
                 description=row.description,
@@ -205,7 +205,7 @@ async def find_entities_for_query(
 
 async def traverse_graph(
     seed_entities: list[GraphEntity],
-    twin_id: str,
+    doctwin_id: str,
     db: AsyncSession,
     max_depth: int = 2,
     max_nodes: int = 20,
@@ -243,7 +243,7 @@ async def traverse_graph(
                         ELSE r.source_entity_id
                     END AS neighbor_id
                 FROM graph_relationships r
-                WHERE r.twin_id = :twin_id
+                WHERE r.doctwin_id = :doctwin_id
                   AND (r.source_entity_id = :entity_id OR r.target_entity_id = :entity_id)
             )
             SELECT
@@ -264,11 +264,11 @@ async def traverse_graph(
         try:
             result = await db.execute(sql, {
                 "entity_id": str(entity.id),
-                "twin_id": str(twin_id),
+                "doctwin_id": str(doctwin_id),
             })
             rows = result.fetchall()
         except Exception as exc:
-            logger.warning("graph_traversal_step_failed", twin_id=twin_id, error=str(exc))
+            logger.warning("graph_traversal_step_failed", doctwin_id=doctwin_id, error=str(exc))
             await db.rollback()
             break
 
@@ -278,7 +278,7 @@ async def traverse_graph(
                 all_relationships.append(
                     GraphRelationship(
                         id=row.rel_id,
-                        twin_id=uuid.UUID(twin_id),
+                        doctwin_id=uuid.UUID(doctwin_id),
                         source_entity_id=row.source_entity_id,
                         target_entity_id=row.target_entity_id,
                         relationship_type=row.relationship_type,
@@ -290,7 +290,7 @@ async def traverse_graph(
             if neighbor_id not in visited_ids and len(all_entities) < max_nodes:
                 neighbor = GraphEntity(
                     id=neighbor_id,
-                    twin_id=uuid.UUID(twin_id),
+                    doctwin_id=uuid.UUID(doctwin_id),
                     name=row.neighbor_name,
                     entity_type=row.neighbor_type,
                     description=row.neighbor_desc,
@@ -304,7 +304,7 @@ async def traverse_graph(
 
 
 async def _load_graph_profiles(
-    twin_id: str,
+    doctwin_id: str,
     db: AsyncSession,
 ) -> list[EmbeddingProfile]:
     result = await db.execute(
@@ -314,7 +314,7 @@ async def _load_graph_profiles(
             GraphEntity.embedding_dimensions,
         )
         .where(
-            GraphEntity.twin_id == uuid.UUID(twin_id),
+            GraphEntity.doctwin_id == uuid.UUID(doctwin_id),
             GraphEntity.embedding.is_not(None),
         )
         .distinct()
@@ -370,13 +370,13 @@ def format_graph_context(
     return "\n".join(lines)
 
 
-async def get_graph_summary(twin_id: str, db: AsyncSession) -> str:
+async def get_graph_summary(doctwin_id: str, db: AsyncSession) -> str:
     """
     Return the full graph as a formatted context string for memory brief generation.
     Returns "" if the graph is empty.
     """
     entity_result = await db.execute(
-        select(GraphEntity).where(GraphEntity.twin_id == uuid.UUID(twin_id))
+        select(GraphEntity).where(GraphEntity.doctwin_id == uuid.UUID(doctwin_id))
     )
     entities = list(entity_result.scalars().all())
 
@@ -384,7 +384,7 @@ async def get_graph_summary(twin_id: str, db: AsyncSession) -> str:
         return ""
 
     rel_result = await db.execute(
-        select(GraphRelationship).where(GraphRelationship.twin_id == uuid.UUID(twin_id))
+        select(GraphRelationship).where(GraphRelationship.doctwin_id == uuid.UUID(doctwin_id))
     )
     relationships = list(rel_result.scalars().all())
 

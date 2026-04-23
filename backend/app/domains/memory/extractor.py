@@ -11,7 +11,7 @@ Design principles:
   - Input chunks are filtered and capped before being passed to the LLM to
     stay within context window limits.
   - Uses get_llm_provider() from the answering domain — no new provider dependency.
-  - Generated chunk dicts use source_ref = "__memory__/{twin_id}" to distinguish
+  - Generated chunk dicts use source_ref = "__memory__/{doctwin_id}" to distinguish
     them from file-derived chunks.
 """
 
@@ -60,9 +60,7 @@ def _is_architecture_relevant(chunk: dict) -> bool:
     ref = chunk.get("source_ref", "").lower()
     if any(ref.startswith(p) for p in _NOISE_PREFIXES):
         return False
-    if any(ref.endswith(s) for s in _NOISE_SUFFIXES):
-        return False
-    return True
+    return not any(ref.endswith(s) for s in _NOISE_SUFFIXES)
 
 # Max chunks / approximate token budget per LLM call.
 # GPT-4o and most modern models have 128k context; we use up to ~20k tokens
@@ -71,8 +69,8 @@ _MAX_INPUT_CHUNKS = 200
 _MAX_INPUT_CHARS = 80_000  # ~20k tokens
 
 # source_ref prefix for all LLM-generated chunks
-def _memory_ref(twin_id: str) -> str:
-    return f"__memory__/{twin_id}"
+def _memory_ref(doctwin_id: str) -> str:
+    return f"__memory__/{doctwin_id}"
 
 
 # ── JSON parsing helpers ───────────────────────────────────────────────────────
@@ -241,7 +239,7 @@ def _format_structure_overview(structure_overview: list[dict]) -> str:
 
 
 async def extract_architecture_chunks(
-    twin_id: str,
+    doctwin_id: str,
     existing_chunks: list[dict],
     trace_id: str | None = None,
 ) -> list[dict]:
@@ -251,13 +249,13 @@ async def extract_architecture_chunks(
       - N decision_record chunks (inferred design decisions)
       - N hotspot chunks (key modules worth knowing about)
 
-    All returned chunks have source_ref = "__memory__/{twin_id}".
+    All returned chunks have source_ref = "__memory__/{doctwin_id}".
     Returns [] on any error.
     """
     relevant = [c for c in existing_chunks if _is_architecture_relevant(c)]
     selected = _select_chunks(relevant, _ARCH_INPUT_TYPES, diverse=True)
     if not selected:
-        logger.info("memory_arch_extraction_skip_no_chunks", twin_id=twin_id)
+        logger.info("memory_arch_extraction_skip_no_chunks", doctwin_id=doctwin_id)
         return []
 
     context = _chunks_to_context(selected)
@@ -274,10 +272,10 @@ async def extract_architecture_chunks(
         )
         data = _parse_json_object(response.content)
     except Exception as exc:
-        logger.warning("memory_arch_extraction_failed", twin_id=twin_id, error=str(exc))
+        logger.warning("memory_arch_extraction_failed", doctwin_id=doctwin_id, error=str(exc))
         return []
 
-    ref = _memory_ref(twin_id)
+    ref = _memory_ref(doctwin_id)
     chunks: list[dict] = []
 
     # ── Architecture summary — one chunk ───────────────────────────────────────
@@ -340,14 +338,14 @@ async def extract_architecture_chunks(
 
     logger.info(
         "memory_arch_extraction_complete",
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         chunks=len(chunks),
     )
     return chunks
 
 
 async def extract_risk_chunks(
-    twin_id: str,
+    doctwin_id: str,
     existing_chunks: list[dict],
     trace_id: str | None = None,
 ) -> list[dict]:
@@ -355,13 +353,13 @@ async def extract_risk_chunks(
     Analyse module descriptions and code snippets to identify:
       - N risk_note chunks (specific fragility or risk areas)
 
-    All returned chunks have source_ref = "__memory__/{twin_id}".
+    All returned chunks have source_ref = "__memory__/{doctwin_id}".
     Returns [] on any error.
     """
     relevant = [c for c in existing_chunks if _is_architecture_relevant(c)]
     selected = _select_chunks(relevant, _RISK_INPUT_TYPES, diverse=True)
     if not selected:
-        logger.info("memory_risk_extraction_skip_no_chunks", twin_id=twin_id)
+        logger.info("memory_risk_extraction_skip_no_chunks", doctwin_id=doctwin_id)
         return []
 
     context = _chunks_to_context(selected)
@@ -378,10 +376,10 @@ async def extract_risk_chunks(
         )
         risks = _parse_json_array(response.content)
     except Exception as exc:
-        logger.warning("memory_risk_extraction_failed", twin_id=twin_id, error=str(exc))
+        logger.warning("memory_risk_extraction_failed", doctwin_id=doctwin_id, error=str(exc))
         return []
 
-    ref = _memory_ref(twin_id)
+    ref = _memory_ref(doctwin_id)
     chunks: list[dict] = []
     for risk in risks[:10]:
         title = risk.get("title", "")
@@ -405,14 +403,14 @@ async def extract_risk_chunks(
 
     logger.info(
         "memory_risk_extraction_complete",
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         risks=len(chunks),
     )
     return chunks
 
 
 async def extract_change_entry_chunks(
-    twin_id: str,
+    doctwin_id: str,
     commit_history: list[dict],
     trace_id: str | None = None,
 ) -> list[dict]:
@@ -421,7 +419,7 @@ async def extract_change_entry_chunks(
 
     commit_history: list of {sha, message, author_name, author_date, files_changed,
                               additions, deletions}
-    All returned chunks have source_ref = "__memory__/{twin_id}".
+    All returned chunks have source_ref = "__memory__/{doctwin_id}".
     Returns [] if commit_history is empty or on any error.
     """
     if not commit_history:
@@ -444,10 +442,10 @@ async def extract_change_entry_chunks(
         )
         entries = _parse_json_array(response.content)
     except Exception as exc:
-        logger.warning("memory_change_extraction_failed", twin_id=twin_id, error=str(exc))
+        logger.warning("memory_change_extraction_failed", doctwin_id=doctwin_id, error=str(exc))
         return []
 
-    ref = _memory_ref(twin_id)
+    ref = _memory_ref(doctwin_id)
     chunks: list[dict] = []
     for entry in entries[:12]:  # max 12 weeks = 3 months
         period = entry.get("period", "")
@@ -477,14 +475,14 @@ async def extract_change_entry_chunks(
 
     logger.info(
         "memory_change_extraction_complete",
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         entries=len(chunks),
     )
     return chunks
 
 
 async def generate_memory_brief(
-    twin_id: str,
+    doctwin_id: str,
     architecture_text: str | None,
     arch_chunk_dicts: list[dict],
     risk_chunks: list[dict],
@@ -569,7 +567,7 @@ async def generate_memory_brief(
         sections.append(f"## Entity Relationship Graph\n\n{graph_context}")
 
     if not sections:
-        logger.warning("memory_brief_no_context", twin_id=twin_id)
+        logger.warning("memory_brief_no_context", doctwin_id=doctwin_id)
         return ""
 
     context = "\n\n---\n\n".join(sections)
@@ -588,10 +586,10 @@ async def generate_memory_brief(
         brief = re.sub(r"```mermaid\n.*?```", "", brief, flags=re.DOTALL).strip()
         logger.info(
             "memory_brief_generated",
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             length=len(brief),
         )
         return brief
     except Exception as exc:
-        logger.warning("memory_brief_generation_failed", twin_id=twin_id, error=str(exc))
+        logger.warning("memory_brief_generation_failed", doctwin_id=doctwin_id, error=str(exc))
         return ""

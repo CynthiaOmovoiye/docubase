@@ -8,7 +8,6 @@ adds the deterministic search layers Phase 2 needs for better code intelligence.
 from __future__ import annotations
 
 import re
-import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -75,7 +74,7 @@ def merge_candidate(candidates_by_id: dict[str, dict[str, Any]], candidate: dict
 async def fetch_lexical_chunk_candidates(
     *,
     db: AsyncSession,
-    twin_id: str,
+    doctwin_id: str,
     lexical_query: str,
     allow_code_snippets: bool,
     limit: int,
@@ -105,7 +104,7 @@ async def fetch_lexical_chunk_candidates(
         FROM chunks c
         JOIN sources s ON s.id = c.source_id
         CROSS JOIN lexical_query
-        WHERE s.twin_id = :twin_id
+        WHERE s.doctwin_id = :doctwin_id
           AND s.status = 'ready'
           AND lexical_query.q <> ''::tsquery
           AND (
@@ -123,12 +122,12 @@ async def fetch_lexical_chunk_candidates(
             sql,
             {
                 "query": lexical_query,
-                "twin_id": twin_id,
+                "doctwin_id": doctwin_id,
                 "limit": limit,
             },
         )
     except Exception as exc:
-        logger.warning("lexical_chunk_search_failed", twin_id=twin_id, error=str(exc))
+        logger.warning("lexical_chunk_search_failed", doctwin_id=doctwin_id, error=str(exc))
         await db.rollback()
         return []
 
@@ -136,7 +135,7 @@ async def fetch_lexical_chunk_candidates(
     if not rows:
         rows = await _fetch_chunk_candidates_by_substring(
             db=db,
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             lexical_query=lexical_query,
             allow_code_snippets=allow_code_snippets,
             limit=limit,
@@ -160,7 +159,7 @@ async def fetch_lexical_chunk_candidates(
 async def fetch_file_candidates(
     *,
     db: AsyncSession,
-    twin_id: str,
+    doctwin_id: str,
     lexical_query: str,
     allow_code_snippets: bool,
     limit: int,
@@ -175,7 +174,7 @@ async def fetch_file_candidates(
         )
         SELECT
             f.source_id,
-            f.twin_id,
+            f.doctwin_id,
             f.snapshot_id,
             f.path,
             LEAST(
@@ -188,7 +187,7 @@ async def fetch_file_candidates(
             ) AS score
         FROM indexed_files f
         CROSS JOIN lexical_query
-        WHERE f.twin_id = :twin_id
+        WHERE f.doctwin_id = :doctwin_id
           AND lexical_query.q <> ''::tsquery
           AND (
             setweight(to_tsvector('simple', COALESCE(f.path, '')), 'A') ||
@@ -202,18 +201,18 @@ async def fetch_file_candidates(
     try:
         result = await db.execute(
             sql,
-            {"query": lexical_query, "twin_id": twin_id, "limit": limit},
+            {"query": lexical_query, "doctwin_id": doctwin_id, "limit": limit},
         )
         rows = result.fetchall()
     except Exception as exc:
-        logger.warning("file_candidate_search_failed", twin_id=twin_id, error=str(exc))
+        logger.warning("file_candidate_search_failed", doctwin_id=doctwin_id, error=str(exc))
         await db.rollback()
         return HybridMatches(chunks=[], files=[], symbols=[])
 
     if not rows:
         rows = await _fetch_file_candidates_by_substring(
             db=db,
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             lexical_query=lexical_query,
             limit=limit,
         )
@@ -223,7 +222,7 @@ async def fetch_file_candidates(
     file_matches = [
         EvidenceFileRef(
             path=row.path,
-            twin_id=str(row.twin_id),
+            doctwin_id=str(row.doctwin_id),
             source_id=str(row.source_id),
             snapshot_id=row.snapshot_id,
             reasons=["file"],
@@ -232,7 +231,7 @@ async def fetch_file_candidates(
     ]
     chunks = await _fetch_chunks_for_paths(
         db=db,
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         path_entries=[(row.path, float(row.score), "file") for row in rows],
         allow_code_snippets=allow_code_snippets,
         limit_per_path=2,
@@ -243,7 +242,7 @@ async def fetch_file_candidates(
 async def fetch_symbol_candidates(
     *,
     db: AsyncSession,
-    twin_id: str,
+    doctwin_id: str,
     lexical_query: str,
     allow_code_snippets: bool,
     limit: int,
@@ -258,7 +257,7 @@ async def fetch_symbol_candidates(
         )
         SELECT
             s.source_id,
-            s.twin_id,
+            s.doctwin_id,
             s.snapshot_id,
             s.path,
             s.symbol_name,
@@ -277,7 +276,7 @@ async def fetch_symbol_candidates(
             ) AS score
         FROM indexed_symbols s
         CROSS JOIN lexical_query
-        WHERE s.twin_id = :twin_id
+        WHERE s.doctwin_id = :doctwin_id
           AND lexical_query.q <> ''::tsquery
           AND (
             setweight(to_tsvector('simple', COALESCE(s.symbol_name, '')), 'A') ||
@@ -292,18 +291,18 @@ async def fetch_symbol_candidates(
     try:
         result = await db.execute(
             sql,
-            {"query": lexical_query, "twin_id": twin_id, "limit": limit},
+            {"query": lexical_query, "doctwin_id": doctwin_id, "limit": limit},
         )
         rows = result.fetchall()
     except Exception as exc:
-        logger.warning("symbol_candidate_search_failed", twin_id=twin_id, error=str(exc))
+        logger.warning("symbol_candidate_search_failed", doctwin_id=doctwin_id, error=str(exc))
         await db.rollback()
         return HybridMatches(chunks=[], files=[], symbols=[])
 
     if not rows:
         rows = await _fetch_symbol_candidates_by_substring(
             db=db,
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             lexical_query=lexical_query,
             limit=limit,
         )
@@ -316,7 +315,7 @@ async def fetch_symbol_candidates(
             qualified_name=row.qualified_name,
             symbol_kind=str(row.symbol_kind.value if hasattr(row.symbol_kind, "value") else row.symbol_kind),
             path=row.path,
-            twin_id=str(row.twin_id),
+            doctwin_id=str(row.doctwin_id),
             source_id=str(row.source_id),
             snapshot_id=row.snapshot_id,
             reasons=["symbol"],
@@ -326,7 +325,7 @@ async def fetch_symbol_candidates(
 
     chunks = await _fetch_chunks_for_symbol_rows(
         db=db,
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         symbol_rows=rows,
         allow_code_snippets=allow_code_snippets,
     )
@@ -336,7 +335,7 @@ async def fetch_symbol_candidates(
 async def _fetch_chunks_for_paths(
     *,
     db: AsyncSession,
-    twin_id: str,
+    doctwin_id: str,
     path_entries: list[tuple[str, float, str]],
     allow_code_snippets: bool,
     limit_per_path: int,
@@ -357,7 +356,7 @@ async def _fetch_chunks_for_paths(
             c.source_ref
         FROM chunks c
         JOIN sources s ON s.id = c.source_id
-        WHERE s.twin_id = :twin_id
+        WHERE s.doctwin_id = :doctwin_id
           AND s.status = 'ready'
           AND c.source_ref = ANY(:paths)
           {code_filter}
@@ -373,9 +372,9 @@ async def _fetch_chunks_for_paths(
         """
     )
     try:
-        result = await db.execute(sql, {"twin_id": twin_id, "paths": unique_paths})
+        result = await db.execute(sql, {"doctwin_id": doctwin_id, "paths": unique_paths})
     except Exception as exc:
-        logger.warning("file_chunk_fetch_failed", twin_id=twin_id, error=str(exc))
+        logger.warning("file_chunk_fetch_failed", doctwin_id=doctwin_id, error=str(exc))
         await db.rollback()
         return []
 
@@ -426,7 +425,7 @@ def _tokenise_lexical_query(lexical_query: str) -> list[str]:
 async def _fetch_file_candidates_by_substring(
     *,
     db: AsyncSession,
-    twin_id: str,
+    doctwin_id: str,
     lexical_query: str,
     limit: int,
 ) -> list[Any]:
@@ -435,7 +434,7 @@ async def _fetch_file_candidates_by_substring(
         return []
 
     clauses = []
-    params: dict[str, Any] = {"twin_id": twin_id, "limit": limit}
+    params: dict[str, Any] = {"doctwin_id": doctwin_id, "limit": limit}
     for index, token in enumerate(tokens):
         key = f"token_{index}"
         params[key] = f"%{token}%"
@@ -446,7 +445,7 @@ async def _fetch_file_candidates_by_substring(
         f"""
         SELECT
             f.source_id,
-            f.twin_id,
+            f.doctwin_id,
             f.snapshot_id,
             f.path,
             LEAST(
@@ -456,7 +455,7 @@ async def _fetch_file_candidates_by_substring(
                 )
             ) AS score
         FROM indexed_files f
-        WHERE f.twin_id = :twin_id
+        WHERE f.doctwin_id = :doctwin_id
           AND ({' OR '.join(clauses)})
         ORDER BY score DESC, f.path
         LIMIT :limit
@@ -465,7 +464,7 @@ async def _fetch_file_candidates_by_substring(
     try:
         result = await db.execute(sql, params)
     except Exception as exc:
-        logger.warning("file_candidate_substring_search_failed", twin_id=twin_id, error=str(exc))
+        logger.warning("file_candidate_substring_search_failed", doctwin_id=doctwin_id, error=str(exc))
         await db.rollback()
         return []
     return result.fetchall()
@@ -474,7 +473,7 @@ async def _fetch_file_candidates_by_substring(
 async def _fetch_chunk_candidates_by_substring(
     *,
     db: AsyncSession,
-    twin_id: str,
+    doctwin_id: str,
     lexical_query: str,
     allow_code_snippets: bool,
     limit: int,
@@ -485,7 +484,7 @@ async def _fetch_chunk_candidates_by_substring(
 
     code_filter = "" if allow_code_snippets else "AND c.chunk_type != 'code_snippet'"
     clauses = []
-    params: dict[str, Any] = {"twin_id": twin_id, "limit": limit}
+    params: dict[str, Any] = {"doctwin_id": doctwin_id, "limit": limit}
     for index, token in enumerate(tokens):
         key = f"token_{index}"
         params[key] = f"%{token}%"
@@ -507,7 +506,7 @@ async def _fetch_chunk_candidates_by_substring(
             ) AS score
         FROM chunks c
         JOIN sources s ON s.id = c.source_id
-        WHERE s.twin_id = :twin_id
+        WHERE s.doctwin_id = :doctwin_id
           AND s.status = 'ready'
           AND coalesce(c.source_ref, '') NOT LIKE '__memory__/%'
           {code_filter}
@@ -519,7 +518,7 @@ async def _fetch_chunk_candidates_by_substring(
     try:
         result = await db.execute(sql, params)
     except Exception as exc:
-        logger.warning("lexical_chunk_substring_search_failed", twin_id=twin_id, error=str(exc))
+        logger.warning("lexical_chunk_substring_search_failed", doctwin_id=doctwin_id, error=str(exc))
         await db.rollback()
         return []
     return result.fetchall()
@@ -528,7 +527,7 @@ async def _fetch_chunk_candidates_by_substring(
 async def _fetch_symbol_candidates_by_substring(
     *,
     db: AsyncSession,
-    twin_id: str,
+    doctwin_id: str,
     lexical_query: str,
     limit: int,
 ) -> list[Any]:
@@ -537,7 +536,7 @@ async def _fetch_symbol_candidates_by_substring(
         return []
 
     clauses = []
-    params: dict[str, Any] = {"twin_id": twin_id, "limit": limit}
+    params: dict[str, Any] = {"doctwin_id": doctwin_id, "limit": limit}
     for index, token in enumerate(tokens):
         key = f"token_{index}"
         params[key] = f"%{token}%"
@@ -555,7 +554,7 @@ async def _fetch_symbol_candidates_by_substring(
         f"""
         SELECT
             s.source_id,
-            s.twin_id,
+            s.doctwin_id,
             s.snapshot_id,
             s.path,
             s.symbol_name,
@@ -570,7 +569,7 @@ async def _fetch_symbol_candidates_by_substring(
                 )
             ) AS score
         FROM indexed_symbols s
-        WHERE s.twin_id = :twin_id
+        WHERE s.doctwin_id = :doctwin_id
           AND ({' OR '.join(f'({clause})' for clause in clauses)})
         ORDER BY score DESC, s.path, s.start_line
         LIMIT :limit
@@ -579,7 +578,7 @@ async def _fetch_symbol_candidates_by_substring(
     try:
         result = await db.execute(sql, params)
     except Exception as exc:
-        logger.warning("symbol_candidate_substring_search_failed", twin_id=twin_id, error=str(exc))
+        logger.warning("symbol_candidate_substring_search_failed", doctwin_id=doctwin_id, error=str(exc))
         await db.rollback()
         return []
     return result.fetchall()
@@ -588,7 +587,7 @@ async def _fetch_symbol_candidates_by_substring(
 async def _fetch_chunks_for_symbol_rows(
     *,
     db: AsyncSession,
-    twin_id: str,
+    doctwin_id: str,
     symbol_rows: list[Any],
     allow_code_snippets: bool,
 ) -> list[dict[str, Any]]:
@@ -610,7 +609,7 @@ async def _fetch_chunks_for_symbol_rows(
                 c.end_line
             FROM chunks c
             JOIN sources s ON s.id = c.source_id
-            WHERE s.twin_id = :twin_id
+            WHERE s.doctwin_id = :doctwin_id
               AND s.status = 'ready'
               AND c.source_ref = :path
               AND (
@@ -640,14 +639,14 @@ async def _fetch_chunks_for_symbol_rows(
             result = await db.execute(
                 sql,
                 {
-                    "twin_id": twin_id,
+                    "doctwin_id": doctwin_id,
                     "path": row.path,
                     "start_line": row.start_line,
                     "end_line": row.end_line,
                 },
             )
         except Exception as exc:
-            logger.warning("symbol_chunk_fetch_failed", twin_id=twin_id, path=row.path, error=str(exc))
+            logger.warning("symbol_chunk_fetch_failed", doctwin_id=doctwin_id, path=row.path, error=str(exc))
             await db.rollback()
             continue
 

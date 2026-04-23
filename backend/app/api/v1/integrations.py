@@ -1,12 +1,9 @@
 """
 Integrations API routes.
 
-Handles the full OAuth account-linking lifecycle for GitHub, GitLab, and Google Drive.
-Provides repo/file browser endpoints so the frontend can present a source picker
-backed by the user's real connected accounts.
-
-All routes except the callback require authentication. The callback is reached
-via browser redirect from the OAuth provider so it carries a signed state token
+Handles OAuth account linking for Google Drive and browser endpoints for Drive
+file selection. All routes except the callback require authentication. The callback
+is reached via browser redirect from the provider and carries a signed state token
 instead of a Bearer header.
 
 Route summary:
@@ -14,8 +11,6 @@ Route summary:
   GET  /integrations/{provider}/connect       — get auth URL to start OAuth flow
   GET  /integrations/{provider}/callback      — OAuth callback (browser redirect)
   DELETE /integrations/{account_id}           — disconnect an account
-  GET  /integrations/github/repos             — list GitHub repos (paginated)
-  GET  /integrations/gitlab/projects         — list GitLab projects (paginated)
   GET  /integrations/google_drive/files       — list Drive files/folders
 """
 
@@ -39,17 +34,12 @@ from app.schemas.integrations import (
     ConnectedAccountResponse,
     DriveFileItem,
     OAuthInitResponse,
-    RepoItem,
 )
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 
-# Providers that have dedicated browser endpoints
-_GITHUB = "github"
-_GITLAB = "gitlab"
 _GOOGLE_DRIVE = "google_drive"
-
 _GOOGLE_DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder"
 
 
@@ -111,7 +101,7 @@ async def oauth_callback(
     redis = get_redis()
 
     try:
-        account = await integrations_svc.handle_callback(
+        await integrations_svc.handle_callback(
             provider=provider,
             code=code,
             state=state,
@@ -161,110 +151,6 @@ async def disconnect_account(
 
 
 # ─── Provider resource browsers ───────────────────────────────────────────────
-
-
-@router.get("/github/repos", response_model=list[RepoItem])
-async def list_github_repos(
-    page: int = Query(default=1, ge=1),
-    per_page: int = Query(default=30, ge=1, le=100),
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    List GitHub repositories accessible to the user's connected GitHub account.
-
-    Returns repos from the user's primary (first active) GitHub connected account.
-    Raises 400 if no GitHub account is connected.
-    """
-    access_token = await _require_provider_token(_GITHUB, current_user, db)
-
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.get(
-            "https://api.github.com/user/repos",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-            params={
-                "page": page,
-                "per_page": per_page,
-                "sort": "updated",
-                "affiliation": "owner,collaborator,organization_member",
-            },
-        )
-        try:
-            resp.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            logger.warning("github_repos_fetch_failed", status=exc.response.status_code)
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Failed to fetch repositories from GitHub",
-            )
-        data = resp.json()
-
-    return [
-        RepoItem(
-            id=repo["id"],
-            name=repo["name"],
-            full_name=repo["full_name"],
-            private=repo["private"],
-            default_branch=repo.get("default_branch", "main"),
-            description=repo.get("description"),
-            updated_at=repo.get("updated_at"),
-        )
-        for repo in data
-    ]
-
-
-@router.get("/gitlab/projects", response_model=list[RepoItem])
-async def list_gitlab_projects(
-    page: int = Query(default=1, ge=1),
-    per_page: int = Query(default=30, ge=1, le=100),
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    List GitLab projects accessible to the user's connected GitLab account.
-    """
-    settings = get_settings()
-    access_token = await _require_provider_token(_GITLAB, current_user, db)
-    gitlab_base = settings.gitlab_base_url.rstrip("/")
-
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.get(
-            f"{gitlab_base}/api/v4/projects",
-            headers={"Authorization": f"Bearer {access_token}"},
-            params={
-                "page": page,
-                "per_page": per_page,
-                "membership": "true",
-                "order_by": "last_activity_at",
-                "sort": "desc",
-            },
-        )
-        try:
-            resp.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            logger.warning("gitlab_projects_fetch_failed", status=exc.response.status_code)
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Failed to fetch projects from GitLab",
-            )
-        data = resp.json()
-
-    return [
-        RepoItem(
-            id=project["id"],
-            name=project["name"],
-            full_name=project["path_with_namespace"],
-            private=project.get("visibility", "public") != "public",
-            default_branch=project.get("default_branch", "main"),
-            description=project.get("description"),
-            updated_at=project.get("last_activity_at"),
-        )
-        for project in data
-    ]
 
 
 @router.get("/google_drive/files", response_model=list[DriveFileItem])
@@ -330,6 +216,7 @@ async def _require_provider_token(
     its decrypted access token. Raises 400 if no account is connected.
     """
     from sqlalchemy import select
+
     from app.models.integration import ConnectedAccount
 
     result = await db.execute(
@@ -344,7 +231,10 @@ async def _require_provider_token(
     if account is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"No connected {provider} account. Connect one at /integrations/{provider}/connect",
+            detail=(
+                f"No connected {provider} account. "
+                f"Connect one at /integrations/{provider}/connect"
+            ),
         )
 
     try:

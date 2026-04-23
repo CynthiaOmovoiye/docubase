@@ -15,8 +15,8 @@ import { ChatInterface } from "@/features/chat/components/ChatInterface";
 interface PublicSurfaceInfo {
   surface_type: string;
   public_slug: string;
-  twin_name: string | null;
-  twin_description: string | null;
+  doctwin_name: string | null;
+  doctwin_description: string | null;
   workspace_name: string | null;
   display_name: string | null;
   accent_color: string | null;
@@ -56,7 +56,7 @@ export default function PublicTwinPage() {
     );
   }
 
-  const displayName = info.display_name || info.twin_name || info.workspace_name || "Digital Twin";
+  const displayName = info.display_name || info.doctwin_name || info.workspace_name || "Digital Twin";
   const accentColor = info.accent_color || "#6366F1";
 
   return (
@@ -64,8 +64,8 @@ export default function PublicTwinPage() {
       {/* Header */}
       <header style={s.header}>
         <h1 style={s.title}>{displayName}</h1>
-        {info.twin_description && (
-          <p style={s.subtitle}>{info.twin_description}</p>
+        {info.doctwin_description && (
+          <p style={s.subtitle}>{info.doctwin_description}</p>
         )}
       </header>
 
@@ -81,7 +81,7 @@ export default function PublicTwinPage() {
 
       {/* Footer */}
       <footer style={s.footer}>
-        <p style={s.footerText}>Powered by docubase</p>
+        <p style={s.footerText}>Powered by docbase</p>
       </footer>
     </div>
   );

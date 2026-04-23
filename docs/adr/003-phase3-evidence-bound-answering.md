@@ -7,7 +7,7 @@
 
 ## Context
 
-Phase 2 gave docubase structured retrieval evidence packets, but answer
+Phase 2 gave docbase structured retrieval evidence packets, but answer
 generation still depended too heavily on prompt discipline. The remaining gaps
 were:
 

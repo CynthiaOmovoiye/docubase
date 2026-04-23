@@ -5,13 +5,12 @@ These tests have no DB or external dependencies.
 Policy logic must be deterministic and fast.
 """
 
-import pytest
 
 from app.domains.policy.rules import (
-    is_file_blocked,
-    scan_content_for_secrets,
     can_surface_code_snippet,
+    is_file_blocked,
     redact_sensitive_content,
+    scan_content_for_secrets,
 )
 
 

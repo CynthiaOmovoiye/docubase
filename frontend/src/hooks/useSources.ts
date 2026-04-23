@@ -107,7 +107,7 @@ export function useBackfillLegacySources() {
   return useMutation({
     mutationFn: async ({ twinId }: { twinId: string }) => {
       const { data } = await api.post<{
-        twin_id: string;
+        doctwin_id: string;
         queued_sources: number;
         source_ids: string[];
         message: string;

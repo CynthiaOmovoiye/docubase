@@ -18,11 +18,10 @@ from app.models.chunk import ChunkLineage, ChunkType
 from app.models.source import SourceIndexMode, SourceType
 
 _STRICT_HYDRATION_SOURCE_TYPES = {
-    SourceType.github_repo,
-    SourceType.gitlab_repo,
     SourceType.google_drive,
     SourceType.markdown,
     SourceType.pdf,
+    SourceType.url,
 }
 
 _MEMORY_TYPES = {
@@ -101,7 +100,7 @@ def classify_chunk_lineage(
         return ChunkLineage.memory_derived
     if normalized in _SYNTHETIC_TYPES or source_type == SourceType.manual:
         return ChunkLineage.synthetic_profile
-    if source_type in {SourceType.github_repo, SourceType.gitlab_repo}:
+    if source_type in {SourceType.google_drive, SourceType.markdown, SourceType.pdf, SourceType.url}:
         return ChunkLineage.file_backed
     return ChunkLineage.connector_segment
 
@@ -159,8 +158,6 @@ def determine_index_mode(
 
 
 def stale_after_hours_for_source(source_type: SourceType) -> int:
-    if source_type in {SourceType.github_repo, SourceType.gitlab_repo}:
-        return 24
     if source_type == SourceType.google_drive:
         return 48
     if source_type in {SourceType.pdf, SourceType.markdown, SourceType.url}:

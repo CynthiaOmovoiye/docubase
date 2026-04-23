@@ -18,10 +18,10 @@ Intent-aware retrieval:
   return even when preferred types have no matches yet.
 """
 
-import uuid
 import inspect
-from typing import Any
+import uuid
 from pathlib import PurePosixPath
+from typing import Any
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,26 +33,26 @@ from app.domains.embedding.embedder import (
     get_primary_embedding_profile,
     resolve_embedding_profile,
 )
-from app.domains.retrieval.intent import QueryIntent, extract_path_hint
+from app.domains.retrieval.fact_retrieval import search_implementation_facts_for_twin
 from app.domains.retrieval.hybrid import (
     fetch_file_candidates,
     fetch_lexical_chunk_candidates,
     fetch_symbol_candidates,
     merge_candidate,
 )
+from app.domains.retrieval.hydration import hydrate_retrieved_chunks
+from app.domains.retrieval.intent import QueryIntent, extract_path_hint
+from app.domains.retrieval.multihop import multihop_retrieve_with_graph
 from app.domains.retrieval.packets import (
     EvidenceFileRef,
     EvidenceSymbolRef,
     RetrievalEvidencePacket,
     build_evidence_packet,
 )
-from app.domains.retrieval.fact_retrieval import search_implementation_facts_for_twin
-from app.domains.retrieval.query_decompose import search_terms_from_query
 from app.domains.retrieval.planner import RetrievalMode, build_retrieval_plan
+from app.domains.retrieval.query_decompose import search_terms_from_query
 from app.domains.retrieval.reranker import rerank_chunks, reranker_available
-from app.domains.retrieval.multihop import multihop_retrieve_with_graph
-from app.domains.retrieval.hydration import hydrate_retrieved_chunks
-from app.models.chunk import Chunk, ChunkType
+from app.models.chunk import Chunk
 from app.models.source import Source, SourceStatus
 from app.models.twin import Twin, TwinConfig
 
@@ -248,7 +248,7 @@ def _build_mode_boost_sql(mode: RetrievalMode) -> str:
 
 async def retrieve_packet_for_twin(
     query: str,
-    twin_id: str,
+    doctwin_id: str,
     allow_code_snippets: bool,
     db: AsyncSession,
     top_k: int = 8,
@@ -289,7 +289,7 @@ async def retrieve_packet_for_twin(
 
     code_filter = "" if allow_code_snippets else "AND c.chunk_type != 'code_snippet'"
     boost_sql = _build_mode_boost_sql(plan.mode)
-    profiles = await _load_twin_embedding_profiles(twin_id, db)
+    profiles = await _load_doctwin_embedding_profiles(doctwin_id, db)
     candidates_by_id: dict[str, dict[str, Any]] = {}
     path_fetch_embedding_literal: str | None = None
     file_matches: list[EvidenceFileRef] = []
@@ -309,7 +309,7 @@ async def retrieve_packet_for_twin(
             except Exception as exc:
                 logger.error(
                     "retrieval_embed_failed",
-                    twin_id=twin_id,
+                    doctwin_id=doctwin_id,
                     provider=profile.provider,
                     model=profile.model,
                     error=str(exc),
@@ -321,9 +321,9 @@ async def retrieve_packet_for_twin(
                 path_fetch_embedding_literal = embedding_literal
 
             try:
-                rows = await _fetch_twin_candidates_for_profile(
+                rows = await _fetch_doctwin_candidates_for_profile(
                     db=db,
-                    twin_id=twin_id,
+                    doctwin_id=doctwin_id,
                     embedding_literal=embedding_literal,
                     profile=profile,
                     code_filter=code_filter,
@@ -333,7 +333,7 @@ async def retrieve_packet_for_twin(
             except Exception as exc:
                 logger.error(
                     "retrieval_query_failed",
-                    twin_id=twin_id,
+                    doctwin_id=doctwin_id,
                     provider=profile.provider,
                     model=profile.model,
                     error=str(exc),
@@ -355,12 +355,12 @@ async def retrieve_packet_for_twin(
                 )
     else:
         missing_evidence.append("no_embedding_profiles")
-        logger.info("retrieval_no_embedding_profiles", twin_id=twin_id)
+        logger.info("retrieval_no_embedding_profiles", doctwin_id=doctwin_id)
 
     if "lexical" in plan.searched_layers:
         lexical_chunks = await fetch_lexical_chunk_candidates(
             db=db,
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             lexical_query=plan.lexical_query,
             allow_code_snippets=allow_code_snippets,
             limit=plan.lexical_budget,
@@ -373,7 +373,7 @@ async def retrieve_packet_for_twin(
     if "file" in plan.searched_layers:
         file_result = await fetch_file_candidates(
             db=db,
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             lexical_query=plan.lexical_query,
             allow_code_snippets=allow_code_snippets,
             limit=plan.file_budget,
@@ -387,7 +387,7 @@ async def retrieve_packet_for_twin(
     if "symbol" in plan.searched_layers:
         symbol_result = await fetch_symbol_candidates(
             db=db,
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             lexical_query=plan.lexical_query,
             allow_code_snippets=allow_code_snippets,
             limit=plan.symbol_budget,
@@ -401,7 +401,7 @@ async def retrieve_packet_for_twin(
     if plan.mode in _IMPLEMENTATIONISH_MODES and _query_has_auth_hint(plan.search_query):
         feature_chunks = await _fetch_auth_feature_chunks(
             db=db,
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             query=plan.query,
             allow_code_snippets=allow_code_snippets,
             limit=max(14, top_k),
@@ -411,7 +411,7 @@ async def retrieve_packet_for_twin(
     if _query_has_engine_hint(plan.search_query):
         engine_feature_chunks = await _fetch_engine_feature_chunks(
             db=db,
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             query=plan.query,
             allow_code_snippets=allow_code_snippets,
             limit=max(12, top_k),
@@ -431,13 +431,13 @@ async def retrieve_packet_for_twin(
     if resolved_hints:
         logger.info(
             "retrieval_path_hints_resolving",
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             hints=resolved_hints,
         )
 
     for path_hint in resolved_hints:
         path_chunks = await _fetch_by_path_prefix(
-            path_hint, path_fetch_embedding_literal, twin_id, db,
+            path_hint, path_fetch_embedding_literal, doctwin_id, db,
             allow_code_snippets=allow_code_snippets,
             limit=4,
         )
@@ -447,7 +447,7 @@ async def retrieve_packet_for_twin(
         if path_chunks:
             logger.info(
                 "retrieval_path_hint_added",
-                twin_id=twin_id,
+                doctwin_id=doctwin_id,
                 path_hint=path_hint,
                 added=len(path_chunks),
             )
@@ -457,7 +457,7 @@ async def retrieve_packet_for_twin(
     if "graph" in plan.searched_layers:
         graph_chunks, graph_edges = await multihop_retrieve_with_graph(
             plan.search_query,
-            twin_id,
+            doctwin_id,
             db,
             allow_code_snippets,
             max_additional_chunks=plan.graph_budget,
@@ -472,7 +472,7 @@ async def retrieve_packet_for_twin(
 
     for memory_chunk in await _fetch_supporting_memory_chunks(
         db=db,
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         mode=plan.mode,
     ):
         merge_candidate(candidates_by_id, memory_chunk)
@@ -487,14 +487,14 @@ async def retrieve_packet_for_twin(
             )
             fact_rows = await search_implementation_facts_for_twin(
                 db,
-                twin_id,
+                doctwin_id,
                 terms,
                 limit=plan.fact_budget,
             )
         except Exception as exc:
             logger.warning(
                 "implementation_fact_search_failed",
-                twin_id=twin_id,
+                doctwin_id=doctwin_id,
                 error=str(exc),
             )
             await _safe_rollback(db)
@@ -511,7 +511,7 @@ async def retrieve_packet_for_twin(
             ref_chunks = await _fetch_by_path_prefix(
                 ref,
                 path_fetch_embedding_literal,
-                twin_id,
+                doctwin_id,
                 db,
                 allow_code_snippets=allow_code_snippets,
                 limit=min(_MAX_GUARANTEED_PER_REF, remaining_budget),
@@ -524,7 +524,7 @@ async def retrieve_packet_for_twin(
                 remaining_budget -= 1
         logger.info(
             "retrieval_guaranteed_refs_added",
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             refs=guaranteed_refs,
             added=len(guaranteed_refs),
         )
@@ -542,7 +542,7 @@ async def retrieve_packet_for_twin(
 
     logger.info(
         "retrieval_complete",
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         query_length=len(query),
         chunks_returned=len(chunks),
         intent=plan.intent.value if plan.intent else None,
@@ -557,7 +557,7 @@ async def retrieve_packet_for_twin(
     return build_evidence_packet(
         plan=plan,
         chunks=hydrated_chunks,
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         file_matches=file_matches,
         symbol_matches=symbol_matches,
         graph_edges=graph_edges,
@@ -668,7 +668,7 @@ def _score_and_prune_candidates(
 async def _fetch_auth_feature_chunks(
     *,
     db: AsyncSession,
-    twin_id: str,
+    doctwin_id: str,
     query: str,
     allow_code_snippets: bool,
     limit: int,
@@ -691,7 +691,7 @@ async def _fetch_auth_feature_chunks(
             c.source_ref
         FROM chunks c
         JOIN sources s ON s.id = c.source_id
-        WHERE s.twin_id = :twin_id
+        WHERE s.doctwin_id = :doctwin_id
           AND s.status = 'ready'
           AND coalesce(c.source_ref, '') NOT LIKE '__memory__/%'
           {code_filter}
@@ -740,9 +740,9 @@ async def _fetch_auth_feature_chunks(
         """
     )
     try:
-        result = await db.execute(sql, {"twin_id": twin_id})
+        result = await db.execute(sql, {"doctwin_id": doctwin_id})
     except Exception as exc:
-        logger.warning("auth_feature_chunk_fetch_failed", twin_id=twin_id, error=str(exc))
+        logger.warning("auth_feature_chunk_fetch_failed", doctwin_id=doctwin_id, error=str(exc))
         await _safe_rollback(db)
         return []
 
@@ -790,7 +790,7 @@ async def _fetch_auth_feature_chunks(
 async def _fetch_engine_feature_chunks(
     *,
     db: AsyncSession,
-    twin_id: str,
+    doctwin_id: str,
     query: str,
     allow_code_snippets: bool,
     limit: int,
@@ -806,7 +806,7 @@ async def _fetch_engine_feature_chunks(
             c.source_ref
         FROM chunks c
         JOIN sources s ON s.id = c.source_id
-        WHERE s.twin_id = :twin_id
+        WHERE s.doctwin_id = :doctwin_id
           AND s.status = 'ready'
           AND coalesce(c.source_ref, '') NOT LIKE '__memory__/%'
           {code_filter}
@@ -835,9 +835,9 @@ async def _fetch_engine_feature_chunks(
         """
     )
     try:
-        result = await db.execute(sql, {"twin_id": twin_id})
+        result = await db.execute(sql, {"doctwin_id": doctwin_id})
     except Exception as exc:
-        logger.warning("engine_feature_chunk_fetch_failed", twin_id=twin_id, error=str(exc))
+        logger.warning("engine_feature_chunk_fetch_failed", doctwin_id=doctwin_id, error=str(exc))
         await _safe_rollback(db)
         return []
 
@@ -1136,7 +1136,7 @@ def _is_meta_doc_path(lowered_ref: str) -> bool:
 
 async def retrieve_for_twin(
     query: str,
-    twin_id: str,
+    doctwin_id: str,
     allow_code_snippets: bool,
     db: AsyncSession,
     top_k: int = 8,
@@ -1147,7 +1147,7 @@ async def retrieve_for_twin(
 ) -> list[dict]:
     packet = await retrieve_packet_for_twin(
         query=query,
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         allow_code_snippets=allow_code_snippets,
         db=db,
         top_k=top_k,
@@ -1174,10 +1174,10 @@ async def route_and_retrieve_packet_for_workspace(
     Strategy:
     1. Embed the query
     2. Run pgvector search across all chunks in the workspace
-    3. Group by twin_id and pick the twin with the highest average top-3 score
+    3. Group by doctwin_id and pick the twin with the highest average top-3 score
     4. Retrieve top_k chunks from that twin (code snippets excluded at workspace level)
 
-    Returns (routed_twin_id, evidence_packet).
+    Returns (routed_doctwin_id, evidence_packet).
     """
     effective_intent = intent or QueryIntent.general
     plan = build_retrieval_plan(
@@ -1189,14 +1189,14 @@ async def route_and_retrieve_packet_for_workspace(
         workspace_scope=True,
     )
     if path_hints:
-        structure_twin_id = await _route_by_structure(workspace_id, path_hints, db)
-        if structure_twin_id:
-            inventory = await _load_structure_inventory(structure_twin_id, db)
+        structure_doctwin_id = await _route_by_structure(workspace_id, path_hints, db)
+        if structure_doctwin_id:
+            inventory = await _load_structure_inventory(structure_doctwin_id, db)
             guaranteed_refs = _resolve_refs_from_inventory(path_hints, inventory)
-            allow_code_snippets = await _load_twin_allow_code_snippets(structure_twin_id, db)
+            allow_code_snippets = await _load_doctwin_allow_code_snippets(structure_doctwin_id, db)
             packet = await retrieve_packet_for_twin(
                 query=query,
-                twin_id=structure_twin_id,
+                doctwin_id=structure_doctwin_id,
                 allow_code_snippets=allow_code_snippets,
                 db=db,
                 top_k=top_k,
@@ -1208,12 +1208,12 @@ async def route_and_retrieve_packet_for_workspace(
             logger.info(
                 "routing_complete",
                 workspace_id=workspace_id,
-                routed_twin_id=structure_twin_id,
+                routed_doctwin_id=structure_doctwin_id,
                 chunks_returned=len(packet.chunks),
                 routing_method="structure",
             )
             packet.workspace_id = workspace_id
-            return structure_twin_id, packet
+            return structure_doctwin_id, packet
 
     profiles = await _load_workspace_embedding_profiles(workspace_id, db)
     if not profiles:
@@ -1225,7 +1225,7 @@ async def route_and_retrieve_packet_for_workspace(
         return None, build_evidence_packet(
             plan=plan,
             chunks=[],
-            twin_id=None,
+            doctwin_id=None,
             workspace_id=workspace_id,
             missing_evidence=["no_embedding_profiles"],
         )
@@ -1280,7 +1280,7 @@ async def route_and_retrieve_packet_for_workspace(
                     "chunk_type": row.chunk_type,
                     "source_ref": row.source_ref,
                     "score": float(row.score),
-                    "twin_id": str(row.twin_id),
+                    "doctwin_id": str(row.doctwin_id),
                     "match_reasons": ["vector"],
                 },
             )
@@ -1303,7 +1303,7 @@ async def route_and_retrieve_packet_for_workspace(
         return None, build_evidence_packet(
             plan=plan,
             chunks=[],
-            twin_id=None,
+            doctwin_id=None,
             workspace_id=workspace_id,
             missing_evidence=["no_workspace_candidates"],
         )
@@ -1322,22 +1322,22 @@ async def route_and_retrieve_packet_for_workspace(
     else:
         ranked_candidates = combined_candidates[:fetch_k]
 
-    twin_scores: dict[str, list[float]] = {}
+    doctwin_scores: dict[str, list[float]] = {}
     for candidate in ranked_candidates:
-        twin_scores.setdefault(str(candidate["twin_id"]), []).append(float(candidate["score"]))
+        doctwin_scores.setdefault(str(candidate["doctwin_id"]), []).append(float(candidate["score"]))
 
-    routed_twin_id = max(
-        twin_scores,
-        key=lambda tid: sum(twin_scores[tid][:3]) / len(twin_scores[tid][:3]),
+    routed_doctwin_id = max(
+        doctwin_scores,
+        key=lambda tid: sum(doctwin_scores[tid][:3]) / len(doctwin_scores[tid][:3]),
     )
-    inventory = await _load_structure_inventory(routed_twin_id, db)
+    inventory = await _load_structure_inventory(routed_doctwin_id, db)
     guaranteed_refs = _resolve_refs_from_inventory(path_hints or [], inventory)
-    allow_code_snippets = await _load_twin_allow_code_snippets(routed_twin_id, db)
+    allow_code_snippets = await _load_doctwin_allow_code_snippets(routed_doctwin_id, db)
 
     # Step 2: Retrieve from the selected twin (no code snippets at workspace level)
     packet = await retrieve_packet_for_twin(
         query=query,
-        twin_id=routed_twin_id,
+        doctwin_id=routed_doctwin_id,
         allow_code_snippets=allow_code_snippets,
         db=db,
         top_k=top_k,
@@ -1351,11 +1351,11 @@ async def route_and_retrieve_packet_for_workspace(
     logger.info(
         "routing_complete",
         workspace_id=workspace_id,
-        routed_twin_id=routed_twin_id,
+        routed_doctwin_id=routed_doctwin_id,
         chunks_returned=len(packet.chunks),
         routing_method="embedding",
     )
-    return routed_twin_id, packet
+    return routed_doctwin_id, packet
 
 
 async def route_and_retrieve_for_workspace(
@@ -1367,7 +1367,7 @@ async def route_and_retrieve_for_workspace(
     path_hints: list[str] | None = None,
     expanded_query: str = "",
 ) -> tuple[str | None, list[dict]]:
-    routed_twin_id, packet = await route_and_retrieve_packet_for_workspace(
+    routed_doctwin_id, packet = await route_and_retrieve_packet_for_workspace(
         query=query,
         workspace_id=workspace_id,
         db=db,
@@ -1376,7 +1376,7 @@ async def route_and_retrieve_for_workspace(
         path_hints=path_hints,
         expanded_query=expanded_query,
     )
-    return routed_twin_id, packet.chunks
+    return routed_doctwin_id, packet.chunks
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1386,8 +1386,8 @@ def _format_embedding(embedding: list[float]) -> str:
     return "[" + ",".join(f"{v:.8f}" for v in embedding) + "]"
 
 
-async def _load_twin_embedding_profiles(
-    twin_id: str,
+async def _load_doctwin_embedding_profiles(
+    doctwin_id: str,
     db: AsyncSession,
 ) -> list[EmbeddingProfile]:
     result = await db.execute(
@@ -1398,7 +1398,7 @@ async def _load_twin_embedding_profiles(
         )
         .join(Chunk, Chunk.source_id == Source.id)
         .where(
-            Source.twin_id == uuid.UUID(twin_id),
+            Source.doctwin_id == uuid.UUID(doctwin_id),
             Source.status == SourceStatus.ready,
             Chunk.embedding.is_not(None),
         )
@@ -1417,7 +1417,7 @@ async def _load_workspace_embedding_profiles(
             Source.embedding_model,
             Source.embedding_dimensions,
         )
-        .join(Twin, Twin.id == Source.twin_id)
+        .join(Twin, Twin.id == Source.doctwin_id)
         .join(Chunk, Chunk.source_id == Source.id)
         .where(
             Twin.workspace_id == uuid.UUID(workspace_id),
@@ -1429,13 +1429,13 @@ async def _load_workspace_embedding_profiles(
     return _rows_to_profiles(result.fetchall())
 
 
-async def _load_twin_allow_code_snippets(
-    twin_id: str,
+async def _load_doctwin_allow_code_snippets(
+    doctwin_id: str,
     db: AsyncSession,
 ) -> bool:
     result = await db.execute(
         select(TwinConfig.allow_code_snippets).where(
-            TwinConfig.twin_id == uuid.UUID(twin_id)
+            TwinConfig.doctwin_id == uuid.UUID(doctwin_id)
         )
     )
     return bool(result.scalar_one_or_none())
@@ -1472,10 +1472,10 @@ def _profile_query_params(profile: EmbeddingProfile) -> dict[str, Any]:
     }
 
 
-async def _fetch_twin_candidates_for_profile(
+async def _fetch_doctwin_candidates_for_profile(
     *,
     db: AsyncSession,
-    twin_id: str,
+    doctwin_id: str,
     embedding_literal: str,
     profile: EmbeddingProfile,
     code_filter: str,
@@ -1492,7 +1492,7 @@ async def _fetch_twin_candidates_for_profile(
             (1 - (c.embedding <=> :embedding ::vector)){boost_sql} AS score
         FROM chunks c
         JOIN sources s ON s.id = c.source_id
-        WHERE s.twin_id = :twin_id
+        WHERE s.doctwin_id = :doctwin_id
           AND s.status = 'ready'
           AND c.embedding IS NOT NULL
           AND COALESCE(s.embedding_provider, :legacy_provider) = :profile_provider
@@ -1506,7 +1506,7 @@ async def _fetch_twin_candidates_for_profile(
     )
     params = {
         "embedding": embedding_literal,
-        "twin_id": str(twin_id),
+        "doctwin_id": str(doctwin_id),
         "min_score": _MIN_SCORE,
         "top_k": top_k,
         **_profile_query_params(profile),
@@ -1530,11 +1530,11 @@ async def _fetch_workspace_candidates_for_profile(
             c.content,
             c.chunk_type,
             c.source_ref,
-            s.twin_id,
+            s.doctwin_id,
             1 - (c.embedding <=> :embedding ::vector) AS score
         FROM chunks c
         JOIN sources s ON s.id = c.source_id
-        JOIN twins t ON t.id = s.twin_id
+        JOIN twins t ON t.id = s.doctwin_id
         WHERE t.workspace_id = :workspace_id
           AND s.status = 'ready'
           AND c.embedding IS NOT NULL
@@ -1578,7 +1578,7 @@ async def _fetch_workspace_lexical_candidates(
             c.content,
             c.chunk_type,
             c.source_ref,
-            s.twin_id,
+            s.doctwin_id,
             LEAST(
                 0.95,
                 0.35 + ts_rank_cd(
@@ -1589,7 +1589,7 @@ async def _fetch_workspace_lexical_candidates(
             ) AS score
         FROM chunks c
         JOIN sources s ON s.id = c.source_id
-        JOIN twins t ON t.id = s.twin_id
+        JOIN twins t ON t.id = s.doctwin_id
         CROSS JOIN lexical_query
         WHERE t.workspace_id = :workspace_id
           AND s.status = 'ready'
@@ -1623,7 +1623,7 @@ async def _fetch_workspace_lexical_candidates(
             "content": row.content,
             "chunk_type": row.chunk_type,
             "source_ref": row.source_ref,
-            "twin_id": str(row.twin_id),
+            "doctwin_id": str(row.doctwin_id),
             "score": float(row.score),
             "match_reasons": ["lexical"],
         }
@@ -1634,7 +1634,7 @@ async def _fetch_workspace_lexical_candidates(
 async def _fetch_supporting_memory_chunks(
     *,
     db: AsyncSession,
-    twin_id: str,
+    doctwin_id: str,
     mode: RetrievalMode,
 ) -> list[dict[str, Any]]:
     if mode == RetrievalMode.onboarding:
@@ -1653,7 +1653,7 @@ async def _fetch_supporting_memory_chunks(
         SELECT c.id, c.content, c.chunk_type, c.source_ref, c.metadata AS chunk_metadata
         FROM chunks c
         JOIN sources s ON s.id = c.source_id
-        WHERE s.twin_id = :twin_id
+        WHERE s.doctwin_id = :doctwin_id
           AND s.status = 'ready'
           AND c.source_ref LIKE '__memory__/%'
           AND c.chunk_type = ANY(:chunk_types)
@@ -1665,12 +1665,12 @@ async def _fetch_supporting_memory_chunks(
         result = await db.execute(
             sql,
             {
-                "twin_id": str(twin_id),
+                "doctwin_id": str(doctwin_id),
                 "chunk_types": chunk_types,
             },
         )
     except Exception as exc:
-        logger.warning("supporting_memory_chunk_fetch_failed", twin_id=twin_id, error=str(exc))
+        logger.warning("supporting_memory_chunk_fetch_failed", doctwin_id=doctwin_id, error=str(exc))
         await db.rollback()
         return []
 
@@ -1688,7 +1688,7 @@ async def _fetch_supporting_memory_chunks(
     ]
 
 
-async def _load_structure_inventory(twin_id: str, db: AsyncSession) -> dict:
+async def _load_structure_inventory(doctwin_id: str, db: AsyncSession) -> dict:
     """
     Load a merged structure inventory for all ready sources attached to a twin.
 
@@ -1698,7 +1698,7 @@ async def _load_structure_inventory(twin_id: str, db: AsyncSession) -> dict:
     result = await db.execute(
         select(Source.structure_index)
         .where(
-            Source.twin_id == uuid.UUID(twin_id),
+            Source.doctwin_id == uuid.UUID(doctwin_id),
             Source.status == SourceStatus.ready,
             Source.name != "__memory__",
         )
@@ -1733,7 +1733,7 @@ async def _load_structure_inventory(twin_id: str, db: AsyncSession) -> dict:
         select(Chunk.source_ref)
         .join(Source, Chunk.source_id == Source.id)
         .where(
-            Source.twin_id == uuid.UUID(twin_id),
+            Source.doctwin_id == uuid.UUID(doctwin_id),
             Source.status == SourceStatus.ready,
             Chunk.source_ref.is_not(None),
             Chunk.source_ref.not_like("__memory__%"),
@@ -1767,7 +1767,7 @@ def _resolve_refs_from_inventory(path_hints: list[str], inventory: dict) -> list
             continue
 
         matched_dir = False
-        for dir_path, file_paths in meaningful_dirs.items():
+        for dir_path, _file_paths in meaningful_dirs.items():
             normalised_dir = _normalise_structure_key(dir_path)
             if _matches_structure_hint(normalised_hint, normalised_dir):
                 if dir_path not in seen:
@@ -1778,15 +1778,14 @@ def _resolve_refs_from_inventory(path_hints: list[str], inventory: dict) -> list
         if matched_dir:
             continue
 
-        for dir_path, file_paths in meaningful_dirs.items():
+        for _dir_path, file_paths in meaningful_dirs.items():
             for file_path in file_paths:
                 normalised_file = _normalise_structure_key(file_path)
-                if _matches_structure_hint(normalised_hint, normalised_file) or (
+                if (_matches_structure_hint(normalised_hint, normalised_file) or (
                     len(normalised_hint) >= 4 and normalised_hint in normalised_file
-                ):
-                    if file_path not in seen:
-                        resolved.append((1, file_path))
-                        seen.add(file_path)
+                )) and file_path not in seen:
+                    resolved.append((1, file_path))
+                    seen.add(file_path)
 
     resolved.sort(key=lambda item: (item[0], _dir_depth(item[1]), item[1]))
     return [ref for _, ref in resolved]
@@ -1801,8 +1800,8 @@ async def _route_by_structure(
     Route to a twin by deterministic structure match before embedding routing.
     """
     result = await db.execute(
-        select(Source.twin_id, Source.structure_index)
-        .join(Twin, Twin.id == Source.twin_id)
+        select(Source.doctwin_id, Source.structure_index)
+        .join(Twin, Twin.id == Source.doctwin_id)
         .where(
             Twin.workspace_id == uuid.UUID(workspace_id),
             Source.status == SourceStatus.ready,
@@ -1816,23 +1815,23 @@ async def _route_by_structure(
         inventory = row.structure_index or {}
         matched_refs = _resolve_refs_from_inventory(path_hints, inventory)
         if matched_refs:
-            matched_twins.add(str(row.twin_id))
+            matched_twins.add(str(row.doctwin_id))
 
     if len(matched_twins) == 1:
-        twin_id = next(iter(matched_twins))
+        doctwin_id = next(iter(matched_twins))
         logger.info(
             "structure_routing_matched",
             workspace_id=workspace_id,
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             path_hints=path_hints,
         )
-        return twin_id
+        return doctwin_id
 
     if len(matched_twins) > 1:
         logger.info(
             "structure_routing_ambiguous",
             workspace_id=workspace_id,
-            twin_ids=sorted(matched_twins),
+            doctwin_ids=sorted(matched_twins),
             path_hints=path_hints,
         )
     return None
@@ -1841,7 +1840,7 @@ async def _route_by_structure(
 async def _fetch_by_path_prefix(
     path_hint: str,
     embedding_literal: str | None,
-    twin_id: str,
+    doctwin_id: str,
     db: AsyncSession,
     allow_code_snippets: bool = True,
     limit: int = 4,
@@ -1889,7 +1888,7 @@ async def _fetch_by_path_prefix(
             {score_sql} AS score
         FROM chunks c
         JOIN sources s ON s.id = c.source_id
-        WHERE s.twin_id = :twin_id
+        WHERE s.doctwin_id = :doctwin_id
           AND s.status = 'ready'
           AND lower(c.source_ref) LIKE :prefix
           {code_filter}
@@ -1902,7 +1901,7 @@ async def _fetch_by_path_prefix(
             sql,
             {
                 "embedding": embedding_literal,
-                "twin_id": str(twin_id),
+                "doctwin_id": str(doctwin_id),
                 "prefix": f"{path_hint.lower()}%",
                 "limit": limit,
             },
@@ -1925,7 +1924,7 @@ async def _fetch_by_path_prefix(
     ]
     logger.debug(
         "retrieval_path_prefix_fetch",
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         path_hint=path_hint,
         found=len(chunks),
         sources=[c["source_ref"] for c in chunks],

@@ -20,16 +20,16 @@ from app.models.source import SourceIndexMode, SourceType
 class TestEvidenceHelpers:
     def test_classifies_memory_and_repo_chunks(self):
         assert (
-            classify_chunk_lineage(ChunkType.memory_brief, SourceType.github_repo)
+            classify_chunk_lineage(ChunkType.memory_brief, SourceType.google_drive)
             == ChunkLineage.memory_derived
         )
         assert (
-            classify_chunk_lineage(ChunkType.code_snippet, SourceType.github_repo)
+            classify_chunk_lineage(ChunkType.code_snippet, SourceType.google_drive)
             == ChunkLineage.file_backed
         )
         assert (
             classify_chunk_lineage(ChunkType.documentation, SourceType.pdf)
-            == ChunkLineage.connector_segment
+            == ChunkLineage.file_backed
         )
 
     def test_build_segment_id_prefers_line_span(self):
@@ -53,7 +53,7 @@ class TestEvidenceHelpers:
 
     def test_build_index_health_marks_legacy_when_support_missing(self):
         health = build_index_health(
-            source_type=SourceType.url,
+            source_type=SourceType.manual,
             snapshot_id="hash:abc",
             snapshot_root_hash="abc",
             stats={"files_received": 1, "files_processed": 1, "chunks_created": 2, "chunks_embedded": 2},
@@ -120,8 +120,8 @@ class TestHydration:
         source = SimpleNamespace(
             id="source-1",
             index_mode=SourceIndexMode.strict,
-            source_type=SourceType.github_repo,
-            connection_config={"repo_url": "org/repo"},
+            source_type=SourceType.google_drive,
+            connection_config={"file_id": "x", "file_path": "app/auth.py"},
             snapshot_id="a" * 40,
             last_commit_sha="a" * 40,
             connected_account_id="account-1",
@@ -162,8 +162,8 @@ class TestHydration:
         source = SimpleNamespace(
             id="source-1",
             index_mode=SourceIndexMode.strict,
-            source_type=SourceType.github_repo,
-            connection_config={"repo_url": "org/repo"},
+            source_type=SourceType.google_drive,
+            connection_config={"file_id": "x", "file_path": "app/auth.py"},
             snapshot_id="a" * 40,
             last_commit_sha="a" * 40,
             connected_account_id="account-1",
@@ -217,8 +217,14 @@ class TestHydration:
         db.execute = AsyncMock(return_value=result)
 
         with patch(
-            "app.domains.retrieval.hydration.load_source_file_text",
-            AsyncMock(return_value=None),
+            "app.domains.retrieval.hydration._build_canonical_chunk_map",
+            return_value={
+                ("documentation", "README.md:4-4:documentation"): {
+                    "content": hydrated_text,
+                    "chunk_type": ChunkType.documentation,
+                    "segment_id": "README.md:4-4:documentation",
+                }
+            },
         ):
             hydrated = await hydrate_retrieved_chunks(
                 [{"chunk_id": chunk_id, "content": "stale", "chunk_type": "documentation"}],

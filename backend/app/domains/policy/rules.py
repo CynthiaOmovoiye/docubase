@@ -71,7 +71,7 @@ ALWAYS_BLOCKED_FILENAME_PATTERNS: list[str] = [
     ".npmrc",
     ".yarnrc",
     ".pypirc",
-    ".gitconfig",           # can contain GitHub tokens
+    ".gitconfig",           # may contain remote credentials
     # Docker
     "config.json",          # matched only when the parent dir is ".docker" — see path check below
     # Generic token / secret filenames
@@ -103,7 +103,7 @@ ALWAYS_BLOCKED_DIR_NAMES: frozenset[str] = frozenset({
     ".cursor",
     # Aider
     ".aider",
-    # GitHub Copilot workspace files
+    # Copilot / IDE assistant workspace files
     ".copilot",
     # Continue.dev
     ".continue",
@@ -131,8 +131,8 @@ SECRET_LINE_PATTERNS: list[re.Pattern] = [
     re.compile(r'(?i)\b(token|auth_token|access_token)\b\s*:\s*["\'][\w\-]{20,}["\']'),
     re.compile(r'sk-[a-zA-Z0-9]{20,}'),           # OpenAI-style key pattern
     re.compile(r'sk-or-v1-[a-zA-Z0-9_-]{20,}'),  # OpenRouter API key
-    re.compile(r'ghp_[a-zA-Z0-9]{36}'),            # GitHub personal token
-    re.compile(r'glpat-[a-zA-Z0-9\-]{20,}'),       # GitLab token
+    re.compile(r'ghp_[a-zA-Z0-9]{36}'),            # classic ghp_ PAT shape
+    re.compile(r'glpat-[a-zA-Z0-9\-]{20,}'),       # classic glpat- PAT shape
     re.compile(r'-----BEGIN (RSA |EC )?PRIVATE KEY-----'),
     re.compile(r'AKIA[0-9A-Z]{16}'),               # AWS Access Key ID
 ]

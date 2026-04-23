@@ -14,7 +14,6 @@ from typing import Any
 from app.domains.retrieval.fact_retrieval import build_flow_outline
 from app.domains.retrieval.planner import RetrievalMode, RetrievalPlan
 
-
 LEXICAL_SEARCH_SUBSTRATE = "postgres_fts"
 _BACKTICK_RE = re.compile(r"`([^`\n]{1,200})`")
 _FILELIKE_RE = re.compile(
@@ -25,7 +24,7 @@ _FILELIKE_RE = re.compile(
 @dataclass(slots=True)
 class EvidenceFileRef:
     path: str
-    twin_id: str | None = None
+    doctwin_id: str | None = None
     source_id: str | None = None
     snapshot_id: str | None = None
     reasons: list[str] = field(default_factory=list)
@@ -37,7 +36,7 @@ class EvidenceSymbolRef:
     qualified_name: str
     symbol_kind: str
     path: str
-    twin_id: str | None = None
+    doctwin_id: str | None = None
     source_id: str | None = None
     snapshot_id: str | None = None
     reasons: list[str] = field(default_factory=list)
@@ -48,7 +47,7 @@ class EvidenceSpan:
     chunk_id: str
     chunk_type: str
     path: str | None
-    twin_id: str | None
+    doctwin_id: str | None
     source_id: str | None
     snapshot_id: str | None
     start_line: int | None
@@ -65,7 +64,7 @@ class RetrievalEvidencePacket:
     intent: str | None
     mode: RetrievalMode
     search_substrate: str = LEXICAL_SEARCH_SUBSTRATE
-    twin_id: str | None = None
+    doctwin_id: str | None = None
     workspace_id: str | None = None
     searched_layers: list[str] = field(default_factory=list)
     negative_evidence_scope: list[str] = field(default_factory=list)
@@ -89,7 +88,7 @@ def build_evidence_packet(
     *,
     plan: RetrievalPlan,
     chunks: list[dict[str, Any]],
-    twin_id: str | None,
+    doctwin_id: str | None,
     workspace_id: str | None = None,
     file_matches: list[EvidenceFileRef] | None = None,
     symbol_matches: list[EvidenceSymbolRef] | None = None,
@@ -112,7 +111,7 @@ def build_evidence_packet(
         lexical_query=plan.lexical_query,
         intent=plan.intent.value if plan.intent else None,
         mode=plan.mode,
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         workspace_id=workspace_id,
         searched_layers=list(plan.searched_layers),
         negative_evidence_scope=list(plan.negative_evidence_scope),
@@ -143,7 +142,7 @@ def _build_spans(chunks: list[dict[str, Any]]) -> list[EvidenceSpan]:
                 chunk_id=str(chunk.get("chunk_id")),
                 chunk_type=str(chunk_type),
                 path=chunk.get("source_ref"),
-                twin_id=chunk.get("twin_id"),
+                doctwin_id=chunk.get("doctwin_id"),
                 source_id=chunk.get("source_id"),
                 snapshot_id=chunk.get("snapshot_id"),
                 start_line=chunk.get("start_line"),
@@ -167,7 +166,7 @@ def _merge_files(
                 _upsert_file_ref(
                     by_path,
                     path=derived_path,
-                    twin_id=chunk.get("twin_id"),
+                    doctwin_id=chunk.get("doctwin_id"),
                     source_id=chunk.get("source_id"),
                     snapshot_id=chunk.get("snapshot_id"),
                     reasons=[derived_reason, *(chunk.get("match_reasons") or [])],
@@ -176,7 +175,7 @@ def _merge_files(
         _upsert_file_ref(
             by_path,
             path=str(path),
-            twin_id=chunk.get("twin_id"),
+            doctwin_id=chunk.get("doctwin_id"),
             source_id=chunk.get("source_id"),
             snapshot_id=chunk.get("snapshot_id"),
             reasons=list(chunk.get("match_reasons") or []),
@@ -188,7 +187,7 @@ def _upsert_file_ref(
     by_path: dict[str, EvidenceFileRef],
     *,
     path: str,
-    twin_id: str | None,
+    doctwin_id: str | None,
     source_id: str | None,
     snapshot_id: str | None,
     reasons: list[str],
@@ -197,7 +196,7 @@ def _upsert_file_ref(
     if file_ref is None:
         file_ref = EvidenceFileRef(
             path=path,
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             source_id=source_id,
             snapshot_id=snapshot_id,
             reasons=[],

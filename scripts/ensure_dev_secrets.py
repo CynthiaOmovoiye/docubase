@@ -7,7 +7,7 @@ Run automatically from scripts/setup.sh; safe to re-run — only touches placeho
 
 Docker Compose injects env_file at *container create* time. `docker compose restart`
 does NOT reload .env — after this script updates secrets, we recreate backend + worker
-(unless DOCUBASE_NO_DOCKER_RECREATE=1).
+(unless DOCBASE_NO_DOCKER_RECREATE=1).
 """
 
 from __future__ import annotations
@@ -47,9 +47,9 @@ def _substitute_placeholder_keys(content: str) -> tuple[str, list[str]]:
 
 def _try_recreate_backend_worker() -> None:
     """Apply new env_file values — required after editing .env."""
-    if os.environ.get("DOCUBASE_NO_DOCKER_RECREATE", "").strip() in ("1", "true", "yes"):
+    if os.environ.get("DOCBASE_NO_DOCKER_RECREATE", "").strip() in ("1", "true", "yes"):
         print(
-            "Skipped Docker recreate (DOCUBASE_NO_DOCKER_RECREATE is set). "
+            "Skipped Docker recreate (DOCBASE_NO_DOCKER_RECREATE is set). "
             "Run: docker compose up -d --force-recreate backend worker"
         )
         return

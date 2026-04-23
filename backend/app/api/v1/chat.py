@@ -32,18 +32,18 @@ router = APIRouter()
 # ─── Authenticated routes ─────────────────────────────────────────────────────
 
 @router.post(
-    "/twin/{twin_id}/session",
+    "/twin/{doctwin_id}/session",
     status_code=status.HTTP_201_CREATED,
     response_model=CreateSessionResponse,
 )
-async def create_twin_session(
-    twin_id: uuid.UUID,
+async def create_doctwin_session(
+    doctwin_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Start a new chat session for a specific twin."""
     try:
-        session = await chat_svc.create_twin_session(twin_id, current_user.id, db)
+        session = await chat_svc.create_doctwin_session(doctwin_id, current_user.id, db)
     except chat_svc.NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except chat_svc.ForbiddenError as exc:
@@ -138,11 +138,11 @@ async def get_history(
 
 
 @router.get(
-    "/twin/{twin_id}/sessions",
+    "/twin/{doctwin_id}/sessions",
     response_model=list[ChatSessionSummary],
 )
-async def list_twin_sessions(
-    twin_id: uuid.UUID,
+async def list_doctwin_sessions(
+    doctwin_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -151,7 +151,7 @@ async def list_twin_sessions(
     Returns lightweight summaries for the session history UI.
     """
     try:
-        summaries = await chat_svc.list_sessions_for_twin(twin_id, current_user.id, db)
+        summaries = await chat_svc.list_sessions_for_twin(doctwin_id, current_user.id, db)
     except chat_svc.NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except chat_svc.ForbiddenError as exc:

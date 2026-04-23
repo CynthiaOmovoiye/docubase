@@ -43,7 +43,7 @@ def upgrade() -> None:
         "indexed_relationships",
         sa.Column("indexed_file_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("source_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("twin_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("doctwin_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("snapshot_id", sa.String(length=200), nullable=False),
         sa.Column("source_ref", sa.String(length=512), nullable=False),
         sa.Column("source_kind", sa.String(length=64), nullable=False),
@@ -56,7 +56,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["indexed_file_id"], ["indexed_files.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["source_id"], ["sources.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["twin_id"], ["twins.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["doctwin_id"], ["twins.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "indexed_file_id",
@@ -70,13 +70,13 @@ def upgrade() -> None:
     op.create_index("ix_indexed_relationships_source", "indexed_relationships", ["source_id", "relationship_type"], unique=False)
     op.create_index("ix_indexed_relationships_source_id", "indexed_relationships", ["source_id"], unique=False)
     op.create_index("ix_indexed_relationships_target", "indexed_relationships", ["source_id", "target_ref"], unique=False)
-    op.create_index("ix_indexed_relationships_twin", "indexed_relationships", ["twin_id", "relationship_type"], unique=False)
-    op.create_index("ix_indexed_relationships_twin_id", "indexed_relationships", ["twin_id"], unique=False)
+    op.create_index("ix_indexed_relationships_twin", "indexed_relationships", ["doctwin_id", "relationship_type"], unique=False)
+    op.create_index("ix_indexed_relationships_doctwin_id", "indexed_relationships", ["doctwin_id"], unique=False)
 
     op.create_table(
         "git_activities",
         sa.Column("source_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("twin_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("doctwin_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("snapshot_id", sa.String(length=200), nullable=False),
         sa.Column("activity_type", sa.String(length=32), nullable=False),
         sa.Column("activity_key", sa.String(length=128), nullable=False),
@@ -95,7 +95,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["source_id"], ["sources.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["twin_id"], ["twins.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["doctwin_id"], ["twins.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "source_id",
@@ -108,8 +108,8 @@ def upgrade() -> None:
     op.create_index("ix_git_activities_snapshot", "git_activities", ["snapshot_id"], unique=False)
     op.create_index("ix_git_activities_source_id", "git_activities", ["source_id"], unique=False)
     op.create_index("ix_git_activities_source_time", "git_activities", ["source_id", "occurred_at"], unique=False)
-    op.create_index("ix_git_activities_twin_id", "git_activities", ["twin_id"], unique=False)
-    op.create_index("ix_git_activities_twin_type", "git_activities", ["twin_id", "activity_type"], unique=False)
+    op.create_index("ix_git_activities_doctwin_id", "git_activities", ["doctwin_id"], unique=False)
+    op.create_index("ix_git_activities_doctwin_type", "git_activities", ["doctwin_id", "activity_type"], unique=False)
 
     op.create_table(
         "embedding_cache_entries",
@@ -139,14 +139,14 @@ def downgrade() -> None:
     op.drop_index("ix_embedding_cache_profile", table_name="embedding_cache_entries")
     op.drop_table("embedding_cache_entries")
 
-    op.drop_index("ix_git_activities_twin_type", table_name="git_activities")
-    op.drop_index("ix_git_activities_twin_id", table_name="git_activities")
+    op.drop_index("ix_git_activities_doctwin_type", table_name="git_activities")
+    op.drop_index("ix_git_activities_doctwin_id", table_name="git_activities")
     op.drop_index("ix_git_activities_source_time", table_name="git_activities")
     op.drop_index("ix_git_activities_source_id", table_name="git_activities")
     op.drop_index("ix_git_activities_snapshot", table_name="git_activities")
     op.drop_table("git_activities")
 
-    op.drop_index("ix_indexed_relationships_twin_id", table_name="indexed_relationships")
+    op.drop_index("ix_indexed_relationships_doctwin_id", table_name="indexed_relationships")
     op.drop_index("ix_indexed_relationships_twin", table_name="indexed_relationships")
     op.drop_index("ix_indexed_relationships_target", table_name="indexed_relationships")
     op.drop_index("ix_indexed_relationships_source_id", table_name="indexed_relationships")

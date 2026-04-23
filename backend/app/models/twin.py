@@ -10,10 +10,10 @@ from app.core.db import Base
 from app.models.base import TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from app.models.source import Source
-    from app.models.workspace import Workspace
     from app.models.chat import ChatSession
     from app.models.sharing import ShareSurface
+    from app.models.source import Source
+    from app.models.workspace import Workspace
 
 
 class Twin(Base, UUIDMixin, TimestampMixin):
@@ -65,9 +65,9 @@ class TwinConfig(Base, UUIDMixin, TimestampMixin):
     - Visibility level
     """
 
-    __tablename__ = "twin_configs"
+    __tablename__ = "doctwin_configs"
 
-    twin_id: Mapped[uuid.UUID] = mapped_column(
+    doctwin_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("twins.id", ondelete="CASCADE"),
         nullable=False,

@@ -43,7 +43,7 @@ dependency information. Analyse them and return a JSON object:
 
 {
   "repo_type": "<one of: product_codebase | library_package | educational_course | \
-documentation | community_repo | mixed>",
+documentation | community_repo | mixed | sparse_corpus>",
 
   "repo_type_reasoning": "<1-2 sentences explaining why you classified it this way \
 based on the actual content you saw>",
@@ -87,6 +87,11 @@ monorepo with shared utilities'.>"
 
 Hard rules:
 - Read the content first. Classify the repo type BEFORE writing anything else.
+- Use repo_type "sparse_corpus" when the excerpts are clearly a single personal or
+  business document (resume/CV, portfolio PDF, one contract or report), OR when there
+  are fewer than three distinct file paths and no real software project layout (no
+  meaningful package tree, app entrypoints, or library layout evident in the excerpts).
+  Do NOT choose community_repo or product_codebase for a lone CV/resume PDF.
 - Base every statement on the provided content. Do not speculate or invent.
 - If this is a course or educational repo: the "structure" array should describe
   weeks, modules, or sections — NOT pretend there is an application backend or frontend
@@ -201,17 +206,19 @@ Hard rules:
 # genuinely useful for the actual type of repository.
 
 MEMORY_BRIEF_SYSTEM = """\
-You are generating the Repository Memory Brief — the first document any new contributor,
-student, reviewer, or stakeholder reads to understand this repository.
+You are generating the Memory Brief for a DocBase twin — the first document a reader
+sees to understand what evidence has been indexed for this twin.
 
-It should read like a senior person with deep knowledge of the repo sat down and wrote
-a reference that would save a newcomer hours of exploration.
+It should read like someone who has reviewed the ingested material wrote a concise
+onboarding note. The brief MUST reflect only what appears in the facts below (chunk
+excerpts, structure inventory, graph summary). It is not a guess about an entire
+upstream Git hosting project unless that full tree is actually represented in the data.
 
-You will receive structured facts extracted from the repository, including a "repo_type"
-field. Use that to guide every section you write.
+You will receive structured facts extracted from the indexed material, including a "repo_type"
+field from the architecture pass. Use that to guide every section you write.
 
-CRITICAL INSTRUCTION: Adapt your section headings and content to what the repository
-actually is. Do NOT apply a product-codebase template to a course or community repo.
+CRITICAL INSTRUCTION: Adapt your section headings and content to what the indexed material
+actually is. Do NOT apply a product-codebase template to a course, community repo, or sparse corpus.
 Examples:
 
   If repo_type = "educational_course":
@@ -242,8 +249,18 @@ Examples:
     Use sections like: What This Documentation Covers, Structure, Key Sections,
     Recent Updates, How to Contribute.
 
+  If repo_type = "sparse_corpus" OR the Structure Overview shows only _root with a single
+    file (or otherwise fewer than three indexed paths and no software layout):
+    The first heading MUST be exactly: ## What Is Indexed in This Twin
+    Explain that the brief describes only the files listed in the structure inventory,
+    not a full multi-file codebase unless those files are actually listed. Follow with
+    sections such as: Document Summary, Structure Overview (tie to the listed paths),
+    Recent Activity, Where to Start. Avoid "Architecture", "Tech Stack", or "Key Modules"
+    unless the excerpts clearly show a real application.
+
 In ALL cases, follow these structural rules:
-- The first section must explain what the repository is in plain language.
+- The first section must explain, in plain language, what the indexed material is and
+  what scope the reader should assume (twin-level evidence, not an imagined whole repo).
 - Include a "Recent Activity" or "Recent Changes" section using commit data.
   If no commit data is available, write "No recent activity data available."
 - Include a "Where to Start" section explaining how to approach the repo
@@ -252,6 +269,11 @@ In ALL cases, follow these structural rules:
   provided AND they add genuine value. Otherwise omit it.
 
 Hard rules:
+- INDEXING SCOPE: Never open with phrasing like "This repository contains a single document"
+  when you mean "the ingested evidence for this twin is currently one document". For
+  sparse_corpus or a single-file structure inventory, say explicitly that the Memory Brief
+  reflects only what DocBase has indexed (name the paths). Do not imply the twin already
+  mirrors a full software repository on Git hosting.
 - COVERAGE RULE (non-negotiable): A "Structure Overview" section will be provided
   listing every meaningful directory in the repository. Every directory listed there
   MUST be named explicitly in your output — either as its own section or explicitly
@@ -264,7 +286,8 @@ Hard rules:
 - Do not use the word "architecture" to describe a course curriculum.
 - Do not pretend there is a frontend or backend if the repo is a course.
 - Do not pretend the repo is a course if it is a product.
-- Write as someone who has read the full repository — not as a generic AI assistant.
+- Write as someone who has read the provided indexed material — not as a generic AI assistant.
+  Do not claim breadth beyond what the Structure Overview and excerpts support.
 - Do not add a preamble, title, or anything before the first ## heading.
 - Use plain ASCII diagrams if they help. Do NOT use Mermaid or other diagram languages.
 """

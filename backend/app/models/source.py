@@ -10,12 +10,12 @@ from app.core.db import Base
 from app.models.base import TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from app.models.twin import Twin
     from app.models.chunk import Chunk
     from app.models.integration import ConnectedAccount
+    from app.models.twin import Twin
 
 
-class SourceType(str, enum.Enum):
+class SourceType(enum.StrEnum):
     """
     All supported source types.
 
@@ -28,7 +28,7 @@ class SourceType(str, enum.Enum):
     manual = "manual"
 
 
-class SourceStatus(str, enum.Enum):
+class SourceStatus(enum.StrEnum):
     pending = "pending"
     ingesting = "ingesting"
     processing = "processing"
@@ -37,7 +37,7 @@ class SourceStatus(str, enum.Enum):
     needs_resync = "needs_resync"
 
 
-class SourceIndexMode(str, enum.Enum):
+class SourceIndexMode(enum.StrEnum):
     """
     Index trust mode for this source.
 
@@ -72,12 +72,12 @@ class Source(Base, UUIDMixin, TimestampMixin):
         nullable=False,
     )
 
-    twin_id: Mapped[uuid.UUID] = mapped_column(
+    doctwin_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("twins.id", ondelete="CASCADE"), nullable=False
     )
 
     # Type-specific config. No secrets stored here — only references.
-    # Example for github_repo: {"repo_url": "...", "branch": "main", "token_ref": "user_github_token"}
+    # Example for google_drive: {"folder_id": "..."} or {"file_id": "..."}
     connection_config: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
     # Last ingestion error message if status == failed

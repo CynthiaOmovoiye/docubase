@@ -64,11 +64,11 @@ def upgrade() -> None:
     op.create_index("ix_twins_slug", "twins", ["slug"])
     op.create_index("ix_twins_workspace_slug", "twins", ["workspace_id", "slug"], unique=True)
 
-    # ── twin_configs ───────────────────────────────────────────────────────────
+    # ── doctwin_configs ───────────────────────────────────────────────────────────
     op.create_table(
-        "twin_configs",
+        "doctwin_configs",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("twin_id", UUID(as_uuid=True), sa.ForeignKey("twins.id", ondelete="CASCADE"), nullable=False, unique=True),
+        sa.Column("doctwin_id", UUID(as_uuid=True), sa.ForeignKey("twins.id", ondelete="CASCADE"), nullable=False, unique=True),
         sa.Column("allow_code_snippets", sa.Boolean, nullable=False, server_default="false"),
         sa.Column("is_public", sa.Boolean, nullable=False, server_default="false"),
         sa.Column("display_name", sa.String(120), nullable=True),
@@ -112,7 +112,7 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("'pending'::source_status_enum"),
         ),
-        sa.Column("twin_id", UUID(as_uuid=True), sa.ForeignKey("twins.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("doctwin_id", UUID(as_uuid=True), sa.ForeignKey("twins.id", ondelete="CASCADE"), nullable=False),
         sa.Column("connection_config", JSONB, nullable=False, server_default="{}"),
         sa.Column("last_error", sa.Text, nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
@@ -161,7 +161,7 @@ def upgrade() -> None:
         "chat_sessions",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
         sa.Column("workspace_id", UUID(as_uuid=True), sa.ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("twin_id", UUID(as_uuid=True), sa.ForeignKey("twins.id", ondelete="SET NULL"), nullable=True),
+        sa.Column("doctwin_id", UUID(as_uuid=True), sa.ForeignKey("twins.id", ondelete="SET NULL"), nullable=True),
         sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
@@ -178,7 +178,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("content", sa.Text, nullable=False),
-        sa.Column("routed_twin_id", UUID(as_uuid=True), nullable=True),
+        sa.Column("routed_doctwin_id", UUID(as_uuid=True), nullable=True),
         sa.Column("context_chunk_ids", JSONB, nullable=False, server_default="[]"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
@@ -191,7 +191,7 @@ def upgrade() -> None:
         sa.Column(
             "surface_type",
             ENUM(
-                "twin_page",
+                "doctwin_page",
                 "workspace_page",
                 "embed",
                 name="share_surface_type_enum",
@@ -201,7 +201,7 @@ def upgrade() -> None:
         ),
         sa.Column("public_slug", sa.String(120), nullable=False),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default="true"),
-        sa.Column("twin_id", UUID(as_uuid=True), sa.ForeignKey("twins.id", ondelete="CASCADE"), nullable=True),
+        sa.Column("doctwin_id", UUID(as_uuid=True), sa.ForeignKey("twins.id", ondelete="CASCADE"), nullable=True),
         sa.Column("workspace_id", UUID(as_uuid=True), sa.ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True),
         sa.Column("embed_config", JSONB, nullable=False, server_default="{}"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
@@ -216,7 +216,7 @@ def downgrade() -> None:
     op.drop_table("chat_sessions")
     op.drop_table("chunks")
     op.drop_table("sources")
-    op.drop_table("twin_configs")
+    op.drop_table("doctwin_configs")
     op.drop_table("twins")
     op.drop_table("workspaces")
     op.drop_table("users")

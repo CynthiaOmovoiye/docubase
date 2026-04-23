@@ -24,7 +24,7 @@
  * /twin/:id              — Twin detail + chat
  * /twin/:id/sources      — Source management
  * /twin/:id/config       — Twin config (policy, branding, sharing)
- * /integrations          — Connected accounts (GitHub / GitLab / Google Drive OAuth)
+ * /integrations          — Connected accounts (Google Drive OAuth)
  *
  * Public share surfaces (no auth required):
  * /t/:slug               — Public twin share page

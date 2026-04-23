@@ -1,6 +1,16 @@
 from fastapi import APIRouter
 
-from app.api.v1 import twins, sources, workspaces, users, chat, sharing, admin, integrations, webhooks
+from app.api.v1 import (
+    admin,
+    chat,
+    integrations,
+    sharing,
+    sources,
+    twins,
+    users,
+    webhooks,
+    workspaces,
+)
 
 router = APIRouter()
 

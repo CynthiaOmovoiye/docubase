@@ -21,7 +21,7 @@ before use to prevent accidental traversal.
 from __future__ import annotations
 
 import re
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import httpx
 

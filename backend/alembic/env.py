@@ -9,7 +9,7 @@ import os
 
 # Set before any `app.*` import so Settings allows placeholder secrets during migrations
 # (non-production only; see app.core.config.Settings.secret_must_not_be_default).
-os.environ["DOCUBASE_ALEMBIC"] = "1"
+os.environ["DOCBASE_ALEMBIC"] = "1"
 
 import asyncio
 from logging.config import fileConfig
@@ -27,15 +27,11 @@ import app.models.user  # noqa: F401
 import app.models.workspace  # noqa: F401
 import app.models.twin  # noqa: F401
 import app.models.source  # noqa: F401
-import app.models.source_mirror  # noqa: F401
 import app.models.chunk  # noqa: F401
 import app.models.chat  # noqa: F401
 import app.models.sharing  # noqa: F401
 import app.models.integration  # noqa: F401
 import app.models.graph  # noqa: F401
-import app.models.git_index  # noqa: F401
-import app.models.implementation_fact  # noqa: F401
-import app.models.implementation_index  # noqa: F401
 import app.models.embedding_cache  # noqa: F401
 import app.models.workspace_memory  # noqa: F401
 

@@ -1,8 +1,8 @@
 /**
- * Landing page — the main conversion surface for docubase.
+ * Landing page — the main conversion surface for docbase.
  *
  * Two audiences:
- *   1. Developer/owner — wants to share work without exposing internals
+ *   1. Owner of the work — wants to share outcomes without exposing private material
  *   2. Recruiter/client/visitor — landed from a shared twin link, curious about the product
  *
  * Structure:
@@ -100,7 +100,7 @@ function Hero() {
           maxWidth: "540px",
           margin: "0 auto var(--space-10)",
         }}>
-          docubase turns your repositories, portfolios, and career profiles into intelligent AI twins — shareable links that answer questions about your work without exposing raw code or private details.
+          docbase turns your documents, portfolios, and career profiles into intelligent AI twins — shareable links that answer questions about your work without exposing private drafts or sensitive details.
         </p>
 
         <div style={{ display: "flex", gap: "var(--space-3)", justifyContent: "center", flexWrap: "wrap" }}>
@@ -141,15 +141,15 @@ function Hero() {
             ))}
           </div>
           <span style={{ fontSize: "13px", color: "var(--color-text-secondary)", fontWeight: 500 }}>
-            docubase.io/t/jane-auth-service
+            docbase.io/t/jane-brand-work
           </span>
         </div>
 
         <div style={{ padding: "var(--space-5)", display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
-          <ChatBubble role="user" text="How does authentication work in this service?" />
-          <ChatBubble role="assistant" text="This service uses JWT-based authentication with a 60-minute access token and 30-day refresh token. The auth flow lives in the users domain — registration validates email uniqueness, hashes passwords with bcrypt, and returns both tokens on success. Token refresh is handled separately and invalidates the old refresh token on use." />
-          <ChatBubble role="user" text="Is OAuth supported?" />
-          <ChatBubble role="assistant" text="Not yet in the current implementation — the architecture is set up for it with the GitHub connector hooks, but the OAuth flow itself is marked as a TODO in the connectors domain. It's the next planned addition." />
+          <ChatBubble role="user" text="What was the main goal of this engagement?" />
+          <ChatBubble role="assistant" text="The brief was to refresh the visual system and tighten messaging for a mid-size product launch. The twin is grounded in the strategy deck, creative guidelines, and weekly status notes you connected — so answers stay aligned with what you approved, not guesswork." />
+          <ChatBubble role="user" text="Can I add more material later?" />
+          <ChatBubble role="assistant" text="Yes. You can attach new PDFs or connect a cloud folder so the twin stays current as the work evolves." />
         </div>
 
         <div style={{
@@ -160,7 +160,7 @@ function Hero() {
         }}>
           <input
             readOnly
-            value="Ask anything about this project..."
+            value="Ask anything about this body of work..."
             style={{
               flex: 1,
               padding: "10px var(--space-4)",
@@ -193,7 +193,7 @@ function Hero() {
 
 /* ── Logo bar ────────────────────────────────────────── */
 function LogoBar() {
-  const companies = ["GitHub", "GitLab", "Notion", "Linear", "Figma", "Vercel"];
+  const kinds = ["PDFs & documents", "Cloud folders", "Briefs & decks", "Portfolios", "Resumes", "Case studies"];
   return (
     <section style={{
       padding: "var(--space-8) var(--space-6)",
@@ -202,11 +202,11 @@ function LogoBar() {
       borderBottom: "1px solid var(--color-border)",
     }}>
       <p style={{ fontSize: "13px", color: "var(--color-text-tertiary)", marginBottom: "var(--space-5)", letterSpacing: "0.05em", fontWeight: 500 }}>
-        WORKS WITH YOUR EXISTING STACK
+        START FROM CONTENT YOU ALREADY HAVE
       </p>
       <div style={{ display: "flex", gap: "var(--space-8)", justifyContent: "center", flexWrap: "wrap", alignItems: "center" }}>
-        {companies.map(c => (
-          <span key={c} style={{ fontSize: "15px", fontWeight: 600, color: "var(--color-text-tertiary)", fontFamily: "var(--font-display)" }}>{c}</span>
+        {kinds.map((k) => (
+          <span key={k} style={{ fontSize: "15px", fontWeight: 600, color: "var(--color-text-tertiary)", fontFamily: "var(--font-display)" }}>{k}</span>
         ))}
       </div>
     </section>
@@ -219,17 +219,17 @@ function Features() {
     {
       icon: "◎",
       title: "One twin per project",
-      description: "Connect a repository, PDF, or document to a twin. Each twin has its own identity, config, and shareable link.",
+      description: "Connect Drive files, a PDF, or a document to a twin. Each twin has its own identity, config, and shareable link.",
     },
     {
       icon: "⬡",
       title: "Safe by default",
-      description: "Secrets, keys, and .env files are always blocked at ingestion. Raw code is never exposed unless you explicitly allow scoped snippets.",
+      description: "Secrets and credentials are always blocked at ingestion. Verbatim excerpts from private files stay off unless you explicitly allow scoped sharing.",
     },
     {
       icon: "⇄",
       title: "Workspace-wide chat",
-      description: "Ask across all your twins at once. docubase routes your question to the most relevant project automatically.",
+      description: "Ask across all your twins at once. docbase routes your question to the most relevant project automatically.",
     },
     {
       icon: "↗",
@@ -239,12 +239,12 @@ function Features() {
     {
       icon: "⌗",
       title: "Embed anywhere",
-      description: "Drop a widget onto your portfolio, GitHub Pages, or documentation site. One script tag.",
+      description: "Drop a widget onto your portfolio, documentation site, or personal site. One script tag.",
     },
     {
       icon: "◑",
       title: "Career twin",
-      description: "Connect your resume, repos, and case studies. Let docubase hold career conversations for you while you focus on work.",
+      description: "Connect your resume, highlights, and case studies. Let docbase hold career conversations for you while you focus on work.",
     },
   ];
 
@@ -302,24 +302,24 @@ function FeatureCard({ icon, title, description }: { icon: string; title: string
 function UseCases() {
   const cases = [
     {
-      id: "developers",
-      label: "For developers",
-      headline: "Stop explaining the same repo twice.",
-      body: "Connect your GitHub repository to a twin. When a colleague, client, or interviewer asks how it works — send them a link. They can ask anything. The twin answers from your architecture, docs, and summaries. Your raw code stays private.",
-      cta: "Create a repo twin",
+      id: "creators",
+      label: "For creators & consultants",
+      headline: "Stop explaining the same project twice.",
+      body: "Connect your briefs, decks, and supporting notes to a twin. When a colleague, client, or interviewer asks how it works — send them a link. They can ask anything. The twin answers from your plans, deliverables, and summaries. Your private files stay private.",
+      cta: "Create a project twin",
     },
     {
       id: "career",
       label: "Career twin",
       headline: "Let your work speak for itself.",
-      body: "Connect your resume, portfolio, and best projects. Recruiters and hiring managers chat with your twin instead of skimming a PDF. They ask real questions — what have you built, what stack do you use, what's your strongest project — and get real, grounded answers.",
+      body: "Connect your resume, portfolio, and best projects. Recruiters and hiring managers chat with your twin instead of skimming a PDF. They ask real questions — what you have shipped, where your strengths are, which outcomes you are proudest of — and get grounded answers.",
       cta: "Build your career twin",
     },
     {
       id: "teams",
       label: "For teams",
       headline: "Give clients visibility without access.",
-      body: "Consultants and agencies can create a workspace twin for each client engagement. The client asks questions about the system being built — architecture decisions, feature status, delivery approach — without needing direct repo access or a meeting.",
+      body: "Consultants and agencies can create a workspace twin for each client engagement. The client asks questions about the work in flight — decisions, status, delivery approach — without needing direct access to your internal folders or a meeting.",
       cta: "Create a team workspace",
     },
   ];
@@ -334,7 +334,7 @@ function UseCases() {
       <div style={{ maxWidth: "var(--max-width-content)", margin: "0 auto" }}>
         <SectionLabel>Use cases</SectionLabel>
         <h2 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 700, letterSpacing: "-0.03em", marginBottom: "var(--space-12)", lineHeight: 1.15 }}>
-          Who uses docubase.
+          Who uses docbase.
         </h2>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)" }}>
           {cases.map(c => (
@@ -388,8 +388,8 @@ function UseCases() {
 /* ── How it works ────────────────────────────────────── */
 function HowItWorks() {
   const steps = [
-    { n: "01", title: "Create a twin", body: "Give your twin a name and connect a source — a GitHub repo, PDF resume, or markdown document." },
-    { n: "02", title: "docubase processes it safely", body: "We read the structure, docs, and architecture. Secrets and .env files are never touched. Code snippets are off by default." },
+    { n: "01", title: "Create a twin", body: "Give your twin a name and connect a source — a cloud folder, PDF resume, or written brief." },
+    { n: "02", title: "docbase processes it safely", body: "We read structure, outlines, and summaries from what you connect. Sensitive credentials are never touched. Detailed excerpts stay off by default." },
     { n: "03", title: "Share a link", body: "Your twin gets a public URL. Anyone with the link can chat. No login needed. You stay in control." },
     { n: "04", title: "Revoke anytime", body: "Deactivate a share link instantly. The twin stays yours." },
   ];
@@ -426,10 +426,10 @@ function SecuritySection() {
         <div>
           <SectionLabel>Security</SectionLabel>
           <h2 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(24px, 3vw, 32px)", fontWeight: 700, letterSpacing: "-0.02em", marginBottom: "var(--space-5)", lineHeight: 1.2 }}>
-            Your code never leaves your control.
+            Your private material stays under your control.
           </h2>
           <p style={{ fontSize: "16px", lineHeight: 1.7, color: "var(--color-text-secondary)", marginBottom: "var(--space-6)" }}>
-            docubase is built on a three-tier content policy enforced at every layer — ingestion, retrieval, and answer generation. Secrets are never indexed. Raw code is never exposed unless you explicitly enable scoped snippets.
+            docbase applies a layered content policy at ingestion, retrieval, and answer generation. Secrets are never indexed. Verbatim excerpts stay private unless you explicitly allow scoped sharing.
           </p>
           <Link to="/security" style={{ fontSize: "14px", fontWeight: 600, color: "var(--color-iris)", textDecoration: "none" }}>
             Read our security model →
@@ -437,9 +437,9 @@ function SecuritySection() {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
           {[
-            { label: "Always blocked", desc: ".env files, secrets, keys, credentials — never read, never indexed", color: "#F43F5E" },
-            { label: "Off by default", desc: "Code snippets — you control whether scoped sections appear in answers", color: "#F59E0B" },
-            { label: "Always available", desc: "Structure, docs, summaries, architecture, dependencies", color: "#14B8A6" },
+            { label: "Always blocked", desc: "Secrets, keys, and credentials — never read, never indexed", color: "#F43F5E" },
+            { label: "Off by default", desc: "Detailed excerpts — you control whether scoped sections appear in answers", color: "#F59E0B" },
+            { label: "Always available", desc: "Structure, outlines, summaries, and approved narrative context", color: "#14B8A6" },
           ].map(t => (
             <div key={t.label} style={{
               padding: "var(--space-4) var(--space-5)",

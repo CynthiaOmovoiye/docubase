@@ -75,7 +75,7 @@ class Settings(BaseSettings):
     openrouter_model: str = "openai/gpt-4o-mini"
     # Optional OpenRouter attribution (https://openrouter.ai/docs/api/reference/overview)
     openrouter_http_referer: str = ""
-    openrouter_app_title: str = "docubase"
+    openrouter_app_title: str = "docbase"
 
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
@@ -108,7 +108,7 @@ class Settings(BaseSettings):
     # /tmp is world-readable on Linux.  Default to a path under the app home.
     # In production, set STORAGE_LOCAL_PATH to a directory with mode 0700,
     # or use S3 (STORAGE_BACKEND=s3).
-    storage_local_path: str = "/var/lib/docubase/uploads"
+    storage_local_path: str = "/var/lib/docbase/uploads"
 
     # ─── Policy / Safety ──────────────────────────────────────────────────────
     policy_blocked_file_patterns: str = (
@@ -143,7 +143,7 @@ class Settings(BaseSettings):
     # Leave empty to skip reranking (vector order is used instead).
     cohere_api_key: str = ""
 
-    # ─── Repo intelligence trust / latency budgets ──────────────────────────
+    # ─── Chat retrieval / generation latency budgets ─────────────────────────
     chat_retrieval_latency_budget_ms: int = 3000
     chat_generation_latency_budget_ms: int = 9000
     chat_verification_latency_budget_ms: int = 1000
@@ -151,18 +151,6 @@ class Settings(BaseSettings):
     workspace_chat_total_latency_budget_ms: int = 18000
 
     # ─── OAuth integrations ───────────────────────────────────────────────────
-    # GitHub OAuth App credentials
-    github_client_id: str = ""
-    github_client_secret: str = ""
-    # Shared webhook secret for HMAC-SHA256 verification of GitHub push events
-    github_webhook_secret: str = ""
-
-    # GitLab OAuth Application credentials
-    gitlab_client_id: str = ""
-    gitlab_client_secret: str = ""
-    # GitLab instance URL — override for self-hosted GitLab
-    gitlab_base_url: str = "https://gitlab.com"
-
     # Google OAuth 2.0 credentials (from Google Cloud Console)
     google_client_id: str = ""
     google_client_secret: str = ""
@@ -178,7 +166,7 @@ class Settings(BaseSettings):
     def secret_must_not_be_default(cls, v: str) -> str:
         if v.startswith("change-me"):
             # Alembic loads the full app stack but only needs DATABASE_URL; env.py sets this.
-            if os.environ.get("DOCUBASE_ALEMBIC") == "1" and os.getenv(
+            if os.environ.get("DOCBASE_ALEMBIC") == "1" and os.getenv(
                 "APP_ENV", "development"
             ).lower() != "production":
                 return v
@@ -194,14 +182,14 @@ class Settings(BaseSettings):
         """
         Reject the well-known default database password in production.
 
-        The docker-compose.yml ships with 'twin_pass' as the Postgres password.
+        The docker-compose.yml ships with 'doctwin_pass' as the Postgres password.
         If someone copies .env.example without changing the DATABASE_URL this
         validator will catch it before the app starts in production.
         """
         env = os.getenv("APP_ENV", "development").lower()
-        if env == "production" and "twin_pass" in v:
+        if env == "production" and "doctwin_pass" in v:
             raise ValueError(
-                "DATABASE_URL contains the default password 'twin_pass'. "
+                "DATABASE_URL contains the default password 'doctwin_pass'. "
                 "Change the database password before deploying to production."
             )
         return v
@@ -256,10 +244,7 @@ def _alternate_loopback_origin(url: str) -> str | None:
     else:
         return None
     port = parsed.port
-    if port is None:
-        netloc = new_host
-    else:
-        netloc = f"{new_host}:{port}"
+    netloc = new_host if port is None else f"{new_host}:{port}"
     return f"{parsed.scheme}://{netloc}"
 
 

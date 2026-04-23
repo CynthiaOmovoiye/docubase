@@ -1,8 +1,8 @@
-# docubase Repo Intelligence Roadmap
+# docbase Repo Intelligence Roadmap
 
 ## Status
 
-Canonical roadmap and implementation guide for evolving docubase from a
+Canonical roadmap and implementation guide for evolving docbase from a
 chunk-first RAG system into a repository intelligence platform.
 
 If this document conflicts with earlier notes, plans, or chat discussions,
@@ -16,7 +16,7 @@ For a **sequenced master plan** that adds **canonical full-file persistence**, *
 
 ## Why This Exists
 
-docubase is not meant to be a generic summarizer over retrieved chunks.
+docbase is not meant to be a generic summarizer over retrieved chunks.
 It is meant to behave like an engineering intelligence layer that can answer:
 
 - what exists in a project
@@ -59,7 +59,7 @@ This roadmap fixes those issues in a phased way.
 
 ## Core Product Decision
 
-docubase should operate through four hard layers:
+docbase should operate through four hard layers:
 
 1. `Inventory`
    What files, directories, snapshots, and source segments exist.
@@ -224,7 +224,7 @@ This is required so answers remain reproducible and auditable.
 
 Every evidence packet should carry:
 
-- `twin_id`
+- `doctwin_id`
 - `source_id`
 - `snapshot_id`
 - commit or revision identity where available
@@ -280,7 +280,7 @@ This decision must cover:
 
 Every evidence item must carry namespace identity:
 
-- `twin_id`
+- `doctwin_id`
 - `source_id`
 - `snapshot_id`
 
@@ -499,7 +499,7 @@ If phases need to be narrowed into the most important implementation order:
 
 ## Success Standard
 
-docubase should be able to answer questions like these with grounded,
+docbase should be able to answer questions like these with grounded,
 software-engineering-level precision:
 
 - how is authorization handled on Scaffold

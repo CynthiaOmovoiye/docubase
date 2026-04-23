@@ -2,11 +2,11 @@
 Twin and TwinConfig schemas.
 """
 
+import re
 import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
-import re
 
 
 class TwinCreateRequest(BaseModel):
@@ -54,7 +54,7 @@ class TwinConfigUpdateRequest(BaseModel):
 class TwinConfigResponse(BaseModel):
     """Full config — returned to authenticated owners only."""
     id: uuid.UUID
-    twin_id: uuid.UUID
+    doctwin_id: uuid.UUID
     allow_code_snippets: bool
     is_public: bool
     display_name: str | None
@@ -88,12 +88,12 @@ class PublicTwinConfigResponse(BaseModel):
 
 class MemoryBriefResponse(BaseModel):
     """
-    Response for the GET /twins/{twin_id}/memory/brief endpoint.
+    Response for the GET /twins/{doctwin_id}/memory/brief endpoint.
 
     Returned to authenticated owners only. Contains the generated brief
     and its generation metadata. `brief` may be None when status is not ready.
     """
-    twin_id: uuid.UUID
+    doctwin_id: uuid.UUID
     status: str | None
     generated_at: datetime | None
     brief: str | None
@@ -123,7 +123,7 @@ class TwinEvidenceHealthResponse(BaseModel):
     for high-authority answers before blaming retrieval or the model.
     """
 
-    twin_id: uuid.UUID
+    doctwin_id: uuid.UUID
     source_count: int
     ready_source_count: int
     non_ready_source_count: int

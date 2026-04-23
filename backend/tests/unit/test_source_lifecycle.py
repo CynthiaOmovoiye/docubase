@@ -172,7 +172,7 @@ class TestContentAddressedNoopSync:
     async def test_finalise_noop_sync_updates_source_and_chunk_snapshot(self):
         source = SimpleNamespace(
             id=uuid.uuid4(),
-            source_type=SourceType.github_repo,
+            source_type=SourceType.google_drive,
             snapshot_id="old",
             snapshot_root_hash="oldhash",
             last_commit_sha="old",

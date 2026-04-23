@@ -44,12 +44,12 @@ export function useChat({ twinId, workspaceId, publicSlug, resumeSessionId }: Us
     api
       .get<{ session_id: string; messages: Message[] }>(`/chat/session/${resumeSessionId}/history`)
       .then((res) => {
-        setSession({ session_id: resumeSessionId, workspace_id: "", twin_id: twinId ?? null, created_at: "" });
+        setSession({ session_id: resumeSessionId, workspace_id: "", doctwin_id: twinId ?? null, created_at: "" });
         setMessages(res.data.messages);
       })
       .catch(() => setError("Failed to load session history"))
       .finally(() => setIsLoading(false));
-  }, [resumeSessionId]);
+  }, [resumeSessionId, twinId]);
 
   const startSession = useCallback(async () => {
     setError(null);
@@ -106,7 +106,7 @@ export function useChat({ twinId, workspaceId, publicSlug, resumeSessionId }: Us
         id: `temp-${Date.now()}`,
         role: "user",
         content,
-        routed_twin_id: null,
+        routed_doctwin_id: null,
         created_at: new Date().toISOString(),
       };
 

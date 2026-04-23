@@ -7,9 +7,9 @@ where = ["."]
 include = ["app*"]
 
 [project]
-name = "docubase"
+name = "docbase"
 version = "0.1.0"
-description = "docubase — backend"
+description = "docbase — backend"
 requires-python = ">=3.11"
 
 dependencies = [
@@ -74,12 +74,18 @@ dev = [
 ]
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["B008"]  # FastAPI Depends() pattern
+
+[tool.ruff.lint.per-file-ignores]
+# Long embedded verifier prompts; wrapping would hurt readability.
+"app/domains/answering/verifier.py" = ["E501", "SIM102"]
+# Routers map domain errors to HTTP responses; exception chaining is optional here.
+"app/api/**" = ["B904"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

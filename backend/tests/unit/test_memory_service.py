@@ -18,7 +18,7 @@ from app.domains.memory.service import (
     run_memory_extraction,
 )
 
-TWIN_ID = "00000000-0000-0000-0000-000000000042"
+doctwin_ID = "00000000-0000-0000-0000-000000000042"
 
 
 def _make_db_session(memory_brief_text: str | None = None):
@@ -32,7 +32,7 @@ def _make_db_session(memory_brief_text: str | None = None):
 
     # TwinConfig mock row
     mock_config = MagicMock()
-    mock_config.twin_id = uuid.UUID(TWIN_ID)
+    mock_config.doctwin_id = uuid.UUID(doctwin_ID)
     mock_config.memory_brief = memory_brief_text
     mock_config.memory_brief_status = None
     mock_config.memory_brief_generated_at = None
@@ -55,7 +55,7 @@ def _patch_extractors(
         {
             "chunk_type": "architecture_summary",
             "content": "FastAPI backend",
-            "source_ref": f"__memory__/{TWIN_ID}",
+            "source_ref": f"__memory__/{doctwin_ID}",
             "chunk_metadata": {},
         }
     ]
@@ -63,7 +63,7 @@ def _patch_extractors(
         {
             "chunk_type": "risk_note",
             "content": "High risk: no error handling",
-            "source_ref": f"__memory__/{TWIN_ID}",
+            "source_ref": f"__memory__/{doctwin_ID}",
             "chunk_metadata": {"severity": "high"},
         }
     ]
@@ -79,7 +79,7 @@ def _patch_extractors(
 
 def _make_memory_bundle():
     return SimpleNamespace(
-        twin_id=TWIN_ID,
+        doctwin_id=doctwin_ID,
         workspace_id="00000000-0000-0000-0000-000000000099",
         indexed_files=[],
         indexed_symbols=[],
@@ -101,7 +101,7 @@ def _patch_memory_evidence(
         {
             "chunk_type": "feature_summary",
             "content": "Feature summary",
-            "source_ref": f"__memory__/{TWIN_ID}",
+            "source_ref": f"__memory__/{doctwin_ID}",
             "chunk_metadata": {"provenance": []},
         }
     ]
@@ -109,7 +109,7 @@ def _patch_memory_evidence(
         {
             "chunk_type": "auth_flow",
             "content": "Auth flow",
-            "source_ref": f"__memory__/{TWIN_ID}",
+            "source_ref": f"__memory__/{doctwin_ID}",
             "chunk_metadata": {"provenance": []},
         }
     ]
@@ -117,7 +117,7 @@ def _patch_memory_evidence(
         {
             "chunk_type": "onboarding_map",
             "content": "Onboarding map",
-            "source_ref": f"__memory__/{TWIN_ID}",
+            "source_ref": f"__memory__/{doctwin_ID}",
             "chunk_metadata": {"provenance": []},
         }
     ]
@@ -125,13 +125,13 @@ def _patch_memory_evidence(
         {
             "chunk_type": "risk_note",
             "content": "High risk: no error handling",
-            "source_ref": f"__memory__/{TWIN_ID}",
+            "source_ref": f"__memory__/{doctwin_ID}",
             "chunk_metadata": {"severity": "high", "provenance": []},
         }
     ]
     change_chunks = change_chunks or []
     return {
-        "load_twin_memory_evidence": AsyncMock(return_value=_make_memory_bundle()),
+        "load_doctwin_memory_evidence": AsyncMock(return_value=_make_memory_bundle()),
         "build_feature_summary_chunks": MagicMock(return_value=feature_chunks),
         "build_auth_flow_chunks": MagicMock(return_value=auth_chunks),
         "build_onboarding_map_chunks": MagicMock(return_value=onboarding_chunks),
@@ -168,7 +168,7 @@ def _service_patch_kwargs(
     mem,
     embed_side_effect=None,
     embed_return=None,
-    load_twin_chunks=None,
+    load_doctwin_chunks=None,
     build_structure_overview=None,
     clear_memory_chunks=0,
     extract_architecture_chunks=None,
@@ -181,19 +181,21 @@ def _service_patch_kwargs(
     )
     return {
         "get_redis": MagicMock(return_value=redis),
-        "_load_twin_chunks": load_twin_chunks if load_twin_chunks is not None else AsyncMock(return_value=[]),
+        "_load_doctwin_chunks": load_doctwin_chunks if load_doctwin_chunks is not None else AsyncMock(return_value=[]),
         "_build_structure_overview": (
             build_structure_overview if build_structure_overview is not None else AsyncMock(return_value=[])
         ),
         "clear_memory_chunks_for_twin": AsyncMock(return_value=clear_memory_chunks),
-        "load_twin_memory_evidence": mem["load_twin_memory_evidence"],
+        "load_doctwin_memory_evidence": mem["load_doctwin_memory_evidence"],
         "build_deterministic_graph": graph["build_deterministic_graph"],
         "extract_graph_from_chunks": graph["extract_graph_from_chunks"],
         "merge_graph_extractions": graph["merge_graph_extractions"],
         "rebuild_graph": graph["rebuild_graph"],
         "get_graph_summary": graph["get_graph_summary"],
         "extract_architecture_chunks": (
-            extract_architecture_chunks if extract_architecture_chunks is not None else ext["extract_architecture_chunks"]
+            extract_architecture_chunks
+            if extract_architecture_chunks is not None
+            else ext["extract_architecture_chunks"]
         ),
         "build_feature_summary_chunks": mem["build_feature_summary_chunks"],
         "build_auth_flow_chunks": mem["build_auth_flow_chunks"],
@@ -218,7 +220,7 @@ class TestRedisLock:
         redis = _make_redis(acquired=False)
 
         with patch("app.domains.memory.service.get_redis", return_value=redis):
-            stats = await run_memory_extraction(TWIN_ID, db)
+            stats = await run_memory_extraction(doctwin_ID, db)
 
         assert stats["status"] == "skipped"
         assert stats["reason"] == "extraction already in progress"
@@ -231,10 +233,10 @@ class TestRedisLock:
 
         with (
             patch("app.domains.memory.service.get_redis", return_value=redis),
-            patch("app.domains.memory.service._load_twin_chunks", AsyncMock(side_effect=RuntimeError("unexpected"))),
+            patch("app.domains.memory.service._load_doctwin_chunks", AsyncMock(side_effect=RuntimeError("unexpected"))),
             patch("app.domains.memory.service._set_brief_status", AsyncMock()),
         ):
-            stats = await run_memory_extraction(TWIN_ID, db)
+            stats = await run_memory_extraction(doctwin_ID, db)
 
         redis.delete.assert_called_once()
         assert stats["status"] == "failed"
@@ -261,7 +263,7 @@ class TestRunMemoryExtractionStats:
                 embed_side_effect=lambda chunks, *a, **kw: [MagicMock()] * len(chunks),
             ),
         ):
-            stats = await run_memory_extraction(TWIN_ID, db)
+            stats = await run_memory_extraction(doctwin_ID, db)
 
         assert stats["status"] == "ready"
         assert stats["arch_chunks"] == 1
@@ -281,14 +283,24 @@ class TestRunMemoryExtractionStats:
             {
                 "chunk_type": "change_entry",
                 "content": "Week of April 14: added memory",
-                "source_ref": f"__memory__/{TWIN_ID}",
+                "source_ref": f"__memory__/{doctwin_ID}",
                 "chunk_metadata": {},
             }
         ]
         ext = _patch_extractors(change_chunks=change_chunks)
         graph = _patch_graph_layers()
         mem = _patch_memory_evidence(change_chunks=change_chunks)
-        commits = [{"sha": "abc", "message": "test commit", "author_name": "Dev", "author_date": "2026-04-14", "files_changed": [], "additions": 0, "deletions": 0}]
+        commits = [
+            {
+                "sha": "abc",
+                "message": "test commit",
+                "author_name": "Dev",
+                "author_date": "2026-04-14",
+                "files_changed": [],
+                "additions": 0,
+                "deletions": 0,
+            }
+        ]
 
         with patch.multiple(
             "app.domains.memory.service",
@@ -300,7 +312,7 @@ class TestRunMemoryExtractionStats:
                 embed_side_effect=lambda chunks, *a, **kw: [MagicMock()] * len(chunks),
             ),
         ):
-            stats = await run_memory_extraction(TWIN_ID, db, commit_history=commits)
+            stats = await run_memory_extraction(doctwin_ID, db, commit_history=commits)
 
         assert stats["change_chunks"] == 1
 
@@ -322,7 +334,7 @@ class TestRunMemoryExtractionStats:
                 embed_side_effect=lambda chunks, *a, **kw: [MagicMock()] * len(chunks),
             ),
         ):
-            stats = await run_memory_extraction(TWIN_ID, db, commit_history=None)
+            stats = await run_memory_extraction(doctwin_ID, db, commit_history=None)
 
         ext["extract_change_entry_chunks"].assert_not_called()
         assert stats["change_chunks"] == 0
@@ -345,7 +357,7 @@ class TestRunMemoryExtractionStats:
                 embed_return=[],
             ),
         ):
-            stats = await run_memory_extraction(TWIN_ID, db)
+            stats = await run_memory_extraction(doctwin_ID, db)
 
         assert stats["status"] == "failed"
         assert stats["brief_generated"] is False
@@ -374,7 +386,7 @@ class TestNeverRaises:
             ),
         ):
             # Must not raise
-            stats = await run_memory_extraction(TWIN_ID, db)
+            stats = await run_memory_extraction(doctwin_ID, db)
 
         assert stats["status"] == "failed"
         assert "LLM exploded" in stats["error"]
@@ -394,7 +406,7 @@ class TestClearMemoryChunks:
         mock_result.fetchall = MagicMock(return_value=[MagicMock(), MagicMock(), MagicMock()])
         db.execute = AsyncMock(return_value=mock_result)
 
-        count = await clear_memory_chunks_for_twin(TWIN_ID, db)
+        count = await clear_memory_chunks_for_twin(doctwin_ID, db)
         assert count == 3
 
     @pytest.mark.asyncio
@@ -404,7 +416,7 @@ class TestClearMemoryChunks:
         mock_result.fetchall = MagicMock(return_value=[])
         db.execute = AsyncMock(return_value=mock_result)
 
-        count = await clear_memory_chunks_for_twin(TWIN_ID, db)
+        count = await clear_memory_chunks_for_twin(doctwin_ID, db)
         assert count == 0
 
 
@@ -418,7 +430,7 @@ class TestGetMemoryBrief:
         mock_result.scalar_one_or_none = MagicMock(return_value="# Brief content")
         db.execute = AsyncMock(return_value=mock_result)
 
-        result = await get_memory_brief(TWIN_ID, db)
+        result = await get_memory_brief(doctwin_ID, db)
         assert result == "# Brief content"
 
     @pytest.mark.asyncio
@@ -428,5 +440,5 @@ class TestGetMemoryBrief:
         mock_result.scalar_one_or_none = MagicMock(return_value=None)
         db.execute = AsyncMock(return_value=mock_result)
 
-        result = await get_memory_brief(TWIN_ID, db)
+        result = await get_memory_brief(doctwin_ID, db)
         assert result is None

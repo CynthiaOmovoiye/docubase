@@ -1,0 +1,10 @@
+[
+  {"id": "g-01", "persona": "engineer", "mode": "implementation", "query": "Where is auth handled?"},
+  {"id": "g-02", "persona": "recruiter", "mode": "recruiter_summary", "query": "Summarize this candidate's stack."},
+  {"id": "g-03", "persona": "pm", "mode": "onboarding", "query": "What should I read first?"},
+  {"id": "g-04", "persona": "engineer", "mode": "workspace_comparison", "query": "Compare projects A and B."},
+  {"id": "g-05", "persona": "pm", "mode": "project_status", "query": "What is blocked?"},
+  {"id": "g-06", "persona": "engineer", "mode": "risk_review", "query": "What are the main risks?"},
+  {"id": "g-07", "persona": "engineer", "mode": "change_review", "query": "What changed in the last release?"},
+  {"id": "g-08", "persona": "recruiter", "mode": "implementation", "query": "Show evidence of backend work."}
+]

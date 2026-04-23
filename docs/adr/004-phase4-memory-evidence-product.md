@@ -7,7 +7,7 @@
 
 ## Context
 
-Earlier memory extraction gave docubase useful summaries, but the memory layer
+Earlier memory extraction gave docbase useful summaries, but the memory layer
 was still too dependent on free-form synthesis over retrieved chunks. That left
 two gaps:
 

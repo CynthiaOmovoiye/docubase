@@ -52,7 +52,7 @@ def make_source(**overrides) -> dict:
         "name": "Test Source",
         "source_type": "markdown",
         "status": "pending",
-        "twin_id": str(uuid.uuid4()),
+        "doctwin_id": str(uuid.uuid4()),
         "connection_config": {},
         "created_at": datetime.now(UTC).isoformat(),
         **overrides,

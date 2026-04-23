@@ -14,8 +14,8 @@ if TYPE_CHECKING:
     from app.models.workspace import Workspace
 
 
-class ShareSurfaceType(str, enum.Enum):
-    twin_page = "twin_page"           # /t/{slug} — single twin public page
+class ShareSurfaceType(enum.StrEnum):
+    doctwin_page = "doctwin_page"           # /t/{slug} — single twin public page
     workspace_page = "workspace_page" # /w/{slug} — workspace general public page
     embed = "embed"                   # embeddable widget
 
@@ -40,7 +40,7 @@ class ShareSurface(Base, UUIDMixin, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # One of these will be set depending on surface type
-    twin_id: Mapped[uuid.UUID | None] = mapped_column(
+    doctwin_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("twins.id", ondelete="CASCADE"), nullable=True
     )
     workspace_id: Mapped[uuid.UUID | None] = mapped_column(

@@ -9,7 +9,7 @@ Inline content (paste) bypasses filesystem entirely and is safe.
 """
 
 import os
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 from app.connectors.base import BaseConnector, ConnectorResult, RawFile
@@ -80,7 +80,7 @@ class MarkdownConnector(BaseConnector):
         elif raw_path := connection_config.get("file_path"):
             try:
                 file_path = _assert_safe_path(raw_path)
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, encoding="utf-8") as f:
                     content = f.read()
                 stat = os.stat(file_path)
                 files.append(RawFile(

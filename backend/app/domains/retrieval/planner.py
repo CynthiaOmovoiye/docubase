@@ -418,7 +418,17 @@ def _augment_search_query(
     if mode == RetrievalMode.recruiter_summary and "python" in lowered:
         aliases.extend(["python", "backend", "fastapi", "api", "service"])
     if mode == RetrievalMode.recruiter_summary and _FRONTEND_RE.search(lowered):
-        aliases.extend(["frontend", "React", "App.tsx", "DashboardPage", "useProjects", "authApi", "guides/7_frontend.md"])
+        aliases.extend(
+            [
+                "frontend",
+                "React",
+                "App.tsx",
+                "DashboardPage",
+                "useProjects",
+                "authApi",
+                "guides/7_frontend.md",
+            ]
+        )
 
     if mode == RetrievalMode.change_review and _AUTH_FLOW_RE.search(lowered):
         aliases.extend(["auth", "authentication", "authorization", "logout", "login", "refresh token", "session"])

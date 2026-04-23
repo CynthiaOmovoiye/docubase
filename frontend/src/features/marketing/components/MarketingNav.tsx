@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 const NAV_LINKS = [
   { label: "Features", href: "/#features" },
@@ -9,8 +9,6 @@ const NAV_LINKS = [
 
 export function MarketingNav() {
   const [scrolled, setScrolled] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const location = useLocation();
 
   useEffect(() => {
     const handler = () => setScrolled(window.scrollY > 12);
@@ -50,7 +48,7 @@ export function MarketingNav() {
       >
         {/* Logo */}
         <Link to="/" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-          <DocubaseLogo />
+          <DocbaseLogo />
           <span style={{
             fontFamily: "var(--font-display)",
             fontWeight: 700,
@@ -58,7 +56,7 @@ export function MarketingNav() {
             color: "var(--color-text-primary)",
             letterSpacing: "-0.02em",
           }}>
-            docubase
+            docbase
           </span>
         </Link>
 
@@ -142,14 +140,14 @@ export function MarketingNav() {
   );
 }
 
-function DocubaseLogo() {
+function DocbaseLogo() {
   return (
     <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect width="28" height="28" rx="8" fill="url(#docubase-grad)" />
+      <rect width="28" height="28" rx="8" fill="url(#docbase-grad)" />
       <circle cx="14" cy="14" r="5" fill="white" fillOpacity="0.95" />
-      <circle cx="14" cy="14" r="2.5" fill="url(#docubase-grad)" />
+      <circle cx="14" cy="14" r="2.5" fill="url(#docbase-grad)" />
       <defs>
-        <linearGradient id="docubase-grad" x1="0" y1="0" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+        <linearGradient id="docbase-grad" x1="0" y1="0" x2="28" y2="28" gradientUnits="userSpaceOnUse">
           <stop stopColor="#6366F1" />
           <stop offset="1" stopColor="#14B8A6" />
         </linearGradient>
@@ -174,8 +172,8 @@ export function MarketingFooter() {
       }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-3)" }}>
-            <DocubaseLogo />
-            <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "16px", color: "var(--color-text-primary)", letterSpacing: "-0.02em" }}>docubase</span>
+            <DocbaseLogo />
+            <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "16px", color: "var(--color-text-primary)", letterSpacing: "-0.02em" }}>docbase</span>
           </div>
           <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 1.6, maxWidth: "200px" }}>
             Your work, in conversation.
@@ -195,7 +193,7 @@ export function MarketingFooter() {
           { label: "Terms", href: "/terms" },
         ]} />
         <FooterCol title="Use cases" links={[
-          { label: "For developers", href: "/#developers" },
+          { label: "For creators & consultants", href: "/#creators" },
           { label: "Career twin", href: "/#career" },
           { label: "For teams", href: "/#teams" },
           { label: "Embed widget", href: "/#embed" },
@@ -212,7 +210,7 @@ export function MarketingFooter() {
         alignItems: "center",
       }}>
         <p style={{ fontSize: "13px", color: "var(--color-text-tertiary)" }}>
-          © {new Date().getFullYear()} docubase. All rights reserved.
+          © {new Date().getFullYear()} docbase. All rights reserved.
         </p>
         <p style={{ fontSize: "13px", color: "var(--color-text-tertiary)" }}>
           Built with care.

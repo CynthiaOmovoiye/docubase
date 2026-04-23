@@ -170,7 +170,7 @@ export function useTriggerMemoryGeneration() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (twinId: string) => {
-      const { data } = await api.post<{ status: string; twin_id: string }>(
+      const { data } = await api.post<{ status: string; doctwin_id: string }>(
         `/twins/${twinId}/memory/generate`
       );
       return data;

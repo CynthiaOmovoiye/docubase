@@ -16,7 +16,7 @@
 # ─── Help ─────────────────────────────────────────────────────────────────────
 help:
 	@echo ""
-	@echo "docubase — Development Task Runner"
+	@echo "docbase — Development Task Runner"
 	@echo "════════════════════════════════════════════════"
 	@echo ""
 	@echo "STACK"
@@ -60,6 +60,14 @@ help:
 	@echo "  make lint              Run ruff + frontend linter"
 	@echo "  make format            Auto-format backend + frontend"
 	@echo "  make check-secrets     Scan for accidentally committed secrets"
+	@echo ""
+	@echo "CLOUD DEPLOY (after local checks)"
+	@echo "  Full setup: docs/DEPLOY_SETUP_GUIDE.md"
+	@echo "  1. make test           (or make test-unit) on your machine"
+	@echo "  2. make up             optional: full Docker smoke before AWS"
+	@echo "  3. ./scripts/deploy.sh dev     Terraform workspace dev + S3/CF"
+	@echo "  4. GitHub: Actions → Deploy docbase → environment dev (same as 3 in CI)"
+	@echo "  5. ./scripts/deploy.sh prod    only after dev URL + DOCBASE_VITE_API_URL verified"
 	@echo ""
 
 # ─── Docker ───────────────────────────────────────────────────────────────────
@@ -127,7 +135,7 @@ worker-shell:
 	docker compose exec worker bash
 
 db-shell:
-	docker compose exec db psql -U twin_user -d twin_db
+	docker compose exec db psql -U doctwin_user -d doctwin_db
 
 redis-shell:
 	docker compose exec redis redis-cli

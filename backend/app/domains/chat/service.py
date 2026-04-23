@@ -29,7 +29,6 @@ import re
 import uuid
 from dataclasses import dataclass
 from time import perf_counter
-from typing import AsyncIterator
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -166,8 +165,8 @@ class ForbiddenError(Exception):
 
 # ─── Session creation ─────────────────────────────────────────────────────────
 
-async def create_twin_session(
-    twin_id: uuid.UUID,
+async def create_doctwin_session(
+    doctwin_id: uuid.UUID,
     user_id: uuid.UUID,
     db: AsyncSession,
 ) -> ChatSession:
@@ -176,23 +175,23 @@ async def create_twin_session(
 
     The twin must belong to a workspace owned by user_id.
     """
-    twin = await _load_twin_with_workspace(twin_id, db)
+    twin = await _load_doctwin_with_workspace(doctwin_id, db)
     if twin is None:
-        raise NotFoundError(f"Twin {twin_id} not found")
+        raise NotFoundError(f"Twin {doctwin_id} not found")
     if twin.workspace.owner_id != user_id:
         raise ForbiddenError("You do not own this twin's workspace")
 
     session = ChatSession(
         id=uuid.uuid4(),
         workspace_id=twin.workspace_id,
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         user_id=user_id,
     )
     db.add(session)
     await db.flush()
     await db.refresh(session)
 
-    logger.info("chat_session_created", session_id=str(session.id), twin_id=str(twin_id))
+    logger.info("chat_session_created", session_id=str(session.id), doctwin_id=str(doctwin_id))
     return session
 
 
@@ -218,7 +217,7 @@ async def create_workspace_session(
     session = ChatSession(
         id=uuid.uuid4(),
         workspace_id=workspace_id,
-        twin_id=None,
+        doctwin_id=None,
         user_id=user_id,
     )
     db.add(session)
@@ -244,19 +243,19 @@ async def create_public_session(
     """
     surface = await _load_active_surface(public_slug, db)
 
-    # Determine workspace_id and twin_id from the surface
-    if surface.twin_id is not None:
-        twin = await _load_twin_with_workspace(surface.twin_id, db)
+    # Determine workspace_id and doctwin_id from the surface
+    if surface.doctwin_id is not None:
+        twin = await _load_doctwin_with_workspace(surface.doctwin_id, db)
         workspace_id = twin.workspace_id if twin else surface.workspace_id
-        twin_id = surface.twin_id
+        doctwin_id = surface.doctwin_id
     else:
         workspace_id = surface.workspace_id
-        twin_id = None
+        doctwin_id = None
 
     session = ChatSession(
         id=uuid.uuid4(),
         workspace_id=workspace_id,
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         user_id=None,  # Anonymous
     )
     db.add(session)
@@ -313,7 +312,7 @@ async def send_message(
                 user_id=str(user_id) if user_id else "anonymous",
                 input=content,
                 metadata={
-                    "twin_id": str(session.twin_id) if session.twin_id else None,
+                    "doctwin_id": str(session.doctwin_id) if session.doctwin_id else None,
                     "workspace_id": str(session.workspace_id),
                 },
             )
@@ -327,7 +326,7 @@ async def send_message(
         session_id=session_id,
         role=MessageRole.user,
         content=content,
-        routed_twin_id=None,
+        routed_doctwin_id=None,
         context_chunk_ids=[],
     )
     db.add(user_message)
@@ -341,19 +340,19 @@ async def send_message(
     verification = None
 
     # Load twin config for policy decisions
-    twin_config = await _load_twin_config(session.twin_id, db) if session.twin_id else None
-    allow_code_snippets = twin_config.allow_code_snippets if twin_config else False
-    twin_name = _get_twin_display_name(session, twin_config)
-    custom_context = twin_config.custom_context if twin_config else None
+    doctwin_config = await _load_doctwin_config(session.doctwin_id, db) if session.doctwin_id else None
+    allow_code_snippets = doctwin_config.allow_code_snippets if doctwin_config else False
+    doctwin_name = _get_doctwin_display_name(session, doctwin_config)
+    custom_context = doctwin_config.custom_context if doctwin_config else None
     memory_brief_status_str: str | None = (
-        twin_config.memory_brief_status if twin_config else None
+        doctwin_config.memory_brief_status if doctwin_config else None
     )
 
     # Load Memory Brief for unconditional injection into the system prompt.
     # Only inject when status is "ready" — never a partial/stale brief.
     memory_brief: str | None = None
-    if twin_config and twin_config.memory_brief_status == "ready":
-        memory_brief = twin_config.memory_brief
+    if doctwin_config and doctwin_config.memory_brief_status == "ready":
+        memory_brief = doctwin_config.memory_brief
 
     # Analyse query intent for boosted retrieval (LLM, with regex fallback).
     # This runs before retrieval so intent + path_hints are available together.
@@ -362,7 +361,7 @@ async def send_message(
 
     workspace_summary: dict | None = None
     workspace_scope_response: str | None = None
-    if session.twin_id is None:
+    if session.doctwin_id is None:
         workspace_summary = await _load_workspace_summary(session.workspace_id, db)
         workspace_scope_response = _build_workspace_scope_response(content, workspace_summary)
 
@@ -378,13 +377,13 @@ async def send_message(
         )
         chunks: list[dict] = []
         retrieval_packet = None
-        routed_twin_id: uuid.UUID | None = None
+        routed_doctwin_id: uuid.UUID | None = None
         source_list: list[dict] = []
         used_deterministic_fallback = True
         memory_brief = None
-        twin_name = workspace_summary["workspace_name"] if workspace_summary else "this workspace"
+        doctwin_name = workspace_summary["workspace_name"] if workspace_summary else "this workspace"
     else:
-        routed_twin_id = session.twin_id
+        routed_doctwin_id = session.doctwin_id
         # top_k is now driven by intent; fall back to broad-query heuristic for
         # backward compatibility when the session has no specific twin.
         top_k = _CONTEXT_CHUNKS_FOCUSED  # default; intent override applied inside retrieve_for_twin
@@ -394,13 +393,13 @@ async def send_message(
         source_list = []
         retrieval_packet = None
 
-        if session.twin_id is not None:
-            inventory = await _load_structure_inventory(str(session.twin_id), db)
+        if session.doctwin_id is not None:
+            inventory = await _load_structure_inventory(str(session.doctwin_id), db)
             guaranteed_refs = _resolve_refs_from_inventory(analysis.path_hints, inventory)
             retrieval_started_at = perf_counter()
             retrieval_packet = await retrieve_packet_for_twin(
                 query=content,
-                twin_id=str(session.twin_id),
+                doctwin_id=str(session.doctwin_id),
                 allow_code_snippets=allow_code_snippets,
                 db=db,
                 top_k=top_k,
@@ -412,7 +411,7 @@ async def send_message(
             retrieval_elapsed_ms += (perf_counter() - retrieval_started_at) * 1000
             chunks = retrieval_packet.chunks
         else:
-            targeted_workspace_twin = _resolve_workspace_twin_from_query(content, workspace_summary or {})
+            targeted_workspace_twin = _resolve_workspace_doctwin_from_query(content, workspace_summary or {})
             if targeted_workspace_twin is None and not _is_any_project_query(content):
                 answer, chunks, workspace_metrics = await _answer_across_workspace(
                     session=session,
@@ -427,7 +426,7 @@ async def send_message(
                 generation_elapsed_ms += workspace_metrics["generation_ms"]
                 verification_elapsed_ms += workspace_metrics["verification_ms"]
                 quality_metrics = workspace_metrics["quality_metrics"]
-                routed_twin_id = None
+                routed_doctwin_id = None
                 source_list = []
                 custom_context = None
                 memory_brief = None
@@ -438,12 +437,12 @@ async def send_message(
                 top_k_ws = _CONTEXT_CHUNKS_BROAD if _is_broad_query(content) else _CONTEXT_CHUNKS_FOCUSED
                 if targeted_workspace_twin is not None:
                     routed_id_str = str(targeted_workspace_twin["id"])
-                    twin_name = str(targeted_workspace_twin.get("name") or twin_name)
-                    targeted_config = await _load_twin_config(uuid.UUID(routed_id_str), db)
+                    doctwin_name = str(targeted_workspace_twin.get("name") or doctwin_name)
+                    targeted_config = await _load_doctwin_config(uuid.UUID(routed_id_str), db)
                     retrieval_started_at = perf_counter()
                     retrieval_packet = await retrieve_packet_for_twin(
                         query=content,
-                        twin_id=routed_id_str,
+                        doctwin_id=routed_id_str,
                         allow_code_snippets=bool(
                             targeted_config.allow_code_snippets if targeted_config else False
                         ),
@@ -474,13 +473,13 @@ async def send_message(
                     chunks = retrieval_packet.chunks
 
                 if routed_id_str:
-                    routed_twin_id = uuid.UUID(routed_id_str)
+                    routed_doctwin_id = uuid.UUID(routed_id_str)
                     inventory = await _load_structure_inventory(routed_id_str, db)
                     guaranteed_refs = _resolve_refs_from_inventory(analysis.path_hints, inventory)
                     # Load the routed twin's config
-                    routed_config = await _load_twin_config(routed_twin_id, db)
+                    routed_config = await _load_doctwin_config(routed_doctwin_id, db)
                     if routed_config:
-                        twin_name = _get_twin_display_name(session, routed_config)
+                        doctwin_name = _get_doctwin_display_name(session, routed_config)
                         custom_context = routed_config.custom_context
                         if routed_config.memory_brief_status == "ready":
                             memory_brief = routed_config.memory_brief
@@ -508,14 +507,14 @@ async def send_message(
                     },
                     output={"chunks_returned": len(chunks), "scores": [c.get("score") for c in chunks]},
                     metadata={
-                        "twin_id": str(routed_twin_id) if routed_twin_id else None,
+                        "doctwin_id": str(routed_doctwin_id) if routed_doctwin_id else None,
                         "retrieval_mode": retrieval_packet.mode.value if retrieval_packet else None,
                         "workspace_mode": (
                             "twin"
-                            if session.twin_id is not None
+                            if session.doctwin_id is not None
                             else (
                                 "aggregate"
-                                if routed_twin_id is None and not source_list
+                                if routed_doctwin_id is None and not source_list
                                 else "single_project"
                             )
                         ),
@@ -528,10 +527,10 @@ async def send_message(
             # Load source list so the LLM knows what's attached to this twin.
             # This lets it correctly answer "do you have my resume?" without relying
             # solely on whether resume chunks happen to score highly for that query.
-            source_list = source_list or await _load_sources_for_twin(routed_twin_id or session.twin_id, db)
+            source_list = source_list or await _load_sources_for_twin(routed_doctwin_id or session.doctwin_id, db)
             scope_name = (
-                twin_name
-                if (routed_twin_id is not None or session.twin_id is not None)
+                doctwin_name
+                if (routed_doctwin_id is not None or session.doctwin_id is not None)
                 else "this workspace"
             )
             fallback_response = _build_no_grounding_response(
@@ -540,7 +539,7 @@ async def send_message(
                 sources=source_list,
                 has_context_chunks=bool(chunks),
                 has_memory_brief=bool(memory_brief),
-                is_workspace_scope=(routed_twin_id is None and session.twin_id is None),
+                is_workspace_scope=(routed_doctwin_id is None and session.doctwin_id is None),
             )
 
             used_deterministic_fallback = fallback_response is not None
@@ -555,7 +554,7 @@ async def send_message(
                 # Generate grounded answer — memory_brief injected into system prompt when ready
                 generation_started_at = perf_counter()
                 answer = await generate_answer(
-                    twin_name=twin_name,
+                    doctwin_name=doctwin_name,
                     query=content,
                     context_chunks=chunks,
                     conversation_history=history,
@@ -571,19 +570,20 @@ async def send_message(
                 if guaranteed_refs and _HEDGE_RE.search(answer.content):
                     retry_hint = (
                         f"The retrieved context contains content from: {', '.join(guaranteed_refs)}. "
-                        "Answer directly from the retrieved <knowledge> and do not claim the information is unavailable."
+                        "Answer directly from the retrieved <knowledge> and do not claim the information "
+                        "is unavailable."
                     )
                     logger.info(
                         "response_retry_hedging",
                         session_id=str(session_id),
-                        twin_id=str(routed_twin_id) if routed_twin_id else None,
+                        doctwin_id=str(routed_doctwin_id) if routed_doctwin_id else None,
                         refs=guaranteed_refs,
                     )
                 else:
                     verification_started_at = perf_counter()
                     verification = verify_single_project_answer(
                         answer=answer.content,
-                        twin_name=twin_name,
+                        doctwin_name=doctwin_name,
                         packet=retrieval_packet,
                         allow_retry=True,
                     )
@@ -593,7 +593,7 @@ async def send_message(
                         logger.info(
                             "answer_verifier_retry_requested",
                             session_id=str(session_id),
-                            twin_id=str(routed_twin_id) if routed_twin_id else None,
+                            doctwin_id=str(routed_doctwin_id) if routed_doctwin_id else None,
                             issues=verification.issues,
                         )
                     else:
@@ -602,7 +602,7 @@ async def send_message(
                 if retry_hint:
                     generation_started_at = perf_counter()
                     answer = await generate_answer(
-                        twin_name=twin_name,
+                        doctwin_name=doctwin_name,
                         query=content,
                         context_chunks=chunks,
                         conversation_history=history,
@@ -618,7 +618,7 @@ async def send_message(
                     verification_started_at = perf_counter()
                     verification = verify_single_project_answer(
                         answer=answer.content,
-                        twin_name=twin_name,
+                        doctwin_name=doctwin_name,
                         packet=retrieval_packet,
                         allow_retry=False,
                     )
@@ -635,7 +635,7 @@ async def send_message(
                     logger.info(
                         "answer_verifier_complete",
                         session_id=str(session_id),
-                        twin_id=str(routed_twin_id) if routed_twin_id else None,
+                        doctwin_id=str(routed_doctwin_id) if routed_doctwin_id else None,
                         verified=verification.verified,
                         rewritten=verification.rewritten,
                         issues=verification.issues,
@@ -644,7 +644,7 @@ async def send_message(
                     logger.info(
                         "answer_quality_metrics",
                         session_id=str(session_id),
-                        twin_id=str(routed_twin_id) if routed_twin_id else None,
+                        doctwin_id=str(routed_doctwin_id) if routed_doctwin_id else None,
                         **quality_metrics.to_log_dict(),
                     )
 
@@ -655,7 +655,7 @@ async def send_message(
         session_id=session_id,
         role=MessageRole.assistant,
         content=answer.content,
-        routed_twin_id=routed_twin_id,
+        routed_doctwin_id=routed_doctwin_id,
         context_chunk_ids=context_chunk_ids,
     )
     db.add(assistant_message)
@@ -669,7 +669,7 @@ async def send_message(
         intent=intent.value,
         memory_brief_injected=memory_brief is not None,
         deterministic_fallback=used_deterministic_fallback,
-        routed_twin_id=str(routed_twin_id) if routed_twin_id else None,
+        routed_doctwin_id=str(routed_doctwin_id) if routed_doctwin_id else None,
         input_tokens=answer.input_tokens,
         output_tokens=answer.output_tokens,
         trace_id=trace_id,
@@ -680,26 +680,26 @@ async def send_message(
         generation_ms=generation_elapsed_ms,
         verification_ms=verification_elapsed_ms,
         total_ms=(perf_counter() - total_started_at) * 1000,
-        workspace_scope=(session.twin_id is None),
+        workspace_scope=(session.doctwin_id is None),
     )
     logger.info(
         "chat_latency_metrics",
         session_id=str(session_id),
-        twin_id=str(routed_twin_id) if routed_twin_id else None,
+        doctwin_id=str(routed_doctwin_id) if routed_doctwin_id else None,
         **latency_report.to_log_dict(),
     )
     if latency_report.budget_exceeded:
         logger.warning(
             "chat_latency_budget_exceeded",
             session_id=str(session_id),
-            twin_id=str(routed_twin_id) if routed_twin_id else None,
+            doctwin_id=str(routed_doctwin_id) if routed_doctwin_id else None,
             **latency_report.to_log_dict(),
         )
 
     # Phase 0 — evidence authority / degraded-mode diagnosis (logs + Langfuse)
-    _twin_for_health = routed_twin_id or session.twin_id
+    _doctwin_for_health = routed_doctwin_id or session.doctwin_id
     _src_orms = (
-        await _load_source_orms_for_twin(_twin_for_health, db) if _twin_for_health else []
+        await _load_source_orms_for_twin(_doctwin_for_health, db) if _doctwin_for_health else []
     )
     answer_authority = build_answer_authority_diagnosis(
         used_deterministic_fallback=used_deterministic_fallback,
@@ -709,7 +709,7 @@ async def send_message(
         memory_brief_status=memory_brief_status_str,
         quality_metrics=quality_metrics,
         latency_budget_exceeded=latency_report.budget_exceeded,
-        workspace_scope=(session.twin_id is None),
+        workspace_scope=(session.doctwin_id is None),
         sources=source_list if not _src_orms else None,
         source_models=_src_orms if _src_orms else None,
     )
@@ -725,7 +725,7 @@ async def send_message(
     logger.info(
         "answer_authority_diagnosis",
         session_id=str(session_id),
-        twin_id=str(routed_twin_id) if routed_twin_id else None,
+        doctwin_id=str(routed_doctwin_id) if routed_doctwin_id else None,
         **answer_authority.to_log_dict(),
     )
 
@@ -738,7 +738,7 @@ async def send_message(
                     "input_tokens": answer.input_tokens,
                     "output_tokens": answer.output_tokens,
                     "chunks_used": len(chunks),
-                    "routed_twin_id": str(routed_twin_id) if routed_twin_id else None,
+                    "routed_doctwin_id": str(routed_doctwin_id) if routed_doctwin_id else None,
                     "authority_level": answer_authority.authority_level.value,
                     "authority_degraded_reasons": answer_authority.degraded_reasons,
                 },
@@ -757,7 +757,7 @@ async def send_message(
                     query=content,
                     context_chunks=chunks,
                     response=answer.content,
-                    twin_name=twin_name,
+                    doctwin_name=doctwin_name,
                     trace_id=trace_id,
                 )
             )
@@ -799,7 +799,7 @@ async def send_public_message(
 # ─── Session listing ──────────────────────────────────────────────────────────
 
 async def list_sessions_for_twin(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     user_id: uuid.UUID,
     db: AsyncSession,
     limit: int = 30,
@@ -811,16 +811,16 @@ async def list_sessions_for_twin(
     and a preview (first user message, truncated to 120 chars).
     Ownership is verified via the twin's workspace.
     """
-    twin = await _load_twin_with_workspace(twin_id, db)
+    twin = await _load_doctwin_with_workspace(doctwin_id, db)
     if twin is None:
-        raise NotFoundError(f"Twin {twin_id} not found")
+        raise NotFoundError(f"Twin {doctwin_id} not found")
     if twin.workspace.owner_id != user_id:
         raise ForbiddenError("You do not own this twin's workspace")
 
     sessions_result = await db.execute(
         select(ChatSession)
         .where(
-            ChatSession.twin_id == twin_id,
+            ChatSession.doctwin_id == doctwin_id,
             ChatSession.user_id == user_id,
         )
         .order_by(ChatSession.created_at.desc())
@@ -839,7 +839,7 @@ async def list_sessions_for_workspace(
     """
     List recent workspace-wide chat sessions for a workspace owned by user_id.
 
-    Only workspace-scoped sessions (twin_id is null) are included so the session
+    Only workspace-scoped sessions (doctwin_id is null) are included so the session
     history matches the routed workspace chat surface rather than individual twins.
     """
     result = await db.execute(
@@ -855,7 +855,7 @@ async def list_sessions_for_workspace(
         select(ChatSession)
         .where(
             ChatSession.workspace_id == workspace_id,
-            ChatSession.twin_id.is_(None),
+            ChatSession.doctwin_id.is_(None),
             ChatSession.user_id == user_id,
         )
         .order_by(ChatSession.created_at.desc())
@@ -962,18 +962,18 @@ def _assert_session_access(session: ChatSession, user_id: uuid.UUID | None) -> N
         raise ForbiddenError("You do not own this session")
 
 
-async def _load_twin_with_workspace(twin_id: uuid.UUID, db: AsyncSession) -> Twin | None:
+async def _load_doctwin_with_workspace(doctwin_id: uuid.UUID, db: AsyncSession) -> Twin | None:
     result = await db.execute(
         select(Twin)
         .options(selectinload(Twin.workspace))
-        .where(Twin.id == twin_id)
+        .where(Twin.id == doctwin_id)
     )
     return result.scalar_one_or_none()
 
 
-async def _load_twin_config(twin_id: uuid.UUID, db: AsyncSession) -> TwinConfig | None:
+async def _load_doctwin_config(doctwin_id: uuid.UUID, db: AsyncSession) -> TwinConfig | None:
     result = await db.execute(
-        select(TwinConfig).where(TwinConfig.twin_id == twin_id)
+        select(TwinConfig).where(TwinConfig.doctwin_id == doctwin_id)
     )
     return result.scalar_one_or_none()
 
@@ -1028,13 +1028,13 @@ async def _build_message_history(
     return list(reversed(result_msgs))
 
 
-def _get_twin_display_name(
+def _get_doctwin_display_name(
     session: ChatSession,
-    twin_config: TwinConfig | None,
+    doctwin_config: TwinConfig | None,
 ) -> str:
     """Return the display name for a twin, defaulting to 'This Project'."""
-    if twin_config and twin_config.display_name:
-        return twin_config.display_name
+    if doctwin_config and doctwin_config.display_name:
+        return doctwin_config.display_name
     return "This Project"
 
 
@@ -1109,15 +1109,15 @@ def _build_workspace_scope_response(query: str, workspace_summary: dict) -> str 
     if total_twins == 0:
         if _is_greeting(query):
             return (
-                f"Hi! This workspace is set up, but it doesn't have any twins attached yet. "
+                "Hi! This workspace is set up, but it doesn't have any twins attached yet. "
                 "Once twins are added, I can route questions across them."
             )
         return (
-            f"This workspace currently has **0 twins**, so there's nothing I can route across yet. "
+            "This workspace currently has **0 twins**, so there's nothing I can route across yet. "
             "Add a twin first, then I can answer workspace-wide questions."
         )
 
-    twin_lines: list[str] = []
+    doctwin_lines: list[str] = []
     for twin in twins:
         detail = twin["description"] or (
             f"Ready sources: {', '.join(twin['ready_source_names'])}"
@@ -1131,7 +1131,7 @@ def _build_workspace_scope_response(query: str, workspace_summary: dict) -> str 
             else "no ready sources yet"
         )
         active_note = "" if twin["is_active"] else " Inactive."
-        twin_lines.append(f"- **{twin['name']}** — {detail} ({availability}).{active_note}")
+        doctwin_lines.append(f"- **{twin['name']}** — {detail} ({availability}).{active_note}")
 
     summary_line = (
         f"This workspace currently has **{total_twins} twin{'s' if total_twins != 1 else ''}**. "
@@ -1149,7 +1149,7 @@ def _build_workspace_scope_response(query: str, workspace_summary: dict) -> str 
     return (
         f"{summary_line}\n\n"
         f"{heading}\n"
-        + "\n".join(twin_lines)
+        + "\n".join(doctwin_lines)
     )
 
 
@@ -1157,7 +1157,7 @@ def _normalise_workspace_match(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
 
 
-def _workspace_twin_aliases(twin: dict) -> list[str]:
+def _workspace_doctwin_aliases(twin: dict) -> list[str]:
     aliases = {
         str(twin.get("name") or "").strip(),
         str(twin.get("canonical_name") or "").strip(),
@@ -1176,13 +1176,13 @@ def _workspace_twin_aliases(twin: dict) -> list[str]:
     return sorted((alias for alias in expanded if alias), key=len, reverse=True)
 
 
-def _resolve_workspace_twin_from_query(query: str, workspace_summary: dict) -> dict | None:
+def _resolve_workspace_doctwin_from_query(query: str, workspace_summary: dict) -> dict | None:
     twins = workspace_summary.get("twins") or []
     normalised_query = f" {_normalise_workspace_match(query)} "
     best_match: tuple[int, dict] | None = None
 
     for twin in twins:
-        for alias in _workspace_twin_aliases(twin):
+        for alias in _workspace_doctwin_aliases(twin):
             normalised_alias = _normalise_workspace_match(alias)
             if len(normalised_alias) < 3:
                 continue
@@ -1249,7 +1249,7 @@ async def _answer_across_workspace(
 ) -> tuple[LLMResponse, list[dict], dict]:
     project_summaries = workspace_summary.get("twins") or []
     workspace_name = workspace_summary.get("workspace_name") or "this workspace"
-    per_twin_top_k = 6 if _is_broad_query(query) else 4
+    per_doctwin_top_k = 6 if _is_broad_query(query) else 4
     lowered_query = query.lower()
     if any(
         token in lowered_query
@@ -1265,7 +1265,7 @@ async def _answer_across_workspace(
             "code snippet",
         )
     ):
-        per_twin_top_k = max(per_twin_top_k, 8)
+        per_doctwin_top_k = max(per_doctwin_top_k, 8)
     retrieval_started_at = perf_counter()
     generation_elapsed_ms = 0.0
     verification_elapsed_ms = 0.0
@@ -1280,18 +1280,18 @@ async def _answer_across_workspace(
         project_chunks: list[dict] = []
         project_packet = None
         if ready_source_count > 0 and project.get("id"):
-            twin_id = str(project["id"])
-            inventory = await _load_structure_inventory(twin_id, db)
+            doctwin_id = str(project["id"])
+            inventory = await _load_structure_inventory(doctwin_id, db)
             guaranteed_refs = _resolve_refs_from_inventory(analysis.path_hints, inventory)
-            project_config = await _load_twin_config(uuid.UUID(twin_id), db)
+            project_config = await _load_doctwin_config(uuid.UUID(doctwin_id), db)
             project_packet = await retrieve_packet_for_twin(
                 query=query,
-                twin_id=twin_id,
+                doctwin_id=doctwin_id,
                 allow_code_snippets=bool(
                     project_config.allow_code_snippets if project_config else False
                 ),
                 db=db,
-                top_k=per_twin_top_k,
+                top_k=per_doctwin_top_k,
                 intent=analysis.intent,
                 path_hints=analysis.path_hints,
                 guaranteed_refs=guaranteed_refs,
@@ -1501,7 +1501,7 @@ def _build_no_grounding_response(
         if _is_source_query(query):
             return (
                 f"I don't have any knowledge sources attached to {scope_label} yet. "
-                "Add a repo, document, PDF, website, or notes source and once it finishes "
+                "Add a Drive file, document, PDF, website, or notes source and once it finishes "
                 "processing I can answer questions from it."
             )
         return (
@@ -1547,7 +1547,7 @@ def _build_no_grounding_response(
 
 
 async def _load_sources_for_twin(
-    twin_id: uuid.UUID | None,
+    doctwin_id: uuid.UUID | None,
     db: AsyncSession,
 ) -> list[dict]:
     """
@@ -1557,18 +1557,18 @@ async def _load_sources_for_twin(
     can confirm "yes, I have your resume" even when resume chunks don't score
     highly enough for the current query vector.
 
-    Returns an empty list when twin_id is None (workspace-wide sessions without
+    Returns an empty list when doctwin_id is None (workspace-wide sessions without
     a resolved twin don't have a single source list to reference).
 
     Phase 0: each row includes index_mode and summary index_health fields so
     answer diagnostics can attribute weakness to ingest/index state.
     """
-    if twin_id is None:
+    if doctwin_id is None:
         return []
     try:
         result = await db.execute(
             select(Source)
-            .where(Source.twin_id == twin_id)
+            .where(Source.doctwin_id == doctwin_id)
             .order_by(Source.created_at)
         )
         sources = result.scalars().all()
@@ -1591,24 +1591,24 @@ async def _load_sources_for_twin(
             )
         return out
     except Exception as exc:
-        logger.warning("load_sources_for_twin_failed", twin_id=str(twin_id), error=str(exc))
+        logger.warning("load_sources_for_doctwin_failed", doctwin_id=str(doctwin_id), error=str(exc))
         return []
 
 
 async def _load_source_orms_for_twin(
-    twin_id: uuid.UUID | None,
+    doctwin_id: uuid.UUID | None,
     db: AsyncSession,
 ) -> list[Source]:
     """Full Source rows for Phase 0 twin-level evidence health aggregation."""
-    if twin_id is None:
+    if doctwin_id is None:
         return []
     try:
         result = await db.execute(
             select(Source)
-            .where(Source.twin_id == twin_id)
+            .where(Source.doctwin_id == doctwin_id)
             .order_by(Source.created_at)
         )
         return list(result.scalars().all())
     except Exception as exc:
-        logger.warning("load_source_orms_for_twin_failed", twin_id=str(twin_id), error=str(exc))
+        logger.warning("load_source_orms_for_doctwin_failed", doctwin_id=str(doctwin_id), error=str(exc))
         return []

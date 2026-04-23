@@ -1,12 +1,9 @@
 """
-Canonical evidence hydration for retrieved chunks.
+Evidence hydration for retrieved chunks (simplified).
 
-Hydration is intentionally deterministic:
-- hydrate strict deterministic chunks from the Phase 1 source mirror first
-- legacy fallback may re-fetch provider content when a source has not been
-  backfilled into the mirror yet
-- match hydrated candidates by the same segment identity used at ingest time
-- never invent a second extraction contract for hydration
+Docbase answers from stored chunk text and metadata. Optional refresh from
+Google Drive or local file paths is kept for strict file-backed chunks; there
+is no source mirror or Git provider refetch.
 """
 
 from __future__ import annotations
@@ -21,19 +18,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connectors.google_drive.connector import _fetch_file_content as drive_fetch_file_content
 from app.connectors.google_drive.connector import _make_client as drive_make_client
-from app.connectors.github.connector import _fetch_file_content as github_fetch_file_content
-from app.connectors.github.connector import _make_client as github_make_client
-from app.connectors.gitlab.connector import _fetch_file_content as gitlab_fetch_file_content
-from app.connectors.gitlab.connector import _make_client as gitlab_make_client
 from app.connectors.pdf.connector import PDFConnector
 from app.core.logging import get_logger
 from app.domains.integrations.service import resolve_access_token
 from app.domains.knowledge.evidence import build_segment_id, hash_text
 from app.domains.knowledge.extractors import extract_chunks
-from app.domains.knowledge.implementation_facts import render_fact_chunk_content
-from app.domains.knowledge.source_mirror import load_source_file_text
 from app.models.chunk import Chunk, ChunkLineage, ChunkType
-from app.models.implementation_fact import ImplementationFact
 from app.models.source import Source, SourceIndexMode, SourceType
 
 logger = get_logger(__name__)
@@ -47,12 +37,7 @@ async def hydrate_retrieved_chunks(
     chunks: list[dict[str, Any]],
     db: AsyncSession,
 ) -> list[dict[str, Any]]:
-    """
-    Hydrate strict evidence where it is cheap and exact.
-
-    Today this verifies and refreshes file-backed code snippet chunks against
-    the canonical snapshot. Other chunk types pass through unchanged.
-    """
+    """Enrich chunk dicts with DB metadata; optionally refresh strict file-backed text."""
     started_at = perf_counter()
     chunk_ids = [chunk.get("chunk_id") for chunk in chunks if chunk.get("chunk_id")]
     if not chunk_ids:
@@ -65,7 +50,11 @@ async def hydrate_retrieved_chunks(
     )
     rows = result.fetchall()
     by_id = {str(row.Chunk.id): (row.Chunk, row.Source) for row in rows}
-    hydrated_candidates_cache: dict[tuple[str, str, str | None, bool], dict[tuple[str, str | None], dict[str, Any]]] = {}
+
+    hydrated_candidates_cache: dict[
+        tuple[str, str, str | None, bool],
+        dict[tuple[str, str | None], dict[str, Any]],
+    ] = {}
 
     hydrated: list[dict[str, Any]] = []
     hydrated_count = 0
@@ -86,8 +75,8 @@ async def hydrate_retrieved_chunks(
         chunk_row, source = match
         hydrated_chunk = dict(chunk)
         hydrated_chunk["source_id"] = str(getattr(source, "id", chunk.get("source_id")))
-        twin_id = getattr(source, "twin_id", chunk.get("twin_id"))
-        hydrated_chunk["twin_id"] = str(twin_id) if twin_id is not None else None
+        doctwin_id = getattr(source, "doctwin_id", chunk.get("doctwin_id"))
+        hydrated_chunk["doctwin_id"] = str(doctwin_id) if doctwin_id is not None else None
         hydrated_chunk["snapshot_id"] = chunk_row.snapshot_id
         hydrated_chunk["segment_id"] = chunk_row.segment_id
         hydrated_chunk["start_line"] = chunk_row.start_line
@@ -100,7 +89,8 @@ async def hydrate_retrieved_chunks(
         )
         if (
             source.index_mode != SourceIndexMode.strict
-            or chunk_row.lineage not in {ChunkLineage.file_backed, ChunkLineage.connector_segment}
+            or chunk_row.lineage
+            not in {ChunkLineage.file_backed, ChunkLineage.connector_segment}
             or not chunk_row.source_ref
         ):
             hydrated.append(hydrated_chunk)
@@ -132,14 +122,19 @@ async def _hydrate_deterministic_chunk(
     chunk_row: Chunk,
     source: Source,
     db: AsyncSession,
-    hydrated_candidates_cache: dict[tuple[str, str, str | None, bool], dict[tuple[str, str | None], dict[str, Any]]],
+    hydrated_candidates_cache: dict[
+        tuple[str, str, str | None, bool],
+        dict[tuple[str, str | None], dict[str, Any]],
+    ],
 ) -> dict[str, Any]:
-    path = chunk_row.source_ref or ""
-    allow_code_snippets = bool(((source.index_health or {}).get("policy") or {}).get("allow_code_snippets"))
-    cache_key = (str(source.id), path, chunk_row.snapshot_id, allow_code_snippets)
-
     if chunk_row.chunk_type == ChunkType.implementation_fact:
-        return await _hydrate_implementation_fact_chunk(chunk, chunk_row, source, db)
+        return chunk
+
+    path = chunk_row.source_ref or ""
+    allow_code_snippets = bool(
+        ((source.index_health or {}).get("policy") or {}).get("allow_code_snippets")
+    )
+    cache_key = (str(source.id), path, chunk_row.snapshot_id, allow_code_snippets)
 
     if cache_key not in hydrated_candidates_cache:
         full_text = await _load_canonical_source_text(source, path, chunk_row.snapshot_id, db)
@@ -175,50 +170,6 @@ async def _hydrate_deterministic_chunk(
     return updated
 
 
-async def _hydrate_implementation_fact_chunk(
-    chunk: dict[str, Any],
-    chunk_row: Chunk,
-    source: Source,
-    db: AsyncSession,
-) -> dict[str, Any]:
-    fact_key = (chunk_row.chunk_metadata or {}).get("fact_key")
-    if not fact_key:
-        return chunk
-    result = await db.execute(
-        select(ImplementationFact).where(
-            ImplementationFact.source_id == source.id,
-            ImplementationFact.snapshot_id == chunk_row.snapshot_id,
-            ImplementationFact.fact_key == str(fact_key),
-        )
-    )
-    fact = result.scalar_one_or_none()
-    if fact is None:
-        return chunk
-
-    content = render_fact_chunk_content(
-        summary=fact.summary,
-        fact_type=fact.fact_type.value if hasattr(fact.fact_type, "value") else str(fact.fact_type),
-        subject=fact.subject,
-        predicate=fact.predicate,
-        object_ref=fact.object_ref,
-    )
-    if chunk_row.content_hash and hash_text(content) != chunk_row.content_hash:
-        logger.warning(
-            "implementation_fact_hydration_hash_mismatch",
-            chunk_id=str(chunk_row.id),
-            source_id=str(source.id),
-            snapshot_id=chunk_row.snapshot_id,
-            fact_key=fact_key,
-        )
-        return chunk
-
-    updated = dict(chunk)
-    updated["content"] = content
-    updated["hydrated"] = True
-    updated["snapshot_id"] = chunk_row.snapshot_id
-    return updated
-
-
 def _build_canonical_chunk_map(
     *,
     path: str,
@@ -245,19 +196,7 @@ async def _load_canonical_source_text(
     snapshot_id: str | None,
     db: AsyncSession,
 ) -> str | None:
-    mirrored = await load_source_file_text(
-        db=db,
-        source_id=source.id,
-        snapshot_id=snapshot_id or source.snapshot_id,
-        path=path,
-    )
-    if mirrored is not None:
-        return mirrored
-
-    if source.source_type == SourceType.github_repo:
-        return await _hydrate_github_file(source, path, snapshot_id, db)
-    if source.source_type == SourceType.gitlab_repo:
-        return await _hydrate_gitlab_file(source, path, snapshot_id, db)
+    del snapshot_id  # reserved for snapshot-bound canonical reads
     if source.source_type == SourceType.manual:
         return str(source.connection_config.get("content") or "")
     if source.source_type == SourceType.markdown:
@@ -267,7 +206,7 @@ async def _load_canonical_source_text(
         if not file_path:
             return None
         try:
-            with open(file_path, "r", encoding="utf-8") as handle:
+            with open(file_path, encoding="utf-8") as handle:
                 return handle.read().replace("\x00", "")
         except OSError:
             return None
@@ -276,38 +215,6 @@ async def _load_canonical_source_text(
     if source.source_type == SourceType.google_drive:
         return await _hydrate_google_drive_file(source, path, db)
     return None
-
-
-async def _hydrate_github_file(
-    source: Source,
-    path: str,
-    snapshot_id: str | None,
-    db: AsyncSession,
-) -> str | None:
-    token = await _resolve_source_access_token(source, db)
-    repo = source.connection_config.get("repo_url")
-    ref = snapshot_id or source.snapshot_id or source.last_commit_sha
-    if not token or not repo or not ref:
-        return None
-    async with github_make_client(token) as client:
-        content, _err = await github_fetch_file_content(client, str(repo), str(ref), path)
-    return content
-
-
-async def _hydrate_gitlab_file(
-    source: Source,
-    path: str,
-    snapshot_id: str | None,
-    db: AsyncSession,
-) -> str | None:
-    token = await _resolve_source_access_token(source, db)
-    project = source.connection_config.get("repo_url")
-    ref = snapshot_id or source.snapshot_id or source.last_commit_sha
-    if not token or not project or not ref:
-        return None
-    async with gitlab_make_client(token) as client:
-        content, _err = await gitlab_fetch_file_content(client, str(project), str(ref), path)
-    return content
 
 
 async def _resolve_source_access_token(source: Source, db: AsyncSession) -> str | None:

@@ -4,16 +4,16 @@ Adds:
   - Five new values to chunk_type_enum:
       change_entry, risk_note, decision_record, hotspot, memory_brief
     These are LLM-generated chunk types produced by the memory extraction job.
-    Stored with source_ref = "__memory__/{twin_id}" to distinguish them from
+    Stored with source_ref = "__memory__/{doctwin_id}" to distinguish them from
     file-derived chunks and enable targeted deletion on re-extraction.
 
-  - Three new columns on twin_configs:
+  - Three new columns on doctwin_configs:
       memory_brief          TEXT       — the generated Memory Brief markdown
       memory_brief_generated_at  TIMESTAMPTZ — when the brief was last generated
       memory_brief_status   VARCHAR(20) — lifecycle: pending|generating|ready|failed
 
 NOTE: PostgreSQL ENUM values cannot be dropped without full type recreation.
-The downgrade() function only reverses the twin_configs columns. If a full
+The downgrade() function only reverses the doctwin_configs columns. If a full
 rollback is required, all rows using these chunk types must be deleted first,
 then the enum type must be recreated manually.
 
@@ -47,13 +47,13 @@ def upgrade() -> None:
     op.execute("ALTER TYPE chunk_type_enum ADD VALUE IF NOT EXISTS 'hotspot'")
     op.execute("ALTER TYPE chunk_type_enum ADD VALUE IF NOT EXISTS 'memory_brief'")
 
-    # ── 2. Memory Brief columns on twin_configs ───────────────────────────────
+    # ── 2. Memory Brief columns on doctwin_configs ───────────────────────────────
     op.add_column(
-        "twin_configs",
+        "doctwin_configs",
         sa.Column("memory_brief", sa.Text, nullable=True),
     )
     op.add_column(
-        "twin_configs",
+        "doctwin_configs",
         sa.Column(
             "memory_brief_generated_at",
             sa.DateTime(timezone=True),
@@ -61,7 +61,7 @@ def upgrade() -> None:
         ),
     )
     op.add_column(
-        "twin_configs",
+        "doctwin_configs",
         sa.Column("memory_brief_status", sa.String(20), nullable=True),
     )
 
@@ -69,10 +69,10 @@ def upgrade() -> None:
 # ── Downgrade ─────────────────────────────────────────────────────────────────
 
 def downgrade() -> None:
-    # Remove the three twin_configs columns.
-    op.drop_column("twin_configs", "memory_brief_status")
-    op.drop_column("twin_configs", "memory_brief_generated_at")
-    op.drop_column("twin_configs", "memory_brief")
+    # Remove the three doctwin_configs columns.
+    op.drop_column("doctwin_configs", "memory_brief_status")
+    op.drop_column("doctwin_configs", "memory_brief_generated_at")
+    op.drop_column("doctwin_configs", "memory_brief")
 
     # NOTE: The five chunk_type_enum values (change_entry, risk_note,
     # decision_record, hotspot, memory_brief) are NOT removed here.

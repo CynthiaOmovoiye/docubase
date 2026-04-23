@@ -1,5 +1,5 @@
 """
-docubase — FastAPI application entry point.
+docbase — FastAPI application entry point.
 """
 
 from contextlib import asynccontextmanager
@@ -86,7 +86,7 @@ async def lifespan(app: FastAPI):
 # ─── App ──────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="docubase",
+    title="docbase",
     version="0.1.0",
     docs_url="/api/docs" if not settings.is_production else None,
     redoc_url="/api/redoc" if not settings.is_production else None,

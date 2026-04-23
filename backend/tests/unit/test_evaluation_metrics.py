@@ -36,7 +36,7 @@ def _packet() -> RetrievalEvidencePacket:
                 chunk_id="1",
                 chunk_type="documentation",
                 path="app/auth.py",
-                twin_id="t1",
+                doctwin_id="t1",
                 source_id="s1",
                 snapshot_id="sha:test",
                 start_line=1,

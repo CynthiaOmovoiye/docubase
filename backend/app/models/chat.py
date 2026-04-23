@@ -2,7 +2,7 @@ import enum
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Enum, ForeignKey, String, Text
+from sqlalchemy import Enum, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -11,10 +11,9 @@ from app.models.base import TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from app.models.twin import Twin
-    from app.models.workspace import Workspace
 
 
-class MessageRole(str, enum.Enum):
+class MessageRole(enum.StrEnum):
     user = "user"
     assistant = "assistant"
     system = "system"
@@ -34,7 +33,7 @@ class ChatSession(Base, UUIDMixin, TimestampMixin):
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
     )
-    twin_id: Mapped[uuid.UUID | None] = mapped_column(
+    doctwin_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("twins.id", ondelete="SET NULL"), nullable=True
     )
 
@@ -65,7 +64,7 @@ class Message(Base, UUIDMixin, TimestampMixin):
     content: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Which twin/source actually answered (for workspace-level routing transparency)
-    routed_twin_id: Mapped[uuid.UUID | None] = mapped_column(
+    routed_doctwin_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
     )
 

@@ -2,11 +2,11 @@
 Workspace schemas.
 """
 
+import re
 import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
-import re
 
 
 def _slugify(value: str) -> str:

@@ -22,19 +22,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.db import get_db
 from app.core.redis import get_redis
-from app.domains.twins.service import (
-    create_twin,
-    delete_twin,
-    get_twin,
-    get_twin_config,
-    get_twin_evidence_health,
-    list_twins,
-    update_twin,
-    update_twin_config,
-)
 from app.domains.memory.queue_state import (
     memory_brief_job_id,
     memory_brief_pending_key,
+)
+from app.domains.twins.service import (
+    create_twin,
+    delete_twin,
+    get_doctwin_config,
+    get_doctwin_evidence_health,
+    get_twin,
+    list_twins,
+    update_doctwin_config,
+    update_twin,
 )
 from app.models.twin import TwinConfig
 from app.models.user import User
@@ -70,12 +70,12 @@ async def create_new_twin(
 
 
 @router.get(
-    "/{twin_id}/evidence-health",
+    "/{doctwin_id}/evidence-health",
     response_model=TwinEvidenceHealthResponse,
     summary="Twin evidence health (Phase 0)",
 )
-async def get_twin_evidence_health_endpoint(
-    twin_id: uuid.UUID,
+async def get_doctwin_evidence_health_endpoint(
+    doctwin_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -84,60 +84,60 @@ async def get_twin_evidence_health_endpoint(
 
     Intended for owners and internal tooling — not for anonymous share surfaces.
     """
-    payload = await get_twin_evidence_health(twin_id, current_user, db)
+    payload = await get_doctwin_evidence_health(doctwin_id, current_user, db)
     return TwinEvidenceHealthResponse.model_validate(payload)
 
 
-@router.get("/{twin_id}", response_model=TwinResponse)
+@router.get("/{doctwin_id}", response_model=TwinResponse)
 async def get_one_twin(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_twin(twin_id, current_user, db)
+    return await get_twin(doctwin_id, current_user, db)
 
 
-@router.patch("/{twin_id}", response_model=TwinResponse)
+@router.patch("/{doctwin_id}", response_model=TwinResponse)
 async def update_one_twin(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     payload: TwinUpdateRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await update_twin(twin_id, payload, current_user, db)
+    return await update_twin(doctwin_id, payload, current_user, db)
 
 
-@router.delete("/{twin_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{doctwin_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_one_twin(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    await delete_twin(twin_id, current_user, db)
+    await delete_twin(doctwin_id, current_user, db)
 
 
-@router.get("/{twin_id}/config", response_model=TwinConfigResponse)
+@router.get("/{doctwin_id}/config", response_model=TwinConfigResponse)
 async def get_config(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_twin_config(twin_id, current_user, db)
+    return await get_doctwin_config(doctwin_id, current_user, db)
 
 
-@router.patch("/{twin_id}/config", response_model=TwinConfigResponse)
+@router.patch("/{doctwin_id}/config", response_model=TwinConfigResponse)
 async def update_config(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     payload: TwinConfigUpdateRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await update_twin_config(twin_id, payload, current_user, db)
+    return await update_doctwin_config(doctwin_id, payload, current_user, db)
 
 
-@router.post("/{twin_id}/memory/generate", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/{doctwin_id}/memory/generate", status_code=status.HTTP_202_ACCEPTED)
 async def trigger_memory_generation(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -149,7 +149,7 @@ async def trigger_memory_generation(
     Poll GET /twins/{id}/memory/brief to check status.
     """
     # Verify ownership via twin config (twin must belong to user's workspace)
-    await get_twin(twin_id, current_user, db)  # raises 403/404 if not owned
+    await get_twin(doctwin_id, current_user, db)  # raises 403/404 if not owned
 
     # If the distributed lock is already held, extraction is in progress —
     # don't re-queue or overwrite the status; just acknowledge.
@@ -160,7 +160,7 @@ async def trigger_memory_generation(
     from app.domains.ops.twin_memory_queue import enqueue_memory_brief_for_twin
 
     try:
-        return await enqueue_memory_brief_for_twin(twin_id=twin_id, db=db, redis=redis)
+        return await enqueue_memory_brief_for_twin(doctwin_id=doctwin_id, db=db, redis=redis)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -168,9 +168,9 @@ async def trigger_memory_generation(
         ) from exc
 
 
-@router.get("/{twin_id}/memory/brief", response_model=MemoryBriefResponse)
+@router.get("/{doctwin_id}/memory/brief", response_model=MemoryBriefResponse)
 async def get_memory_brief(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> MemoryBriefResponse:
@@ -181,10 +181,10 @@ async def get_memory_brief(
     Returns 404 if no memory extraction has been run for this twin.
     """
     # Verify ownership
-    await get_twin(twin_id, current_user, db)  # raises 403/404 if not owned
+    await get_twin(doctwin_id, current_user, db)  # raises 403/404 if not owned
 
     result = await db.execute(
-        select(TwinConfig).where(TwinConfig.twin_id == twin_id)
+        select(TwinConfig).where(TwinConfig.doctwin_id == doctwin_id)
     )
     config = result.scalar_one_or_none()
 
@@ -214,13 +214,13 @@ async def get_memory_brief(
     #   - If DB says "generating" AND none of the above → worker crashed/timed
     #     out without cleaning up → flip to "failed".
     #   - Any other DB status → trust the DB (job finished normally).
-    job_id = memory_brief_job_id(str(twin_id))
+    job_id = memory_brief_job_id(str(doctwin_id))
     redis = get_redis()
 
-    lock_held = await redis.exists(f"memory_lock:{twin_id}")
+    lock_held = await redis.exists(f"memory_lock:{doctwin_id}")
     job_in_progress = await redis.exists(f"arq:in-progress:{job_id}")
     job_queued = await redis.zscore("arq:queue", job_id)
-    pending_flag = await redis.exists(memory_brief_pending_key(str(twin_id)))
+    pending_flag = await redis.exists(memory_brief_pending_key(str(doctwin_id)))
     # Only treat pending as "in flight" for non-success DB rows; avoids sticking
     # on `ready` if Redis cleanup missed the flag.
     pending_counts = pending_flag and reported_status in ("pending", "generating", "failed")
@@ -234,7 +234,7 @@ async def get_memory_brief(
         if reported_status != "generating":
             await db.execute(
                 update(TwinConfig)
-                .where(TwinConfig.twin_id == twin_id)
+                .where(TwinConfig.doctwin_id == doctwin_id)
                 .values(memory_brief_status="generating")
             )
             await db.commit()
@@ -245,13 +245,13 @@ async def get_memory_brief(
         reported_status = "failed"
         await db.execute(
             update(TwinConfig)
-            .where(TwinConfig.twin_id == twin_id)
+            .where(TwinConfig.doctwin_id == doctwin_id)
             .values(memory_brief_status="failed")
         )
         await db.commit()
 
     return MemoryBriefResponse(
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         status=reported_status,
         generated_at=config.memory_brief_generated_at,
         brief=config.memory_brief,

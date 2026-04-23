@@ -1,4 +1,4 @@
-# docubase
+# docbase
 
 A multi-tenant SaaS platform for creating shareable AI twins for any knowledge source — repositories, resumes, portfolios, projects, or documents.
 
@@ -8,7 +8,7 @@ Users create a twin, attach sources, and share a link. Visitors can chat with th
 
 ## What it does
 
-- **Create twins** backed by GitHub repos, PDFs, markdown, URLs, or manual content
+- **Create twins** backed by Google Drive files, PDFs, markdown, URLs, or manual content
 - **Chat with a twin** — answers grounded in indexed knowledge, not raw code dumps
 - **Share a twin** — public link at `/t/:slug`, embeddable widget for any website
 - **Career twin** — connect your resume, repos, and portfolio. Recruiters chat with your twin instead of reading a PDF.
@@ -31,8 +31,8 @@ Three tiers, always enforced:
 **Prerequisites:** Docker, Docker Compose
 
 ```bash
-git clone https://github.com/<your-account>/docubase.git
-cd docubase
+git clone <your-git-remote-url>
+cd docbase
 ./scripts/setup.sh
 ```
 
@@ -67,7 +67,7 @@ make help
 See `docs/workspace.md` for the full directory guide.
 
 ```
-docubase/
+docbase/
 ├── backend/          Python + FastAPI
 ├── frontend/         React + TypeScript
 ├── infra/            Docker, migrations, scripts
@@ -80,10 +80,15 @@ docubase/
 ## Architecture
 
 See `docs/architecture.md` for the full domain model and data flow.
-See `docs/repo-intelligence-roadmap.md` for the canonical repo intelligence
-roadmap and implementation guide.
+Key principle: **Sources attach to twins, not the other way around.** Each
+`Source` (Drive file, PDF, URL, markdown, etc.) is indexed into the twin the
+user chose. The `Twin` is the primary product abstraction.
 
-Key principle: **Repo is not the top-level concept.** A GitHub repository is one `Source` of type `github_repo`. The `Twin` is the primary product abstraction.
+---
+
+## Deploying the static frontend (AWS)
+
+Step-by-step setup (state bucket, DynamoDB lock table, GitHub OIDC, secrets): **[docs/DEPLOY_SETUP_GUIDE.md](docs/DEPLOY_SETUP_GUIDE.md)**.
 
 ---
 

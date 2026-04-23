@@ -43,7 +43,7 @@ export default function LoginPage() {
               </linearGradient>
             </defs>
           </svg>
-          <span style={styles.logoText}>docubase</span>
+          <span style={styles.logoText}>docbase</span>
         </Link>
 
         <h1 style={styles.heading}>Welcome back</h1>

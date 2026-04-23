@@ -75,7 +75,7 @@ export default function AppShell({ children }: AppShellProps) {
           </svg>
 
           <div style={s.logoCopy}>
-            <span style={s.logoText}>docubase</span>
+            <span style={s.logoText}>docbase</span>
             <span style={s.logoSub}>Owner console</span>
           </div>
         </Link>

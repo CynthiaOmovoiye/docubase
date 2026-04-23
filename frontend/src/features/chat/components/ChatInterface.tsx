@@ -50,7 +50,7 @@ export function ChatInterface({
 
   useEffect(() => {
     startSession();
-  }, []);
+  }, [startSession]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -154,7 +154,7 @@ function MessageBubble({
       <div style={s.assistantBubble}>
         <span style={s.assistantName}>{twinName}</span>
         <MarkdownContent content={message.content} />
-        {message.routed_twin_id && (
+        {message.routed_doctwin_id && (
           <span style={s.routingHint}>↳ via workspace routing</span>
         )}
       </div>

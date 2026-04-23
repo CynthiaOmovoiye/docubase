@@ -9,9 +9,9 @@ from app.core.db import Base
 from app.models.base import TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
+    from app.models.sharing import ShareSurface
     from app.models.twin import Twin
     from app.models.user import User
-    from app.models.sharing import ShareSurface
     from app.models.workspace_memory import WorkspaceMemoryArtifact
 
 

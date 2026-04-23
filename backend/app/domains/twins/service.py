@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import ConflictError, NotFoundError
-from app.domains.evaluation.twin_evidence_health import build_twin_evidence_health_summary
+from app.domains.evaluation.twin_evidence_health import build_doctwin_evidence_health_summary
 from app.models.source import Source
 from app.models.twin import Twin, TwinConfig
 from app.models.user import User
@@ -62,7 +62,7 @@ async def create_twin(
     await _get_workspace_for_user(payload.workspace_id, user, db)
 
     slug = payload.slug or _slugify(payload.name)
-    slug = await _unique_twin_slug(slug, payload.workspace_id, db)
+    slug = await _unique_doctwin_slug(slug, payload.workspace_id, db)
 
     twin = Twin(
         name=payload.name,
@@ -74,7 +74,7 @@ async def create_twin(
     await db.flush()
 
     # Every twin gets a default config on creation
-    config = TwinConfig(twin_id=twin.id)
+    config = TwinConfig(doctwin_id=twin.id)
     db.add(config)
     await db.flush()
 
@@ -85,8 +85,8 @@ async def create_twin(
     return result.scalar_one()
 
 
-async def get_twin_evidence_health(
-    twin_id: uuid.UUID,
+async def get_doctwin_evidence_health(
+    doctwin_id: uuid.UUID,
     user: User,
     db: AsyncSession,
 ) -> dict:
@@ -95,26 +95,26 @@ async def get_twin_evidence_health(
 
     Returns a plain dict matching TwinEvidenceHealthResponse.
     """
-    twin = await get_twin(twin_id, user, db)
-    result = await db.execute(select(Source).where(Source.twin_id == twin_id))
+    twin = await get_twin(doctwin_id, user, db)
+    result = await db.execute(select(Source).where(Source.doctwin_id == doctwin_id))
     sources = list(result.scalars().all())
     mb_status = twin.config.memory_brief_status if twin.config else None
-    summary = build_twin_evidence_health_summary(
+    summary = build_doctwin_evidence_health_summary(
         sources=sources,
         memory_brief_status=mb_status,
     )
-    return {"twin_id": twin.id, **summary}
+    return {"doctwin_id": twin.id, **summary}
 
 
-async def get_twin(twin_id: uuid.UUID, user: User, db: AsyncSession) -> Twin:
+async def get_twin(doctwin_id: uuid.UUID, user: User, db: AsyncSession) -> Twin:
     result = await db.execute(
         select(Twin)
-        .where(Twin.id == twin_id)
+        .where(Twin.id == doctwin_id)
         .options(selectinload(Twin.config))
     )
     twin = result.scalar_one_or_none()
     if twin is None:
-        raise NotFoundError(f"Twin {twin_id} not found")
+        raise NotFoundError(f"Twin {doctwin_id} not found")
 
     # Verify ownership via workspace
     await _get_workspace_for_user(twin.workspace_id, user, db)
@@ -122,12 +122,12 @@ async def get_twin(twin_id: uuid.UUID, user: User, db: AsyncSession) -> Twin:
 
 
 async def update_twin(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     payload: TwinUpdateRequest,
     user: User,
     db: AsyncSession,
 ) -> Twin:
-    twin = await get_twin(twin_id, user, db)
+    twin = await get_twin(doctwin_id, user, db)
     if payload.name is not None:
         twin.name = payload.name
     if payload.description is not None:
@@ -144,26 +144,26 @@ async def update_twin(
     return result.scalar_one()
 
 
-async def delete_twin(twin_id: uuid.UUID, user: User, db: AsyncSession) -> None:
-    twin = await get_twin(twin_id, user, db)
+async def delete_twin(doctwin_id: uuid.UUID, user: User, db: AsyncSession) -> None:
+    twin = await get_twin(doctwin_id, user, db)
     await db.delete(twin)
     await db.flush()
 
 
-async def get_twin_config(twin_id: uuid.UUID, user: User, db: AsyncSession) -> TwinConfig:
-    twin = await get_twin(twin_id, user, db)
+async def get_doctwin_config(doctwin_id: uuid.UUID, user: User, db: AsyncSession) -> TwinConfig:
+    twin = await get_twin(doctwin_id, user, db)
     if twin.config is None:
-        raise NotFoundError(f"Config for twin {twin_id} not found")
+        raise NotFoundError(f"Config for twin {doctwin_id} not found")
     return twin.config
 
 
-async def update_twin_config(
-    twin_id: uuid.UUID,
+async def update_doctwin_config(
+    doctwin_id: uuid.UUID,
     payload: TwinConfigUpdateRequest,
     user: User,
     db: AsyncSession,
 ) -> TwinConfig:
-    config = await get_twin_config(twin_id, user, db)
+    config = await get_doctwin_config(doctwin_id, user, db)
 
     if payload.allow_code_snippets is not None:
         config.allow_code_snippets = payload.allow_code_snippets
@@ -185,10 +185,11 @@ async def update_twin_config(
     return config
 
 
-async def _unique_twin_slug(
+async def _unique_doctwin_slug(
     base: str, workspace_id: uuid.UUID, db: AsyncSession
 ) -> str:
-    import random, string
+    import random
+    import string
     slug = base
     for _ in range(10):
         result = await db.execute(

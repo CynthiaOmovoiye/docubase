@@ -5,12 +5,12 @@ reset_and_regen_memory.py
 Reset engineering memory for a twin and trigger a full re-ingestion + brief
 generation cycle.  Run this from the backend/ directory:
 
-    uv run python scripts/reset_and_regen_memory.py <twin_id>
+    uv run python scripts/reset_and_regen_memory.py <doctwin_id>
 
 What it does:
   1. Clears all __memory__ chunks for the twin
   2. Clears the phantom __memory__ source anchor row
-  3. Resets twin_configs.memory_brief / memory_brief_status / memory_brief_generated_at
+  3. Resets doctwin_configs.memory_brief / memory_brief_status / memory_brief_generated_at
   4. Resets last_commit_sha on all git sources (forces full re-sync, not delta)
   5. Enqueues ingest_source for every ready/failed source on the twin
      (ingest_source will auto-enqueue generate_memory_brief when complete)
@@ -30,7 +30,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Bootstrap .env — look one level up from backend/
 # ---------------------------------------------------------------------------
-_ROOT = Path(__file__).resolve().parent.parent.parent  # docubase/
+_ROOT = Path(__file__).resolve().parent.parent.parent  # docbase/
 _ENV_FILE = _ROOT / ".env"
 if _ENV_FILE.exists():
     from dotenv import load_dotenv  # type: ignore[import]
@@ -59,16 +59,16 @@ from app.models.twin import TwinConfig
 # Main
 # ---------------------------------------------------------------------------
 
-async def reset_twin(twin_id_str: str) -> None:
+async def reset_twin(doctwin_id_str: str) -> None:
     settings = get_settings()
-    twin_id = _uuid.UUID(twin_id_str)
+    doctwin_id = _uuid.UUID(doctwin_id_str)
 
     engine = create_async_engine(settings.database_url, echo=False)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore[call-overload]
 
     async with async_session() as db:
         # ── 1. Delete all __memory__ chunks ──────────────────────────────────
-        memory_ref = f"__memory__/{twin_id_str}"
+        memory_ref = f"__memory__/{doctwin_id_str}"
         result = await db.execute(
             delete(Chunk).where(Chunk.source_ref == memory_ref).returning(Chunk.id)
         )
@@ -76,7 +76,7 @@ async def reset_twin(twin_id_str: str) -> None:
         print(f"[reset] Deleted {deleted_chunks} memory chunks")
 
         # ── 2. Delete the phantom __memory__ source anchor ───────────────────
-        synthetic_source_id = _uuid.uuid5(_uuid.NAMESPACE_DNS, f"memory:{twin_id_str}")
+        synthetic_source_id = _uuid.uuid5(_uuid.NAMESPACE_DNS, f"memory:{doctwin_id_str}")
         result2 = await db.execute(
             delete(Source).where(Source.id == synthetic_source_id).returning(Source.id)
         )
@@ -86,19 +86,19 @@ async def reset_twin(twin_id_str: str) -> None:
         # ── 3. Clear memory brief on TwinConfig ──────────────────────────────
         await db.execute(
             update(TwinConfig)
-            .where(TwinConfig.twin_id == twin_id)
+            .where(TwinConfig.doctwin_id == doctwin_id)
             .values(
                 memory_brief=None,
                 memory_brief_status=None,
                 memory_brief_generated_at=None,
             )
         )
-        print("[reset] Cleared memory_brief on twin_config")
+        print("[reset] Cleared memory_brief on doctwin_config")
 
         # ── 4. Reset last_commit_sha on git sources (force full re-sync) ─────
         sources_result = await db.execute(
             select(Source).where(
-                Source.twin_id == twin_id,
+                Source.doctwin_id == doctwin_id,
                 Source.name != "__memory__",
             )
         )
@@ -145,7 +145,7 @@ async def reset_twin(twin_id_str: str) -> None:
         # worker commits the "ready" status on the other side.
         async with async_session() as db:
             result = await db.execute(
-                select(TwinConfig).where(TwinConfig.twin_id == twin_id)
+                select(TwinConfig).where(TwinConfig.doctwin_id == doctwin_id)
             )
             config = result.scalar_one_or_none()
 
@@ -176,14 +176,14 @@ async def reset_twin(twin_id_str: str) -> None:
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print(f"Usage: uv run python scripts/reset_and_regen_memory.py <twin_id>")
+        print(f"Usage: uv run python scripts/reset_and_regen_memory.py <doctwin_id>")
         sys.exit(1)
 
-    twin_id_arg = sys.argv[1]
+    doctwin_id_arg = sys.argv[1]
     try:
-        _uuid.UUID(twin_id_arg)
+        _uuid.UUID(doctwin_id_arg)
     except ValueError:
-        print(f"Error: {twin_id_arg!r} is not a valid UUID")
+        print(f"Error: {doctwin_id_arg!r} is not a valid UUID")
         sys.exit(1)
 
-    asyncio.run(reset_twin(twin_id_arg))
+    asyncio.run(reset_twin(doctwin_id_arg))

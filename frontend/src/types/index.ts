@@ -1,5 +1,5 @@
 /**
- * Global TypeScript types for docubase.
+ * Global TypeScript types for docbase.
  *
  * These mirror the backend Pydantic schemas.
  * Backend returns snake_case — these match exactly.
@@ -34,7 +34,7 @@ export type MemoryBriefStatus = "pending" | "generating" | "ready" | "failed";
 
 export interface TwinConfig {
   id: string;
-  twin_id: string;
+  doctwin_id: string;
   allow_code_snippets: boolean;
   is_public: boolean;
   display_name: string | null;
@@ -48,7 +48,7 @@ export interface TwinConfig {
 }
 
 export interface MemoryBrief {
-  twin_id: string;
+  doctwin_id: string;
   status: MemoryBriefStatus | null;
   generated_at: string | null;
   brief: string | null;
@@ -69,8 +69,6 @@ export interface Twin {
 // ─── Sources ──────────────────────────────────────────────────────────────────
 
 export type SourceType =
-  | "github_repo"
-  | "gitlab_repo"
   | "google_drive"
   | "pdf"
   | "markdown"
@@ -142,7 +140,7 @@ export interface Source {
   name: string;
   source_type: SourceType;
   status: SourceStatus;
-  twin_id: string;
+  doctwin_id: string;
   last_error: string | null;
   snapshot_id: string | null;
   snapshot_root_hash: string | null;
@@ -160,14 +158,14 @@ export interface Message {
   id: string;
   role: MessageRole;
   content: string;
-  routed_twin_id: string | null;
+  routed_doctwin_id: string | null;
   created_at: string;
 }
 
 export interface ChatSession {
   session_id: string;
   workspace_id: string;
-  twin_id: string | null;
+  doctwin_id: string | null;
   created_at: string;
 }
 
@@ -181,7 +179,7 @@ export interface ChatSessionSummary {
 
 // ─── Sharing ──────────────────────────────────────────────────────────────────
 
-export type ShareSurfaceType = "twin_page" | "workspace_page" | "embed";
+export type ShareSurfaceType = "doctwin_page" | "workspace_page" | "embed";
 
 export interface ShareSurface {
   id: string;
@@ -189,7 +187,7 @@ export interface ShareSurface {
   surface_type: ShareSurfaceType;
   public_slug: string;
   is_active: boolean;
-  twin_id: string | null;
+  doctwin_id: string | null;
   workspace_id: string | null;
   embed_config: Record<string, unknown>;
   created_at: string;
@@ -197,7 +195,7 @@ export interface ShareSurface {
 
 // ─── Integrations ─────────────────────────────────────────────────────────────
 
-export type OAuthProvider = "github" | "gitlab" | "google_drive";
+export type OAuthProvider = "google_drive";
 
 export interface ConnectedAccount {
   id: string;
@@ -206,16 +204,6 @@ export interface ConnectedAccount {
   scopes: string | null;
   is_active: boolean;
   created_at: string;
-}
-
-export interface RepoItem {
-  id: string;
-  name: string;
-  full_name: string;
-  description: string | null;
-  private: boolean;
-  default_branch: string;
-  url: string;
 }
 
 export interface DriveFileItem {

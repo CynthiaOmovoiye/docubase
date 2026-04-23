@@ -3,7 +3,7 @@ Background ingestion jobs (ARQ).
 
 These run outside the request cycle and are triggered when:
 - A new source is attached to a twin (first full sync)
-- A webhook event fires (push to repo, file change in Drive)
+- A webhook event fires (e.g. file change in Drive)
 - A user manually triggers re-sync
 
 Job flow:
@@ -28,14 +28,12 @@ a delta sync prunes only the changed paths.
 
 from __future__ import annotations
 
-import secrets
 import uuid
 from datetime import UTC, datetime
 from time import perf_counter
-from sqlalchemy import update
 
 from arq.connections import RedisSettings
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
@@ -54,12 +52,6 @@ from app.domains.knowledge.evidence import (
     resolve_snapshot_id,
     stale_after_hours_for_source,
 )
-from app.domains.knowledge.git_index import (
-    build_git_index_health,
-    replace_git_activity_for_source,
-)
-from app.domains.knowledge.implementation_facts import clear_implementation_facts_for_source
-from app.domains.knowledge.implementation_index import clear_implementation_index_for_source
 from app.domains.knowledge.pipeline import (
     clear_chunks_for_source,
     process_connector_result,
@@ -71,15 +63,14 @@ from app.domains.memory.queue_state import (
     memory_brief_pending_key,
 )
 from app.domains.sources.service import (
+    mark_processing_sources_failed,
+    mark_processing_sources_ready,
     mark_source_failed,
     mark_source_ingesting,
     mark_source_processing,
-    mark_processing_sources_failed,
-    mark_processing_sources_ready,
 )
 from app.models.chunk import Chunk
-from app.models.implementation_index import IndexedFile, IndexedRelationship, IndexedSymbol
-from app.models.source import Source, SourceStatus, SourceType
+from app.models.source import Source, SourceIndexMode, SourceStatus, SourceType
 from app.models.twin import TwinConfig
 
 logger = get_logger(__name__)
@@ -108,14 +99,14 @@ async def ingest_source(ctx: dict, source_id: str) -> dict:
                 logger.error("ingestion_source_not_found", source_id=source_id)
                 return {"source_id": source_id, "status": "not_found"}
 
-            twin_id = str(source.twin_id)
+            doctwin_id = str(source.doctwin_id)
 
             # ── 2. Load TwinConfig ────────────────────────────────────────────
             config_result = await db.execute(
-                select(TwinConfig).where(TwinConfig.twin_id == source.twin_id)
+                select(TwinConfig).where(TwinConfig.doctwin_id == source.doctwin_id)
             )
-            twin_config = config_result.scalar_one_or_none()
-            allow_code_snippets = twin_config.allow_code_snippets if twin_config else False
+            doctwin_config = config_result.scalar_one_or_none()
+            allow_code_snippets = doctwin_config.allow_code_snippets if doctwin_config else False
 
             # ── 3. Mark as ingesting ──────────────────────────────────────────
             await mark_source_ingesting(source_id, db)
@@ -213,22 +204,18 @@ async def ingest_source(ctx: dict, source_id: str) -> dict:
 
             if connector_result.is_full_sync:
                 deleted_count = await clear_chunks_for_source(source_id, db)
-                implementation_deleted = await clear_implementation_index_for_source(source_id, db)
-                facts_deleted = await clear_implementation_facts_for_source(source_id, db)
-                if deleted_count > 0 or implementation_deleted > 0 or facts_deleted > 0:
+                if deleted_count > 0:
                     logger.info(
                         "ingestion_stale_chunks_cleared",
                         source_id=source_id,
                         deleted=deleted_count,
-                        implementation_deleted=implementation_deleted,
-                        implementation_facts_deleted=facts_deleted,
                     )
 
             # ── 9. Run knowledge pipeline ─────────────────────────────────────
             try:
                 stats = await process_connector_result(
                     result=connector_result,
-                    twin_id=twin_id,
+                    doctwin_id=doctwin_id,
                     allow_code_snippets=allow_code_snippets,
                     db=db,
                     embedding_profiles=_profiles_for_source_sync(source, connector_result.is_full_sync),
@@ -263,7 +250,7 @@ async def ingest_source(ctx: dict, source_id: str) -> dict:
                 await _register_webhook(source, access_token)
 
             # ── 12. Mark processing + hide stale memory until refresh completes ──
-            await _set_memory_brief_status(twin_id, "generating", db)
+            await _set_memory_brief_status(doctwin_id, "generating", db)
             await mark_source_processing(source_id, db)
             await db.commit()
 
@@ -276,18 +263,18 @@ async def ingest_source(ctx: dict, source_id: str) -> dict:
 
             # ── 13. Enqueue memory extraction (required before source is ready) ──
             try:
-                await _enqueue_memory_extraction(twin_id)
-                logger.info("memory_extraction_enqueued", twin_id=twin_id, source_id=source_id)
+                await _enqueue_memory_extraction(doctwin_id)
+                logger.info("memory_extraction_enqueued", doctwin_id=doctwin_id, source_id=source_id)
             except Exception as exc:
                 msg = f"Memory brief enqueue failed: {exc}"
                 logger.error(
                     "memory_extraction_enqueue_failed",
-                    twin_id=twin_id,
+                    doctwin_id=doctwin_id,
                     source_id=source_id,
                     error=str(exc),
                 )
                 await mark_source_failed(source_id, msg, db)
-                await _set_memory_brief_status(twin_id, "failed", db)
+                await _set_memory_brief_status(doctwin_id, "failed", db)
                 await db.commit()
                 return {"source_id": source_id, "status": "failed", "error": msg}
 
@@ -314,94 +301,9 @@ async def ingest_source(ctx: dict, source_id: str) -> dict:
 
 
 async def _register_webhook(source: Source, access_token: str | None) -> None:
-    """
-    Register a webhook with the provider for push-based sync.
-
-    Stores webhook_id and a per-source webhook_secret on the Source row.
-    The secret is used later in the /webhooks route for HMAC verification.
-
-    Errors are logged but not fatal — webhook registration must not block the
-    source from reaching its later processing/ready states.
-    Webhooks are a best-effort optimisation; polling fallback can be added later.
-    """
-    if not access_token:
-        return
-
-    import httpx
-
-    webhook_secret = secrets.token_hex(32)
-    webhook_url = f"{settings.app_base_url}/api/v1/webhooks/{source.source_type.value}"
-
-    # GitHub/GitLab cannot reach localhost — skip registration in local dev to
-    # avoid noisy 422 errors. Webhooks are a best-effort optimisation anyway.
-    if any(h in settings.app_base_url for h in ("localhost", "127.0.0.1", "0.0.0.0")):
-        logger.debug(
-            "webhook_registration_skipped_local",
-            source_id=str(source.id),
-            app_base_url=settings.app_base_url,
-        )
-        return
-
-    try:
-        if source.source_type == SourceType.github_repo:
-            repo = source.connection_config.get("repo_url", "")
-            async with httpx.AsyncClient(
-                base_url="https://api.github.com",
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Accept": "application/vnd.github+json",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                },
-                timeout=15.0,
-            ) as client:
-                resp = await client.post(
-                    f"/repos/{repo}/hooks",
-                    json={
-                        "name": "web",
-                        "active": True,
-                        "events": ["push"],
-                        "config": {
-                            "url": webhook_url,
-                            "content_type": "json",
-                            "secret": webhook_secret,
-                            "insecure_ssl": "0",
-                        },
-                    },
-                )
-                resp.raise_for_status()
-                source.webhook_id = str(resp.json().get("id", ""))
-                source.webhook_secret = webhook_secret
-                logger.info("webhook_registered", source_id=str(source.id), provider="github")
-
-        elif source.source_type == SourceType.gitlab_repo:
-            project = source.connection_config.get("repo_url", "")
-            from urllib.parse import quote
-            from app.core.config import get_settings as _gs
-            gl_base = _gs().gitlab_base_url.rstrip("/")
-            async with httpx.AsyncClient(
-                headers={"Authorization": f"Bearer {access_token}"},
-                timeout=15.0,
-            ) as client:
-                resp = await client.post(
-                    f"{gl_base}/api/v4/projects/{quote(project, safe='')}/hooks",
-                    json={
-                        "url": webhook_url,
-                        "push_events": True,
-                        "token": webhook_secret,
-                    },
-                )
-                resp.raise_for_status()
-                source.webhook_id = str(resp.json().get("id", ""))
-                source.webhook_secret = webhook_secret
-                logger.info("webhook_registered", source_id=str(source.id), provider="gitlab")
-
-    except Exception as exc:
-        logger.warning(
-            "webhook_registration_failed",
-            source_id=str(source.id),
-            source_type=source.source_type.value,
-            error=str(exc),
-        )
+    """Push webhooks were used for Git providers; docbase uses polling / manual sync."""
+    del source, access_token
+    return
 
 
 # ─── Connector registry ───────────────────────────────────────────────────────
@@ -471,32 +373,24 @@ def _should_short_circuit_full_sync(
 ) -> bool:
     if not connector_result.is_full_sync:
         return False
-    if source.index_mode.value != "strict":
+    if source.index_mode != SourceIndexMode.strict:
         return False
-    implementation_index = (source.index_health or {}).get("implementation_index") or {}
-    if implementation_index.get("schema_version", 0) < 2:
+    health = source.index_health or {}
+    policy = health.get("policy") or {}
+    if policy.get("allow_code_snippets") is not allow_code_snippets:
         return False
-    if implementation_index.get("fact_schema_version", 0) < 4:
+    mirror = health.get("canonical_mirror") or {}
+    if not mirror.get("ready"):
         return False
-    if implementation_index.get("ready") is not True:
+    if incoming_root_hash and mirror.get("snapshot_root_hash") != incoming_root_hash:
         return False
-    if not incoming_root_hash or incoming_root_hash != source.snapshot_root_hash:
+    if source.snapshot_id and mirror.get("snapshot_id") != source.snapshot_id:
         return False
-    mirror = (source.index_health or {}).get("canonical_mirror") or {}
-    if mirror.get("ready") is not True:
-        return False
-    if mirror.get("snapshot_root_hash") and mirror.get("snapshot_root_hash") != source.snapshot_root_hash:
-        return False
-    if mirror.get("snapshot_id") and mirror.get("snapshot_id") != getattr(source, "snapshot_id", None):
-        return False
-    expected_files = int(((source.structure_index or {}).get("total_files") if getattr(source, "structure_index", None) else 0) or 0)
-    mirrored_files = int(mirror.get("file_count") or 0)
-    if expected_files > 0 and mirrored_files <= 0:
-        return False
-    policy = (source.index_health or {}).get("policy") or {}
-    if policy.get("allow_code_snippets") != allow_code_snippets:
-        return False
-    return True
+    impl = health.get("implementation_index") or {}
+    return bool(
+        impl.get("ready")
+        and "fact_schema_version" in impl
+    )
 
 
 async def _finalise_noop_full_sync(
@@ -544,31 +438,16 @@ async def _finalise_noop_full_sync(
         .where(Chunk.source_id == source.id)
         .values(snapshot_id=source.snapshot_id)
     )
-    await db.execute(
-        update(IndexedFile)
-        .where(IndexedFile.source_id == source.id)
-        .values(snapshot_id=source.snapshot_id)
-    )
-    await db.execute(
-        update(IndexedSymbol)
-        .where(IndexedSymbol.source_id == source.id)
-        .values(snapshot_id=source.snapshot_id)
-    )
-    await db.execute(
-        update(IndexedRelationship)
-        .where(IndexedRelationship.source_id == source.id)
-        .values(snapshot_id=source.snapshot_id)
-    )
     await db.flush()
 
 
 async def _set_memory_brief_status(
-    twin_id: str,
+    doctwin_id: str,
     status: str,
     db,
 ) -> None:
     result = await db.execute(
-        select(TwinConfig).where(TwinConfig.twin_id == uuid.UUID(twin_id))
+        select(TwinConfig).where(TwinConfig.doctwin_id == uuid.UUID(doctwin_id))
     )
     config = result.scalar_one_or_none()
     if config is not None:
@@ -576,19 +455,19 @@ async def _set_memory_brief_status(
         await db.flush()
 
 
-async def _enqueue_memory_extraction(twin_id: str) -> None:
+async def _enqueue_memory_extraction(doctwin_id: str) -> None:
     from arq import create_pool
 
     redis_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     try:
-        await clear_memory_brief_arq_job(redis_pool, twin_id)
+        await clear_memory_brief_arq_job(redis_pool, doctwin_id)
         await redis_pool.enqueue_job(
             "generate_memory_brief",
-            twin_id,
-            _job_id=memory_brief_job_id(twin_id),
+            doctwin_id,
+            _job_id=memory_brief_job_id(doctwin_id),
         )
         await redis_pool.setex(
-            memory_brief_pending_key(twin_id),
+            memory_brief_pending_key(doctwin_id),
             PENDING_TTL_SECONDS,
             "1",
         )
@@ -599,33 +478,32 @@ async def _enqueue_memory_extraction(twin_id: str) -> None:
 # ─── Memory extraction job ────────────────────────────────────────────────────
 
 
-async def generate_memory_brief(ctx: dict, twin_id: str) -> dict:
+async def generate_memory_brief(ctx: dict, doctwin_id: str) -> dict:
     """
     Post-ingestion memory extraction job.
 
     Runs after ingest_source completes for any source belonging to this twin.
-    Orchestrates the full memory extraction pipeline:
-      1. Load twin — skip if not found or has no ready/processing sources
-      2. Fetch commit history from git connectors (GitHub / GitLab)
-      3. Run run_memory_extraction() — idempotent, redis-locked, never raises
+    Loads eligible sources, then runs run_memory_extraction() (redis-locked,
+    idempotent). External commit history feeds are not used in docbase.
 
     Returns a stats dict. Never raises.
     """
-    logger.info("memory_extraction_job_start in ingestion.py", twin_id=twin_id)
+    logger.info("memory_extraction_job_start in ingestion.py", doctwin_id=doctwin_id)
 
     try:
         async with get_async_session() as db:
             try:
-                # Load the twin's sources to find git connectors for commit history
+                # Load the twin's eligible sources for memory extraction
                 from sqlalchemy.orm import selectinload as _slo
-                from app.models.source import Source, SourceType
+
                 from app.domains.memory.service import run_memory_extraction
-    
+                from app.models.source import Source
+
                 sources_result = await db.execute(
                     select(Source)
                     .options(_slo(Source.connected_account))
                     .where(
-                        Source.twin_id == uuid.UUID(twin_id),
+                        Source.doctwin_id == uuid.UUID(doctwin_id),
                         Source.status.in_([SourceStatus.ready, SourceStatus.processing]),
                         Source.name != "__memory__",  # exclude phantom memory anchor source
                     )
@@ -635,139 +513,24 @@ async def generate_memory_brief(ctx: dict, twin_id: str) -> dict:
                 if not sources:
                     logger.info(
                         "memory_extraction_no_ready_sources",
-                        twin_id=twin_id,
+                        doctwin_id=doctwin_id,
                     )
-                    return {"twin_id": twin_id, "status": "skipped", "reason": "no eligible sources"}
-    
-                # Fetch commits AND pull requests / merge requests from ALL git
-                # sources attached to this twin and merge them.  This ensures that
-                # when a twin has multiple repos (e.g. a stripped public mirror +
-                # the full private repo) all commit history is captured.
-                # Commits are deduplicated by SHA so the same commit isn't counted
-                # twice if repos share history.
-                all_commits: dict[str, dict] = {}   # sha → commit dict (dedup)
-                all_prs: list[dict] = []
-                git_source_types = {SourceType.github_repo, SourceType.gitlab_repo}
+                    return {"doctwin_id": doctwin_id, "status": "skipped", "reason": "no eligible sources"}
     
                 logger.info(
                     "memory_extraction_sources_found",
-                    twin_id=twin_id,
+                    doctwin_id=doctwin_id,
                     count=len(sources),
-                    repos=[s.connection_config.get("repo_url", str(s.id)) for s in sources],
                 )
-    
-                for source in sources:
-                    if source.source_type not in git_source_types:
-                        source.index_health = {
-                            **dict(source.index_health or {}),
-                            "git_index": build_git_index_health(
-                                source_type=source.source_type,
-                                snapshot_id=source.snapshot_id,
-                            ),
-                        }
-                        continue
-                    if source.connected_account_id is None:
-                        source.index_health = {
-                            **dict(source.index_health or {}),
-                            "git_index": build_git_index_health(
-                                source_type=source.source_type,
-                                snapshot_id=source.snapshot_id,
-                                ready=False,
-                                error="No connected account available for git activity sync.",
-                            ),
-                        }
-                        logger.info(
-                            "memory_extraction_skip_no_oauth",
-                            twin_id=twin_id,
-                            source_id=str(source.id),
-                            repo=source.connection_config.get("repo_url", ""),
-                        )
-                        continue
-    
-                    try:
-                        commits: list[dict] = []
-                        source_prs: list[dict] = []
-                        access_token = await resolve_access_token(
-                            str(source.connected_account_id), db
-                        )
-                        connector = _get_connector(source.source_type)
-                        if connector is None:
-                            continue
-    
-                        # Fetch commits — 90 days / 100 max keeps the GitHub API call
-                        # under ~15 seconds for typical repos. 365 days / 200 commits
-                        # was taking 60-70 seconds and causing the job to be killed by
-                        # dev worker restarts. 90 days covers the "Recent Changes"
-                        # section well enough; older history adds little for onboarding.
-                        if hasattr(connector, "fetch_commit_history"):
-                            commits = await connector.fetch_commit_history(
-                                connection_config=source.connection_config,
-                                access_token=access_token,
-                                since_days=90,
-                                max_commits=100,
-                            )
-                            new_commits = 0
-                            for c in commits:
-                                sha = c.get("sha", "")
-                                if sha and sha not in all_commits:
-                                    all_commits[sha] = c
-                                    new_commits += 1
-                        else:
-                            new_commits = 0
-    
-                        # Fetch PRs / MRs (90 days, up to 50)
-                        if hasattr(connector, "fetch_pr_history"):
-                            source_prs = await connector.fetch_pr_history(
-                                connection_config=source.connection_config,
-                                access_token=access_token,
-                                since_days=90,
-                                max_prs=50,
-                            )
-                            all_prs.extend(source_prs)
-
-                        await replace_git_activity_for_source(
-                            source=source,
-                            commits=commits,
-                            pull_requests=source_prs,
-                            db=db,
-                        )
-
-                        logger.info(
-                            "memory_extraction_activity_loaded",
-                            twin_id=twin_id,
-                            source_id=str(source.id),
-                            commits=new_commits,
-                            prs=len(source_prs),
-                        )
-                    except Exception as exc:
-                        source.index_health = {
-                            **dict(source.index_health or {}),
-                            "git_index": build_git_index_health(
-                                source_type=source.source_type,
-                                snapshot_id=source.snapshot_id,
-                                ready=False,
-                                error=str(exc),
-                            ),
-                        }
-                        logger.warning(
-                            "memory_extraction_activity_failed",
-                            twin_id=twin_id,
-                            source_id=str(source.id),
-                            error=str(exc),
-                        )
-                        # Non-fatal — move on to the next source
-    
-                activity_history: list[dict] = list(all_commits.values()) + all_prs
-                await db.commit()
 
                 stats = await run_memory_extraction(
-                    twin_id=twin_id,
+                    doctwin_id=doctwin_id,
                     db=db,
-                    commit_history=activity_history or None,
+                    commit_history=None,
                 )
                 if stats is None:
                     stats = {
-                        "twin_id": twin_id,
+                        "doctwin_id": doctwin_id,
                         "status": "failed",
                         "arch_chunks": 0,
                         "risk_chunks": 0,
@@ -777,10 +540,10 @@ async def generate_memory_brief(ctx: dict, twin_id: str) -> dict:
                     }
                 finalised_sources = 0
                 if stats.get("status") == "ready":
-                    finalised_sources = await mark_processing_sources_ready(twin_id, db)
+                    finalised_sources = await mark_processing_sources_ready(doctwin_id, db)
                 elif stats.get("status") == "failed":
                     finalised_sources = await mark_processing_sources_failed(
-                        twin_id,
+                        doctwin_id,
                         stats.get("error") or "Memory brief generation failed.",
                         db,
                     )
@@ -788,31 +551,31 @@ async def generate_memory_brief(ctx: dict, twin_id: str) -> dict:
                     await db.commit()
                     stats["processing_sources_finalised"] = finalised_sources
                 logger.info("stats in generate_memory_brief in ingestion.py", stats=stats)
-                # Exclude twin_id from stats before unpacking — stats dict already
-                # includes twin_id from run_memory_extraction(), and passing it as
+                # Exclude doctwin_id from stats before unpacking — stats dict already
+                # includes doctwin_id from run_memory_extraction(), and passing it as
                 # both a keyword arg and via **stats causes TypeError.
-                stats_log = {k: v for k, v in stats.items() if k != "twin_id"}
-                logger.info("memory_extraction_job_complete", twin_id=twin_id, **stats_log)
+                stats_log = {k: v for k, v in stats.items() if k != "doctwin_id"}
+                logger.info("memory_extraction_job_complete", doctwin_id=doctwin_id, **stats_log)
                 return stats
     
             except Exception as exc:
                 logger.error(
                     "memory_extraction_job_unexpected_error",
-                    twin_id=twin_id,
+                    doctwin_id=doctwin_id,
                     error=str(exc),
                     exc_info=True,
                 )
-                return {"twin_id": twin_id, "status": "failed", "error": str(exc)}
+                return {"doctwin_id": doctwin_id, "status": "failed", "error": str(exc)}
     finally:
         try:
             from app.core.redis import get_redis
             from app.domains.memory.queue_state import memory_brief_pending_key
 
-            await get_redis().delete(memory_brief_pending_key(twin_id))
+            await get_redis().delete(memory_brief_pending_key(doctwin_id))
         except Exception:
             logger.warning(
                 "memory_brief_pending_cleanup_failed",
-                twin_id=twin_id,
+                doctwin_id=doctwin_id,
                 exc_info=True,
             )
 

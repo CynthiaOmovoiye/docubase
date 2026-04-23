@@ -15,8 +15,8 @@ import { api } from "@/lib/api";
 interface PublicSurfaceInfo {
   surface_type: string;
   public_slug: string;
-  twin_name: string | null;
-  twin_description: string | null;
+  doctwin_name: string | null;
+  doctwin_description: string | null;
   workspace_name: string | null;
   display_name: string | null;
   accent_color: string | null;
@@ -64,7 +64,7 @@ export default function PublicWorkspacePage() {
           <p style={s.eyebrow}>Public workspace chat</p>
           <h1 style={s.title}>{workspaceName}</h1>
           <p style={s.subtitle}>
-            Ask across the projects in this workspace. docubase routes each question to the
+            Ask across the projects in this workspace. docbase routes each question to the
             most relevant twin and answers from approved project knowledge only.
           </p>
         </div>
@@ -82,7 +82,7 @@ export default function PublicWorkspacePage() {
       </main>
 
       <footer style={s.footer}>
-        <p style={s.footerText}>Powered by docubase</p>
+        <p style={s.footerText}>Powered by docbase</p>
       </footer>
     </div>
   );

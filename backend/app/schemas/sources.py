@@ -19,13 +19,12 @@ class AttachSourceRequest(BaseModel):
     source_type: SourceType
     # Connection config is type-specific. Validated at the service layer.
     # Examples:
-    #   github_repo: {"repo_url": "owner/repo", "branch": "main"}
-    #   pdf:         {"file_path": "/uploads/resume.pdf"}
-    #   manual:      {"content": "This project does X..."}
+    #   google_drive: {"file_id": "...", "file_path": "docs/README.md"}
+    #   pdf:          {"file_path": "/uploads/resume.pdf"}
+    #   manual:       {"content": "This project does X..."}
     connection_config: dict[str, Any] = Field(default_factory=dict)
     # Optional — links the source to a ConnectedAccount for OAuth-backed types.
-    # Required for github_repo, gitlab_repo, and google_drive so the ingestion
-    # job can resolve the access token at sync time.
+    # Required for google_drive so the ingestion job can resolve the access token at sync time.
     connected_account_id: uuid.UUID | None = None
 
     @field_validator("connection_config")
@@ -43,7 +42,7 @@ class SourceResponse(BaseModel):
     connection_config is stripped of sensitive fields before being returned.
     """
     id: uuid.UUID
-    twin_id: uuid.UUID
+    doctwin_id: uuid.UUID
     name: str
     source_type: SourceType
     status: SourceStatus
@@ -70,7 +69,7 @@ class SourceResponse(BaseModel):
         health = _enrich_index_health(source)
         return cls(
             id=source.id,
-            twin_id=source.twin_id,
+            doctwin_id=source.doctwin_id,
             name=source.name,
             source_type=source.source_type,
             status=source.status,
@@ -91,7 +90,7 @@ class TriggerSyncResponse(BaseModel):
 
 
 class BackfillLegacySourcesResponse(BaseModel):
-    twin_id: uuid.UUID
+    doctwin_id: uuid.UUID
     queued_sources: int
     source_ids: list[uuid.UUID]
     message: str

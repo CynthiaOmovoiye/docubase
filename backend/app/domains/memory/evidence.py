@@ -6,12 +6,11 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.git_index import GitActivity
-from app.models.implementation_index import IndexedFile, IndexedRelationship, IndexedSymbol
 from app.models.twin import Twin
 
 _AUTH_RE = re.compile(
@@ -23,62 +22,35 @@ _RISKY_RE = re.compile(r"\b(auth|payment|billing|webhook|queue|worker|migration|
 
 @dataclass(slots=True)
 class MemoryEvidenceBundle:
-    twin_id: str
+    doctwin_id: str
     workspace_id: str
-    indexed_files: list[IndexedFile] = field(default_factory=list)
-    indexed_symbols: list[IndexedSymbol] = field(default_factory=list)
-    indexed_relationships: list[IndexedRelationship] = field(default_factory=list)
-    git_activities: list[GitActivity] = field(default_factory=list)
+    indexed_files: list[Any] = field(default_factory=list)
+    indexed_symbols: list[Any] = field(default_factory=list)
+    indexed_relationships: list[Any] = field(default_factory=list)
+    git_activities: list[Any] = field(default_factory=list)
     structure_overview: list[dict] = field(default_factory=list)
 
 
-async def load_twin_memory_evidence(
-    twin_id: str,
+async def load_doctwin_memory_evidence(
+    doctwin_id: str,
     db: AsyncSession,
     *,
     structure_overview: list[dict] | None = None,
 ) -> MemoryEvidenceBundle:
-    twin_uuid = uuid.UUID(twin_id)
+    doctwin_uuid = uuid.UUID(doctwin_id)
     twin = (
         await db.execute(
-            select(Twin.id, Twin.workspace_id).where(Twin.id == twin_uuid)
+            select(Twin.id, Twin.workspace_id).where(Twin.id == doctwin_uuid)
         )
     ).one()
 
-    indexed_files = list(
-        (await db.execute(select(IndexedFile).where(IndexedFile.twin_id == twin_uuid)))
-        .scalars()
-        .all()
-    )
-    indexed_symbols = list(
-        (await db.execute(select(IndexedSymbol).where(IndexedSymbol.twin_id == twin_uuid)))
-        .scalars()
-        .all()
-    )
-    indexed_relationships = list(
-        (await db.execute(select(IndexedRelationship).where(IndexedRelationship.twin_id == twin_uuid)))
-        .scalars()
-        .all()
-    )
-    git_activities = list(
-        (
-            await db.execute(
-                select(GitActivity)
-                .where(GitActivity.twin_id == twin_uuid)
-                .order_by(GitActivity.occurred_at.desc().nullslast(), GitActivity.created_at.desc())
-            )
-        )
-        .scalars()
-        .all()
-    )
-
     return MemoryEvidenceBundle(
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         workspace_id=str(twin.workspace_id),
-        indexed_files=indexed_files,
-        indexed_symbols=indexed_symbols,
-        indexed_relationships=indexed_relationships,
-        git_activities=git_activities,
+        indexed_files=[],
+        indexed_symbols=[],
+        indexed_relationships=[],
+        git_activities=[],
         structure_overview=list(structure_overview or []),
     )
 
@@ -144,7 +116,7 @@ def build_feature_summary_chunks(bundle: MemoryEvidenceBundle) -> list[dict]:
             {
                 "chunk_type": "feature_summary",
                 "content": "\n".join(content_lines),
-                "source_ref": _memory_ref(bundle.twin_id),
+                "source_ref": _memory_ref(bundle.doctwin_id),
                 "chunk_metadata": {
                     "extraction": "feature_summary",
                     "label": label,
@@ -225,7 +197,7 @@ def build_auth_flow_chunks(bundle: MemoryEvidenceBundle) -> list[dict]:
         {
             "chunk_type": "auth_flow",
             "content": "\n".join(content_lines),
-            "source_ref": _memory_ref(bundle.twin_id),
+            "source_ref": _memory_ref(bundle.doctwin_id),
             "chunk_metadata": {
                 "extraction": "auth_flow",
                 "provenance": _build_provenance_for_paths(bundle, file_paths, symbol_names),
@@ -285,7 +257,7 @@ def build_onboarding_map_chunks(bundle: MemoryEvidenceBundle) -> list[dict]:
         {
             "chunk_type": "onboarding_map",
             "content": "\n".join(content_lines),
-            "source_ref": _memory_ref(bundle.twin_id),
+            "source_ref": _memory_ref(bundle.doctwin_id),
             "chunk_metadata": {
                 "extraction": "onboarding_map",
                 "provenance": _build_provenance_for_paths(bundle, ordered_paths[:6], []),
@@ -327,7 +299,7 @@ def build_risk_summary_chunks(bundle: MemoryEvidenceBundle) -> list[dict]:
             {
                 "chunk_type": "risk_note",
                 "content": "\n".join(content_lines),
-                "source_ref": _memory_ref(bundle.twin_id),
+                "source_ref": _memory_ref(bundle.doctwin_id),
                 "chunk_metadata": {
                     "extraction": "risk_summary",
                     "severity": severity,
@@ -378,7 +350,7 @@ def build_change_summary_chunks(bundle: MemoryEvidenceBundle) -> list[dict]:
             {
                 "chunk_type": "change_entry",
                 "content": "\n".join(lines),
-                "source_ref": _memory_ref(bundle.twin_id),
+                "source_ref": _memory_ref(bundle.doctwin_id),
                 "chunk_metadata": {
                     "extraction": "change_summary",
                     "period": week_label,
@@ -418,7 +390,9 @@ def build_workspace_synthesis_content(
         name = row["name"]
         lines.append(f"### {name}")
         lines.append(
-            f"- Evidence counts: {row['files_indexed']} files, {row['symbols_indexed']} symbols, {row['relationships_indexed']} relationships"
+            "- Evidence counts: "
+            f"{row['files_indexed']} files, {row['symbols_indexed']} symbols, "
+            f"{row['relationships_indexed']} relationships"
         )
         if row.get("artifact_labels"):
             lines.append("- Memory artifacts: " + ", ".join(f"`{label}`" for label in row["artifact_labels"]))
@@ -427,7 +401,7 @@ def build_workspace_synthesis_content(
         lines.append("")
         project_metadata.append(
             {
-                "twin_id": row["twin_id"],
+                "doctwin_id": row["doctwin_id"],
                 "name": name,
                 "files_indexed": row["files_indexed"],
                 "symbols_indexed": row["symbols_indexed"],
@@ -439,8 +413,8 @@ def build_workspace_synthesis_content(
     return "\n".join(lines).strip(), {"projects": project_metadata, "languages": techs}
 
 
-def _memory_ref(twin_id: str) -> str:
-    return f"__memory__/{twin_id}"
+def _memory_ref(doctwin_id: str) -> str:
+    return f"__memory__/{doctwin_id}"
 
 
 def _feature_group_key(path: str, framework_role: str | None) -> str:
@@ -474,7 +448,7 @@ def _count_by_path(rows: list, *, attr: str = "path") -> dict[str, int]:
     return counts
 
 
-def _symbols_by_path(symbols: list[IndexedSymbol]) -> dict[str, list[str]]:
+def _symbols_by_path(symbols: list[Any]) -> dict[str, list[str]]:
     grouped: dict[str, list[str]] = defaultdict(list)
     for symbol in symbols:
         grouped[symbol.path].append(symbol.qualified_name or symbol.symbol_name)
@@ -524,7 +498,7 @@ def _build_provenance_for_paths(
 
 
 def _extract_index_refs_from_relationships(
-    relationships: list[IndexedRelationship],
+    relationships: list[Any],
 ) -> tuple[list[str], list[str]]:
     file_paths: list[str] = []
     symbol_names: list[str] = []

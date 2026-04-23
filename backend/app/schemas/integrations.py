@@ -36,18 +36,6 @@ class OAuthInitResponse(BaseModel):
     auth_url: str
 
 
-class RepoItem(BaseModel):
-    """A single repository returned from the GitHub or GitLab browser endpoints."""
-
-    id: int | str
-    name: str
-    full_name: str
-    private: bool
-    default_branch: str
-    description: str | None = None
-    updated_at: str | None = None
-
-
 class DriveFileItem(BaseModel):
     """A single file or folder returned from the Google Drive browser endpoint."""
 

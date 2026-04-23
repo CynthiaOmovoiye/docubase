@@ -13,7 +13,7 @@ from app.domains.retrieval.planner import RetrievalMode
 
 
 @pytest.mark.asyncio
-async def test_generate_workspace_answer_escapes_literal_project_placeholder():
+async def test_generate_workspace_answer_includes_project_blocks():
     mock_provider = AsyncMock()
     mock_provider.complete = AsyncMock(
         return_value=LLMResponse(
@@ -47,8 +47,8 @@ async def test_generate_workspace_answer_escapes_literal_project_placeholder():
 
     assert response.content == "ok"
     system_prompt = mock_provider.complete.await_args.kwargs["system_prompt"]
-    assert "## {project}" in system_prompt
-    assert "Alpha API" in system_prompt
+    assert '<project name="Alpha API"' in system_prompt
+    assert "Studio" in system_prompt
 
 
 @pytest.mark.asyncio
@@ -72,7 +72,7 @@ async def test_generate_answer_strips_unsupported_code_examples():
 
     with patch("app.domains.answering.generator.get_llm_provider", return_value=mock_provider):
         response = await generate_answer(
-            twin_name="Scaffold",
+            doctwin_name="Scaffold",
             query="how is authorisation handled?",
             context_chunks=[
                 {
@@ -110,7 +110,7 @@ async def test_generate_answer_keeps_grounded_code_snippets():
 
     with patch("app.domains.answering.generator.get_llm_provider", return_value=mock_provider):
         response = await generate_answer(
-            twin_name="Scaffold",
+            doctwin_name="Scaffold",
             query="show me the admin handler",
             context_chunks=[
                 {
@@ -206,7 +206,7 @@ async def test_generate_answer_includes_evidence_contract_block():
 
     with patch("app.domains.answering.generator.get_llm_provider", return_value=mock_provider):
         await generate_answer(
-            twin_name="Scaffold",
+            doctwin_name="Scaffold",
             query="how is authorization handled?",
             context_chunks=[
                 {
@@ -271,7 +271,7 @@ async def test_generate_answer_prepends_implementation_facts_to_knowledge():
 
     with patch("app.domains.answering.generator.get_llm_provider", return_value=mock_provider):
         await generate_answer(
-            twin_name="Scaffold",
+            doctwin_name="Scaffold",
             query="how is routing wired?",
             context_chunks=[
                 {

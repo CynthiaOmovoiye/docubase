@@ -15,7 +15,7 @@ so the knowledge pipeline classifies it as documentation.
 """
 
 import re
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from app.connectors.base import BaseConnector, ConnectorResult, RawFile
 from app.core.logging import get_logger

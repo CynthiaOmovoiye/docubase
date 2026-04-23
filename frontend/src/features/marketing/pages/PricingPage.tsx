@@ -34,7 +34,7 @@ const TIERS: Tier[] = [
       "1 workspace",
       "2 twins",
       "3 sources per twin",
-      "GitHub & PDF connectors",
+      "Google Drive & PDF connectors",
       "Public share links",
       "1,000 chat messages / month",
       "Community support",
@@ -52,7 +52,7 @@ const TIERS: Tier[] = [
       "1 workspace",
       "Unlimited twins",
       "Unlimited sources per twin",
-      "All connectors (GitHub, GitLab, PDF, URL, Markdown)",
+      "All connectors (Google Drive, PDF, URL, Markdown)",
       "Custom twin branding & accent color",
       "Embed widget",
       "10,000 chat messages / month",
@@ -85,11 +85,11 @@ const TIERS: Tier[] = [
 const FAQ = [
   {
     q: "What counts as a 'source'?",
-    a: "A source is any knowledge input connected to a twin — a GitHub repo, a PDF file, a markdown document, a URL, or a manual note. Each connection is one source.",
+    a: "A source is any knowledge input connected to a twin — a Drive file or folder, a PDF file, a markdown document, a URL, or a manual note. Each connection is one source.",
   },
   {
     q: "Is my code actually sent to your servers?",
-    a: "docubase reads your repository structure, documentation, and architecture signals to build a knowledge index. Raw code is processed in our ingestion pipeline but never stored in an API-accessible format. Secrets and .env files are always blocked at ingestion — they are never read.",
+    a: "docbase reads your attached documents, structure, and architecture signals to build a knowledge index. Raw files are processed in our ingestion pipeline but never stored in an API-accessible format. Secrets and .env files are always blocked at ingestion — they are never read.",
   },
   {
     q: "Can I enable code snippet visibility?",

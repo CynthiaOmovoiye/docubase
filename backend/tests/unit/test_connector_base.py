@@ -3,10 +3,10 @@ Unit tests for connector behavior.
 Tests use fixtures rather than live APIs.
 """
 
-import pytest
-from unittest.mock import AsyncMock, patch
 
-from app.connectors.base import RawFile, ConnectorResult
+import pytest
+
+from app.connectors.base import ConnectorResult
 from app.connectors.markdown.connector import MarkdownConnector
 
 

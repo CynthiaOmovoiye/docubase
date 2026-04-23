@@ -20,8 +20,8 @@ metadata when available:
   chunk_type, content, source_ref, chunk_metadata, start_line, end_line, segment_id
 """
 
-import re
 import json
+import re
 from pathlib import PurePosixPath
 
 from app.core.logging import get_logger
@@ -410,7 +410,6 @@ def _extract_module_description(path: str, content: str, suffix: str) -> str:
     lines = content.splitlines()
     parts: list[str] = []
 
-    module_name = PurePosixPath(path).stem
     parts.append(f"Module: {path}")
 
     # Extract docstring / leading comment
@@ -585,7 +584,23 @@ def _extract_code_snippets(path: str, content: str, suffix: str) -> list[dict]:
 
 
 def _truncation_notice(suffix: str) -> str:
-    if suffix in {".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java", ".cs", ".cpp", ".c", ".h", ".swift", ".kt", ".scala"}:
+    code_suffixes = {
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".go",
+        ".rs",
+        ".java",
+        ".cs",
+        ".cpp",
+        ".c",
+        ".h",
+        ".swift",
+        ".kt",
+        ".scala",
+    }
+    if suffix in code_suffixes:
         return "  // ... (truncated for safety)"
     return "    # ... (truncated for safety)"
 

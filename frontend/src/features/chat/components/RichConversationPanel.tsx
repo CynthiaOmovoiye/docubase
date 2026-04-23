@@ -254,7 +254,7 @@ function MessageBubble({
         ) : (
           <AssistantMarkdown content={message.content} />
         )}
-        {message.routed_twin_id && !isUser && (
+        {message.routed_doctwin_id && !isUser && (
           <div style={s.routingHint}>↳ via workspace routing</div>
         )}
       </div>

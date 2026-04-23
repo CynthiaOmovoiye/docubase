@@ -7,7 +7,7 @@ This document explains the layout of this monorepo and the purpose of every majo
 ## Top-Level Layout
 
 ```
-docubase/
+docbase/
 ├── backend/               Python + FastAPI backend
 ├── frontend/              React + TypeScript frontend
 ├── infra/                 Docker, migrations, infrastructure scripts
@@ -50,8 +50,7 @@ backend/
 │   │   └── admin/         Admin views, usage, logs
 │   │
 │   ├── connectors/        One connector per source type
-│   │   ├── github/
-│   │   ├── gitlab/
+│   │   ├── google_drive/
 │   │   ├── pdf/
 │   │   ├── markdown/
 │   │   ├── url/
@@ -138,12 +137,10 @@ No feature imports from another feature's internal components. Cross-feature dat
 Each connector in `backend/app/connectors/` follows this structure:
 
 ```
-connectors/github/
+connectors/google_drive/
 ├── __init__.py
 ├── connector.py       Implements BaseConnector interface
-├── auth.py            OAuth / token handling for this source type
-├── fetcher.py         Raw content fetch logic
-└── README.md          What this connector does, auth requirements
+└── ...
 ```
 
 All connectors implement `BaseConnector` from `app/connectors/base.py`. This ensures the ingestion pipeline can treat all source types uniformly.

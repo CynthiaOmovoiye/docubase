@@ -18,13 +18,13 @@ What this domain does NOT do:
 - Apply retrieval logic (that's the retrieval domain)
 """
 
-from collections import defaultdict
 import uuid
+from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connectors.base import ConnectorResult, RawFile
 from app.core.logging import get_logger
@@ -41,7 +41,7 @@ from app.domains.knowledge.evidence import (
 from app.domains.knowledge.extractors import extract_chunks
 from app.domains.policy.rules import is_file_blocked, scan_content_for_secrets
 from app.models.chunk import Chunk, ChunkLineage, ChunkType
-from app.models.source import Source, SourceIndexMode, SourceStatus
+from app.models.source import Source, SourceIndexMode
 
 logger = get_logger(__name__)
 
@@ -52,7 +52,7 @@ _MAX_STRUCTURE_GROUPS = 50
 
 async def process_connector_result(
     result: ConnectorResult,
-    twin_id: str,
+    doctwin_id: str,
     allow_code_snippets: bool,
     db: AsyncSession,
     embedding_profiles: list[EmbeddingProfile] | None = None,
@@ -121,7 +121,7 @@ async def process_connector_result(
             logger.info(
                 "ingestion_delta_pruned",
                 source_id=result.source_id,
-                twin_id=twin_id,
+                doctwin_id=doctwin_id,
                 deleted=deleted,
             )
 
@@ -148,7 +148,7 @@ async def process_connector_result(
         )
         logger.info(
             "ingestion_pipeline_complete",
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             stats=stats,
         )
         return stats
@@ -173,7 +173,7 @@ async def process_connector_result(
                 "ingestion_file_blocked",
                 path=raw_file.path,
                 reason=policy_decision.reason,
-                twin_id=twin_id,
+                doctwin_id=doctwin_id,
             )
             stats["files_blocked"] += 1
             continue
@@ -185,7 +185,7 @@ async def process_connector_result(
                 "ingestion_secret_flagged",
                 path=raw_file.path,
                 flag_count=len(secret_flags),
-                twin_id=twin_id,
+                doctwin_id=doctwin_id,
             )
             stats["files_secret_flagged"] += 1
             continue
@@ -210,7 +210,7 @@ async def process_connector_result(
                 "ingestion_extraction_failed",
                 path=safe_path,
                 error=str(exc),
-                twin_id=twin_id,
+                doctwin_id=doctwin_id,
             )
             continue
 
@@ -262,7 +262,7 @@ async def process_connector_result(
         )
         logger.info(
             "ingestion_pipeline_complete",
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             stats=stats,
         )
         return stats
@@ -287,7 +287,7 @@ async def process_connector_result(
             logger.error(
                 "ingestion_embedding_failed",
                 error=str(exc),
-                twin_id=twin_id,
+                doctwin_id=doctwin_id,
                 chunk_count=len(pending_chunks),
             )
             raise
@@ -361,7 +361,7 @@ async def process_connector_result(
 
     logger.info(
         "ingestion_pipeline_complete",
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         stats=stats,
     )
     return stats

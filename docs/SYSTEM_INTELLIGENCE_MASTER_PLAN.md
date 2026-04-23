@@ -3,7 +3,7 @@
 **Audience:** founders, PMs, and engineers executing in Cursor phase-by-phase.
 **Companion:** technical evidence-lineage and hydration detail remain in [repo-intelligence-roadmap.md](./repo-intelligence-roadmap.md). This document is the sequenced product and architecture path from today’s stack to full-system, engineer-grade answers.
 
-**Naming:** the product is referred to internally as *docubase* in some docs, while the repository is the *docubase*. Treat both as the same product surface unless you intentionally separate brand and implementation later.
+**Naming:** the product is referred to internally as *docbase* in some docs, while the repository is the *docbase*. Treat both as the same product surface unless you intentionally separate brand and implementation later.
 
 ---
 
@@ -15,7 +15,7 @@ The chat model is not the primary bottleneck. The current system is mostly behav
 
 Before Phase 1, connectors fetched raw source content, but the platform primarily persisted **derived knowledge artifacts** such as chunks, embeddings, and implementation index rows.
 
-As of **Phase 1 v1**, the platform also persists a canonical mirror of **policy-cleared, retrievable text files** by `source_id + snapshot_id`, so strict evidence can hydrate from docubase-owned storage instead of provider refetches or stale chunk text. Future hardening should expand this into richer retention policy states for blocked/high-risk files where product policy allows.
+As of **Phase 1 v1**, the platform also persists a canonical mirror of **policy-cleared, retrievable text files** by `source_id + snapshot_id`, so strict evidence can hydrate from docbase-owned storage instead of provider refetches or stale chunk text. Future hardening should expand this into richer retention policy states for blocked/high-risk files where product policy allows.
 
 ### Target state
 
@@ -33,7 +33,7 @@ To move from **0 → 100**, the evidence substrate must change:
 
 ## 2. Product north star (what “100” means)
 
-This is **not** an onboarding-only twin and **not** an auth-only explainer. It is a **general software intelligence layer** over attached GitHub/GitLab repositories and, later, other connected engineering sources.
+This is **not** an onboarding-only twin and **not** an auth-only explainer. It is a **general software intelligence layer** over attached documents and code-oriented sources (Drive, PDFs, URLs, markdown), with room to add more connectors later.
 
 The product should be able to answer grounded questions about:
 
@@ -65,7 +65,7 @@ When true in the repository, the assistant should be able to say things like:
 
 ### 2.3 Relationship to “Cursor-level” understanding
 
-Cursor succeeds in the IDE because it has full buffer context and rich indexing close to the code. In chat, docubase must reproduce that effect with:
+Cursor succeeds in the IDE because it has full buffer context and rich indexing close to the code. In chat, docbase must reproduce that effect with:
 
 * a canonical file store and line-addressable source,
 * parser/tree-sitter or AST-driven structural intelligence,
@@ -105,7 +105,7 @@ The most important limitation is that the current system compresses code into de
 
 ### Known inconsistency to fix early
 
-`_load_twin_chunks()` in `backend/app/domains/memory/service.py` does not currently filter `Source.status` the same way strict retrieval does for `ready` evidence, which means memory can theoretically ingest chunks from sources that the chat path would not treat as fully answerable. That should be corrected before deeper architectural changes.
+`_load_doctwin_chunks()` in `backend/app/domains/memory/service.py` does not currently filter `Source.status` the same way strict retrieval does for `ready` evidence, which means memory can theoretically ingest chunks from sources that the chat path would not treat as fully answerable. That should be corrected before deeper architectural changes.
 
 ---
 
@@ -167,7 +167,7 @@ Each phase has exit criteria so the team knows when the next phase can begin.
 
 **Work:**
 
-* change `_load_twin_chunks()` to include only chunks from `ready` sources unless a broader policy is explicitly documented,
+* change `_load_doctwin_chunks()` to include only chunks from `ready` sources unless a broader policy is explicitly documented,
 * add unit tests for mixed `ready` / `processing` / `failed` twins,
 * document the invariant.
 
@@ -181,7 +181,7 @@ Each phase has exit criteria so the team knows when the next phase can begin.
 
 **Work:**
 
-* formalize invariants around lineage, spans, hashes, namespace (`twin_id`, `source_id`, `snapshot_id`),
+* formalize invariants around lineage, spans, hashes, namespace (`doctwin_id`, `source_id`, `snapshot_id`),
 * extend source/index health telemetry,
 * expand eval suites beyond auth,
 * define `authority_level` and `degraded_reason` for UI and debugging,
@@ -192,7 +192,7 @@ Each phase has exit criteria so the team knows when the next phase can begin.
 **Implemented (v1):**
 
 * **Invariants:** `app/domains/evidence/invariants.py` documents `EVIDENCE_NAMESPACE_KEYS` and `STRICT_FILE_BACKED_CHUNK_KEYS`; `evidence.py` references it.
-* **Twin rollup:** `GET /twins/{twin_id}/evidence-health` → `TwinEvidenceHealthResponse` via `build_twin_evidence_health_summary()` (`app/domains/evaluation/twin_evidence_health.py`).
+* **Twin rollup:** `GET /twins/{doctwin_id}/evidence-health` → `TwinEvidenceHealthResponse` via `build_doctwin_evidence_health_summary()` (`app/domains/evaluation/doctwin_evidence_health.py`).
 * **Per-answer diagnosis:** `build_answer_authority_diagnosis()` logs `answer_authority_diagnosis` (structured); Langfuse trace metadata includes `authority_level` and `authority_degraded_reasons`. Optional API: `SendMessageRequest.include_answer_diagnostics` + `MessageResponse.answer_diagnostics`.
 * **Richer source list for chat:** `_load_sources_for_twin` now includes `index_mode`, strict flags, parser / strict coverage ratios for the diagnosis ingest stage.
 * **Test defaults:** `backend/tests/conftest.py` sets minimal env so unit tests can import the app without a preloaded shell `.env`.
@@ -233,7 +233,7 @@ Each phase has exit criteria so the team knows when the next phase can begin.
 ```bash
 cd backend
 APP_SECRET_KEY=phase1-test-secret-key-minimum-32 \
-DATABASE_URL=postgresql+asyncpg://twin_user:twin_pass@localhost:5433/twin_db \
+DATABASE_URL=postgresql+asyncpg://doctwin_user:doctwin_pass@localhost:5434/doctwin_db \
 JWT_SECRET_KEY=phase1-test-jwt-secret-key-minimum-32 \
 EMBEDDING_DIMENSIONS=1024 \
 uv run pytest tests/integration/test_phase1_source_mirror.py -v --tb=short
@@ -275,9 +275,9 @@ cd backend
 uv run pytest tests/unit/ -q --tb=short
 uv run pytest tests/integration/test_phase1_source_mirror.py -v --tb=short
 uv run pytest tests/integration/test_phase2_implementation_facts.py -v --tb=short
-uv run pytest tests/integration/test_memory_load_twin_chunks_ready_filter.py -v --tb=short
+uv run pytest tests/integration/test_memory_load_doctwin_chunks_ready_filter.py -v --tb=short
 APP_SECRET_KEY=phase2-test-secret-key-minimum-32 \
-DATABASE_URL=postgresql+asyncpg://twin_user:twin_pass@localhost:5433/twin_db \
+DATABASE_URL=postgresql+asyncpg://doctwin_user:doctwin_pass@localhost:5434/doctwin_db \
 JWT_SECRET_KEY=phase2-test-jwt-secret-key-minimum-32 \
 EMBEDDING_DIMENSIONS=1024 \
 uv run alembic current
@@ -431,11 +431,11 @@ LIVE_DEV_API_BASE=https://your-api-host LIVE_DEV_EMAIL=... LIVE_DEV_PASSWORD=...
 
 * **`GET /api/v1/admin/stats`** — counts for users, workspaces, twins, sources (totals + by `SourceStatus`). `app/domains/ops/platform_stats.py`.
 * **`GET /api/v1/admin/ingestion-logs`** — empty placeholder payload with note (no job table yet).
-* **`POST /api/v1/admin/twins/{twin_id}/memory/rebuild`** — enqueue memory extraction for any existing twin (superuser; bypasses workspace ownership). Uses `app/domains/ops/twin_memory_queue.py`.
-* **`POST /api/v1/admin/twins/{twin_id}/sources/resync`** — set all twin sources `pending`, clear `last_error`, enqueue `ingest_source` per id. `app/domains/ops/twin_source_resync.py` + `arq_enqueue.py`.
+* **`POST /api/v1/admin/twins/{doctwin_id}/memory/rebuild`** — enqueue memory extraction for any existing twin (superuser; bypasses workspace ownership). Uses `app/domains/ops/doctwin_memory_queue.py`.
+* **`POST /api/v1/admin/twins/{doctwin_id}/sources/resync`** — set all twin sources `pending`, clear `last_error`, enqueue `ingest_source` per id. `app/domains/ops/doctwin_source_resync.py` + `arq_enqueue.py`.
 * **Refactor:** owner `POST /twins/{id}/memory/generate` and source creation/sync enqueue paths call shared `enqueue_ingest_source_job` / `enqueue_memory_brief_for_twin` (`app/api/v1/twins.py`, `app/api/v1/sources.py`).
-* **Audit:** `logger.info` with `admin_platform_stats`, `admin_twin_memory_rebuild`, `admin_twin_sources_resync`, `admin_ingestion_logs_view` (operator id + twin ids).
-* **Tests:** `tests/unit/test_platform_stats.py`, `tests/unit/test_twin_source_resync.py`.
+* **Audit:** `logger.info` with `admin_platform_stats`, `admin_doctwin_memory_rebuild`, `admin_doctwin_sources_resync`, `admin_ingestion_logs_view` (operator id + twin ids).
+* **Tests:** `tests/unit/test_platform_stats.py`, `tests/unit/test_doctwin_source_resync.py`.
 
 ---
 
@@ -445,7 +445,7 @@ Use vertical slices. Every sprint should include tests.
 
 | Sprint | Focus | Key outputs |
 | --- | --- | --- |
-| **S0** | Hotfix + Phase 0 starter | `_load_twin_chunks` filter, health-metric stubs, eval cases for journeys and status |
+| **S0** | Hotfix + Phase 0 starter | `_load_doctwin_chunks` filter, health-metric stubs, eval cases for journeys and status |
 | **S1** | Phase 1 slice 1 | `source_snapshots` + `source_files`, mirror write path, hydration read API |
 | **S2** | Phase 1 slice 2 | extractors reading from mirror while legacy chunk path still works |
 | **S3** | Phase 2 slice 1 | `implementation_facts`, migrations, one language family (Python) fact emitters |

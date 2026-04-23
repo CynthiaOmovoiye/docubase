@@ -9,7 +9,7 @@ Memory extraction orchestrator.
   3. Runs the three extraction passes (architecture, risk, changes)
   4. Generates the Memory Brief
   5. Writes everything to the DB
-  6. Updates twin_configs.memory_brief_status / memory_brief_generated_at
+  6. Updates doctwin_configs.memory_brief_status / memory_brief_generated_at
 
 Design guarantees:
   - Fully idempotent: step 3 deletes all __memory__/* chunks before re-inserting
@@ -24,7 +24,7 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -34,9 +34,7 @@ from app.domains.embedding.embedder import embed_batch_with_failover
 from app.domains.graph.deterministic import build_deterministic_graph, merge_graph_extractions
 from app.domains.graph.extractor import extract_graph_from_chunks
 from app.domains.graph.service import get_graph_summary, rebuild_graph
-from app.domains.evaluation.phase5_exit import evaluate_phase5_memory_brief_exit_signals
 from app.domains.knowledge.evidence import hash_text
-from app.domains.knowledge.implementation_facts_access import load_ready_implementation_facts_ordered
 from app.domains.memory.evidence import (
     build_auth_flow_chunks,
     build_change_summary_chunks,
@@ -44,19 +42,15 @@ from app.domains.memory.evidence import (
     build_onboarding_map_chunks,
     build_risk_summary_chunks,
     build_workspace_synthesis_content,
-    load_twin_memory_evidence,
+    load_doctwin_memory_evidence,
 )
-from app.domains.memory.fact_digest import format_implementation_fact_digest_markdown
 from app.domains.memory.extractor import (
     _is_architecture_relevant,
     extract_architecture_chunks,
     extract_change_entry_chunks,
-    extract_risk_chunks,
     generate_memory_brief,
 )
-from app.domains.memory.topic_artifacts import build_topic_artifact_digest
 from app.models.chunk import Chunk, ChunkLineage, ChunkType
-from app.models.implementation_index import IndexedFile, IndexedRelationship, IndexedSymbol
 from app.models.source import Source, SourceStatus, SourceType
 from app.models.twin import Twin, TwinConfig
 from app.models.workspace import Workspace
@@ -68,19 +62,19 @@ _LOCK_TTL_SECONDS = 600
 _LOCK_PREFIX = "memory_lock:"
 
 
-def _lock_key(twin_id: str) -> str:
-    return f"{_LOCK_PREFIX}{twin_id}"
+def _lock_key(doctwin_id: str) -> str:
+    return f"{_LOCK_PREFIX}{doctwin_id}"
 
 
-def _memory_ref(twin_id: str) -> str:
-    return f"__memory__/{twin_id}"
+def _memory_ref(doctwin_id: str) -> str:
+    return f"__memory__/{doctwin_id}"
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
 async def run_memory_extraction(
-    twin_id: str,
+    doctwin_id: str,
     db: AsyncSession,
     commit_history: list[dict] | None = None,
     trace_id: str | None = None,
@@ -90,7 +84,7 @@ async def run_memory_extraction(
 
     Returns a stats dict regardless of success or failure:
       {
-        "twin_id": str,
+        "doctwin_id": str,
         "status": "ready" | "failed",
         "arch_chunks": int,
         "risk_chunks": int,
@@ -102,14 +96,14 @@ async def run_memory_extraction(
     Never raises — all exceptions are caught and reflected in the status.
     """
     redis = get_redis()
-    lock_key = _lock_key(twin_id)
+    lock_key = _lock_key(doctwin_id)
 
     # Acquire distributed lock (SET NX with TTL)
     acquired = await redis.set(lock_key, "1", nx=True, ex=_LOCK_TTL_SECONDS)
     if not acquired:
-        logger.warning("memory_extraction_already_running", twin_id=twin_id)
+        logger.warning("memory_extraction_already_running", doctwin_id=doctwin_id)
         return {
-            "twin_id": twin_id,
+            "doctwin_id": doctwin_id,
             "status": "skipped",
             "reason": "extraction already in progress",
             "arch_chunks": 0,
@@ -128,7 +122,7 @@ async def run_memory_extraction(
         }
 
     stats = {
-        "twin_id": twin_id,
+        "doctwin_id": doctwin_id,
         "status": "failed",
         "arch_chunks": 0,
         "feature_chunks": 0,
@@ -147,28 +141,28 @@ async def run_memory_extraction(
 
     try:
         # Mark as generating
-        await _set_brief_status(twin_id, "generating", db)
+        await _set_brief_status(doctwin_id, "generating", db)
 
         # Load existing file-derived chunks for this twin (all sources)
-        existing_chunks = await _load_twin_chunks(twin_id, db)
-        structure_overview = await _build_structure_overview(twin_id, db)
-        evidence_bundle = await load_twin_memory_evidence(
-            twin_id,
+        existing_chunks = await _load_doctwin_chunks(doctwin_id, db)
+        structure_overview = await _build_structure_overview(doctwin_id, db)
+        evidence_bundle = await load_doctwin_memory_evidence(
+            doctwin_id,
             db,
             structure_overview=structure_overview,
         )
         logger.info(
             "memory_extraction_start",
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             input_chunks=len(existing_chunks),
             commit_history_count=len(commit_history) if commit_history else 0,
             structure_groups=len(structure_overview),
         )
 
         # Delete all previously generated memory chunks (idempotency)
-        deleted_count = await clear_memory_chunks_for_twin(twin_id, db)
+        deleted_count = await clear_memory_chunks_for_twin(doctwin_id, db)
         if deleted_count:
-            logger.info("memory_chunks_cleared", twin_id=twin_id, deleted=deleted_count)
+            logger.info("memory_chunks_cleared", doctwin_id=doctwin_id, deleted=deleted_count)
 
         # ── Knowledge graph build ─────────────────────────────────────────────
         # Build before extraction passes so the graph context is available for
@@ -177,48 +171,48 @@ async def run_memory_extraction(
         relevant_chunks = [c for c in existing_chunks if _is_architecture_relevant(c)]
         logger.debug(
             "memory_extraction_relevant_chunks",
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             count=len(relevant_chunks),
         )
-        deterministic_graph = await build_deterministic_graph(twin_id, db)
+        deterministic_graph = await build_deterministic_graph(doctwin_id, db)
         llm_graph = await extract_graph_from_chunks(
-            relevant_chunks, twin_id, trace_id=trace_id
+            relevant_chunks, doctwin_id, trace_id=trace_id
         )
         graph_extraction = merge_graph_extractions(deterministic_graph, llm_graph)
-        await rebuild_graph(twin_id, graph_extraction, db)
+        await rebuild_graph(doctwin_id, graph_extraction, db)
 
         # ── Pass 1: Architecture extraction ──────────────────────────────────
         arch_chunk_dicts = await extract_architecture_chunks(
-            twin_id, existing_chunks, trace_id=trace_id
+            doctwin_id, existing_chunks, trace_id=trace_id
         )
-        arch_rows = await _embed_and_write_chunks(arch_chunk_dicts, twin_id, db)
+        arch_rows = await _embed_and_write_chunks(arch_chunk_dicts, doctwin_id, db)
         stats["arch_chunks"] = len(arch_rows)
 
         # ── Pass 2: Deterministic feature/auth/onboarding memory ─────────────
         feature_chunk_dicts = build_feature_summary_chunks(evidence_bundle)
-        feature_rows = await _embed_and_write_chunks(feature_chunk_dicts, twin_id, db)
+        feature_rows = await _embed_and_write_chunks(feature_chunk_dicts, doctwin_id, db)
         stats["feature_chunks"] = len(feature_rows)
 
         auth_chunk_dicts = build_auth_flow_chunks(evidence_bundle)
-        auth_rows = await _embed_and_write_chunks(auth_chunk_dicts, twin_id, db)
+        auth_rows = await _embed_and_write_chunks(auth_chunk_dicts, doctwin_id, db)
         stats["auth_chunks"] = len(auth_rows)
 
         onboarding_chunk_dicts = build_onboarding_map_chunks(evidence_bundle)
-        onboarding_rows = await _embed_and_write_chunks(onboarding_chunk_dicts, twin_id, db)
+        onboarding_rows = await _embed_and_write_chunks(onboarding_chunk_dicts, doctwin_id, db)
         stats["onboarding_chunks"] = len(onboarding_rows)
 
         # ── Pass 3: Deterministic risk extraction ─────────────────────────────
         risk_chunk_dicts = build_risk_summary_chunks(evidence_bundle)
-        risk_rows = await _embed_and_write_chunks(risk_chunk_dicts, twin_id, db)
+        risk_rows = await _embed_and_write_chunks(risk_chunk_dicts, doctwin_id, db)
         stats["risk_chunks"] = len(risk_rows)
 
         # ── Pass 4: Change entry extraction ──────────────────────────────────
         change_chunk_dicts = build_change_summary_chunks(evidence_bundle)
         if not change_chunk_dicts and commit_history:
             change_chunk_dicts = await extract_change_entry_chunks(
-                twin_id, commit_history, trace_id=trace_id
+                doctwin_id, commit_history, trace_id=trace_id
             )
-        change_rows = await _embed_and_write_chunks(change_chunk_dicts, twin_id, db)
+        change_rows = await _embed_and_write_chunks(change_chunk_dicts, doctwin_id, db)
         stats["change_chunks"] = len(change_rows)
 
         # ── Memory Brief generation ───────────────────────────────────────────
@@ -226,20 +220,15 @@ async def run_memory_extraction(
             (c["content"] for c in arch_chunk_dicts if c["chunk_type"] == "architecture_summary"),
             None,
         )
-        graph_context = await get_graph_summary(twin_id, db)
-        fact_rows = await load_ready_implementation_facts_ordered(db, twin_id, limit=100)
-        fact_digest = format_implementation_fact_digest_markdown(fact_rows)
-        topic_digest = build_topic_artifact_digest(fact_rows)
-        stats["implementation_fact_rows"] = len(fact_rows)
-        stats["fact_digest_chars"] = len(fact_digest)
-        stats["topic_digest_chars"] = len(topic_digest)
-        stats["phase5_exit"] = evaluate_phase5_memory_brief_exit_signals(
-            implementation_fact_digest=fact_digest,
-            topic_artifact_digest=topic_digest,
-            graph_context=graph_context or "",
-        )
+        graph_context = await get_graph_summary(doctwin_id, db)
+        fact_digest = ""
+        topic_digest = ""
+        stats["implementation_fact_rows"] = 0
+        stats["fact_digest_chars"] = 0
+        stats["topic_digest_chars"] = 0
+        stats["phase5_exit"] = {}
         brief_text = await generate_memory_brief(
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             architecture_text=arch_text,
             arch_chunk_dicts=arch_chunk_dicts,
             risk_chunks=risk_chunk_dicts,
@@ -268,7 +257,7 @@ async def run_memory_extraction(
             brief_chunk_dicts = [{
                 "chunk_type": "memory_brief",
                 "content": brief_text,
-                "source_ref": _memory_ref(twin_id),
+                "source_ref": _memory_ref(doctwin_id),
                 "chunk_metadata": {
                     "extraction": "memory_brief",
                     "provenance": brief_provenance,
@@ -282,23 +271,23 @@ async def run_memory_extraction(
                     ],
                 },
             }]
-            await _embed_and_write_chunks(brief_chunk_dicts, twin_id, db)
+            await _embed_and_write_chunks(brief_chunk_dicts, doctwin_id, db)
 
             # Store the brief text on TwinConfig for unconditional injection
-            await _save_memory_brief(twin_id, brief_text, db)
+            await _save_memory_brief(doctwin_id, brief_text, db)
             stats["brief_generated"] = True
             stats["workspace_synthesis_generated"] = await _rebuild_workspace_synthesis_for_twin(
-                twin_id,
+                doctwin_id,
                 db,
             )
 
-        await _set_brief_status(twin_id, "ready" if brief_text else "failed", db)
+        await _set_brief_status(doctwin_id, "ready" if brief_text else "failed", db)
         await db.commit()
         stats["status"] = "ready" if brief_text else "failed"
 
         logger.info(
             "memory_extraction_complete",
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             arch_chunks=stats["arch_chunks"],
             feature_chunks=stats["feature_chunks"],
             auth_chunks=stats["auth_chunks"],
@@ -317,7 +306,7 @@ async def run_memory_extraction(
         stats["error"] = str(exc)
         logger.error(
             "memory_extraction_error",
-            twin_id=twin_id,
+            doctwin_id=doctwin_id,
             error=str(exc),
             exc_info=True,
         )
@@ -326,12 +315,12 @@ async def run_memory_extraction(
             # Without this, a flush error (e.g. FK violation) leaves the session poisoned
             # and the subsequent _set_brief_status flush silently fails → status stays NULL.
             await db.rollback()
-            await _set_brief_status(twin_id, "failed", db)
+            await _set_brief_status(doctwin_id, "failed", db)
             await db.commit()
         except Exception as status_exc:
             logger.warning(
                 "memory_extraction_status_update_failed",
-                twin_id=twin_id,
+                doctwin_id=doctwin_id,
                 error=str(status_exc),
             )
 
@@ -342,13 +331,13 @@ async def run_memory_extraction(
     return stats
 
 
-async def clear_memory_chunks_for_twin(twin_id: str, db: AsyncSession) -> int:
+async def clear_memory_chunks_for_twin(doctwin_id: str, db: AsyncSession) -> int:
     """
     Delete all LLM-generated memory chunks for a twin.
-    Matches on source_ref = "__memory__/{twin_id}".
+    Matches on source_ref = "__memory__/{doctwin_id}".
     Returns the count of deleted rows.
     """
-    ref = _memory_ref(twin_id)
+    ref = _memory_ref(doctwin_id)
     # We use a JOIN-free approach: find source IDs for this twin then delete chunks by source_ref
     result = await db.execute(
         delete(Chunk).where(Chunk.source_ref == ref).returning(Chunk.id)
@@ -357,10 +346,10 @@ async def clear_memory_chunks_for_twin(twin_id: str, db: AsyncSession) -> int:
     return deleted
 
 
-async def get_memory_brief(twin_id: str, db: AsyncSession) -> str | None:
+async def get_memory_brief(doctwin_id: str, db: AsyncSession) -> str | None:
     """Return the current Memory Brief text for a twin, or None if not generated."""
     result = await db.execute(
-        select(TwinConfig.memory_brief).where(TwinConfig.twin_id == uuid.UUID(twin_id))
+        select(TwinConfig.memory_brief).where(TwinConfig.doctwin_id == uuid.UUID(doctwin_id))
     )
     row = result.scalar_one_or_none()
     return row
@@ -380,7 +369,7 @@ async def get_workspace_synthesis(workspace_id: str, db: AsyncSession) -> str | 
 # ── Internals ─────────────────────────────────────────────────────────────────
 
 
-async def _load_twin_chunks(twin_id: str, db: AsyncSession) -> list[dict]:
+async def _load_doctwin_chunks(doctwin_id: str, db: AsyncSession) -> list[dict]:
     """
     Load file-derived chunks for a twin from **ready** sources only.
 
@@ -402,9 +391,9 @@ async def _load_twin_chunks(twin_id: str, db: AsyncSession) -> list[dict]:
         )
         .join(Source, Chunk.source_id == Source.id)
         .where(
-            Source.twin_id == uuid.UUID(twin_id),
+            Source.doctwin_id == uuid.UUID(doctwin_id),
             Source.status == SourceStatus.ready,
-            Chunk.source_ref.not_like(f"__memory__%"),
+            Chunk.source_ref.not_like("__memory__%"),
         )
     )
     result = await db.execute(stmt)
@@ -420,11 +409,11 @@ async def _load_twin_chunks(twin_id: str, db: AsyncSession) -> list[dict]:
     ]
 
 
-async def _build_structure_overview(twin_id: str, db: AsyncSession) -> list[dict]:
+async def _build_structure_overview(doctwin_id: str, db: AsyncSession) -> list[dict]:
     """
     Build a sorted structure overview for the memory brief from source inventory.
     """
-    inventory = await _load_structure_inventory(twin_id, db)
+    inventory = await _load_structure_inventory(doctwin_id, db)
     meaningful_dirs = inventory.get("meaningful_dirs") or {}
     overview = [
         {
@@ -439,12 +428,12 @@ async def _build_structure_overview(twin_id: str, db: AsyncSession) -> list[dict
 
 
 async def _rebuild_workspace_synthesis_for_twin(
-    twin_id: str,
+    doctwin_id: str,
     db: AsyncSession,
 ) -> bool:
     twin = (
         await db.execute(
-            select(Twin).options(selectinload(Twin.config)).where(Twin.id == uuid.UUID(twin_id))
+            select(Twin).options(selectinload(Twin.config)).where(Twin.id == uuid.UUID(doctwin_id))
         )
     ).scalar_one_or_none()
     if twin is None:
@@ -489,23 +478,23 @@ async def _rebuild_workspace_synthesis(
 
     project_rows: list[dict] = []
     for twin in sorted(workspace.twins, key=lambda item: item.created_at):
-        files_indexed = await _count_rows_for_twin(IndexedFile, twin.id, db)
-        symbols_indexed = await _count_rows_for_twin(IndexedSymbol, twin.id, db)
-        relationships_indexed = await _count_rows_for_twin(IndexedRelationship, twin.id, db)
+        files_indexed = 0
+        symbols_indexed = 0
+        relationships_indexed = 0
         artifact_labels = await _load_memory_artifact_labels_for_twin(str(twin.id), db)
         brief_excerpt = ""
         if twin.config and twin.config.memory_brief:
             brief_excerpt = _brief_excerpt(twin.config.memory_brief)
         project_rows.append(
             {
-                "twin_id": str(twin.id),
+                "doctwin_id": str(twin.id),
                 "name": twin.name,
                 "files_indexed": files_indexed,
                 "symbols_indexed": symbols_indexed,
                 "relationships_indexed": relationships_indexed,
                 "artifact_labels": artifact_labels,
                 "brief_excerpt": brief_excerpt,
-                "languages": await _load_languages_for_twin(twin.id, db),
+                "languages": [],
             }
         )
 
@@ -521,11 +510,11 @@ async def _rebuild_workspace_synthesis(
     return True
 
 
-async def _load_structure_inventory(twin_id: str, db: AsyncSession) -> dict:
+async def _load_structure_inventory(doctwin_id: str, db: AsyncSession) -> dict:
     result = await db.execute(
         select(Source.structure_index)
         .where(
-            Source.twin_id == uuid.UUID(twin_id),
+            Source.doctwin_id == uuid.UUID(doctwin_id),
             Source.status.in_([SourceStatus.ready, SourceStatus.processing]),
             Source.name != "__memory__",
         )
@@ -550,7 +539,7 @@ async def _load_structure_inventory(twin_id: str, db: AsyncSession) -> dict:
         select(Chunk.source_ref)
         .join(Source, Chunk.source_id == Source.id)
         .where(
-            Source.twin_id == uuid.UUID(twin_id),
+            Source.doctwin_id == uuid.UUID(doctwin_id),
             Source.status.in_([SourceStatus.ready, SourceStatus.processing]),
             Chunk.source_ref.is_not(None),
             Chunk.source_ref.not_like("__memory__%"),
@@ -561,7 +550,7 @@ async def _load_structure_inventory(twin_id: str, db: AsyncSession) -> dict:
 
 
 async def _ensure_memory_source(
-    twin_id: str,
+    doctwin_id: str,
     synthetic_source_id: uuid.UUID,
     db: AsyncSession,
 ) -> None:
@@ -569,7 +558,7 @@ async def _ensure_memory_source(
     Ensure a phantom Source row exists for memory-generated chunks.
 
     Memory chunks use a deterministic synthetic source_id derived from the
-    twin_id (UUID v5). Because the `chunks` table has a FK to `sources`, we
+    doctwin_id (UUID v5). Because the `chunks` table has a FK to `sources`, we
     must have a real row before inserting chunks. This row is never exposed to
     the user — it's purely a FK anchor.
 
@@ -583,24 +572,24 @@ async def _ensure_memory_source(
             name="__memory__",
             source_type=SourceType.manual,
             status=SourceStatus.ready,
-            twin_id=uuid.UUID(twin_id),
+            doctwin_id=uuid.UUID(doctwin_id),
             connection_config={},
         )
         db.add(phantom)
         await db.flush()
-        logger.info("memory_source_created", twin_id=twin_id, source_id=str(synthetic_source_id))
+        logger.info("memory_source_created", doctwin_id=doctwin_id, source_id=str(synthetic_source_id))
 
 
 async def _embed_and_write_chunks(
     chunk_dicts: list[dict],
-    twin_id: str,
+    doctwin_id: str,
     db: AsyncSession,
 ) -> list[Chunk]:
     """
     Embed a list of chunk dicts and write them as Chunk rows.
 
     Memory chunks are written with a synthetic source_id derived from the
-    twin_id (deterministic UUID v5). A phantom Source row is created if it
+    doctwin_id (deterministic UUID v5). A phantom Source row is created if it
     doesn't exist yet (satisfies the chunks.source_id FK).
 
     Returns the list of written Chunk ORM objects.
@@ -610,8 +599,8 @@ async def _embed_and_write_chunks(
 
     # Generate a deterministic synthetic source_id for memory chunks.
     # Ensure the corresponding Source row exists before inserting chunks.
-    synthetic_source_id = uuid.uuid5(uuid.NAMESPACE_DNS, f"memory:{twin_id}")
-    await _ensure_memory_source(twin_id, synthetic_source_id, db)
+    synthetic_source_id = uuid.uuid5(uuid.NAMESPACE_DNS, f"memory:{doctwin_id}")
+    await _ensure_memory_source(doctwin_id, synthetic_source_id, db)
 
     texts = [c["content"] for c in chunk_dicts]
     batch_result = await embed_batch_with_failover(texts, task="document", db=db)
@@ -624,7 +613,7 @@ async def _embed_and_write_chunks(
         await db.flush()
 
     rows: list[Chunk] = []
-    for chunk_dict, embedding in zip(chunk_dicts, embeddings):
+    for chunk_dict, embedding in zip(chunk_dicts, embeddings, strict=False):
         chunk_type_str = chunk_dict["chunk_type"]
         try:
             chunk_type = ChunkType(chunk_type_str)
@@ -641,7 +630,7 @@ async def _embed_and_write_chunks(
             lineage=ChunkLineage.memory_derived,
             content=content,
             embedding=embedding,
-            source_ref=chunk_dict.get("source_ref", _memory_ref(twin_id)),
+            source_ref=chunk_dict.get("source_ref", _memory_ref(doctwin_id)),
             snapshot_id=None,
             segment_id=None,
             start_line=None,
@@ -659,10 +648,10 @@ async def _embed_and_write_chunks(
     return rows
 
 
-async def _set_brief_status(twin_id: str, status: str, db: AsyncSession) -> None:
-    """Update twin_configs.memory_brief_status for this twin."""
+async def _set_brief_status(doctwin_id: str, status: str, db: AsyncSession) -> None:
+    """Update doctwin_configs.memory_brief_status for this twin."""
     result = await db.execute(
-        select(TwinConfig).where(TwinConfig.twin_id == uuid.UUID(twin_id))
+        select(TwinConfig).where(TwinConfig.doctwin_id == uuid.UUID(doctwin_id))
     )
     config = result.scalar_one_or_none()
     if config:
@@ -672,10 +661,10 @@ async def _set_brief_status(twin_id: str, status: str, db: AsyncSession) -> None
         await db.flush()
 
 
-async def _save_memory_brief(twin_id: str, brief: str, db: AsyncSession) -> None:
-    """Write the generated brief text to twin_configs.memory_brief."""
+async def _save_memory_brief(doctwin_id: str, brief: str, db: AsyncSession) -> None:
+    """Write the generated brief text to doctwin_configs.memory_brief."""
     result = await db.execute(
-        select(TwinConfig).where(TwinConfig.twin_id == uuid.UUID(twin_id))
+        select(TwinConfig).where(TwinConfig.doctwin_id == uuid.UUID(doctwin_id))
     )
     config = result.scalar_one_or_none()
     if config:
@@ -711,27 +700,10 @@ def _dir_depth(dir_path: str) -> int:
     return len(PurePosixPath(dir_path).parts)
 
 
-async def _count_rows_for_twin(model, twin_id: uuid.UUID, db: AsyncSession) -> int:
-    result = await db.execute(
-        select(func.count()).select_from(model).where(model.twin_id == twin_id)
-    )
-    return int(result.scalar_one() or 0)
-
-
-async def _load_languages_for_twin(twin_id: uuid.UUID, db: AsyncSession) -> list[str]:
-    result = await db.execute(
-        select(IndexedFile.language).where(
-            IndexedFile.twin_id == twin_id,
-            IndexedFile.language.is_not(None),
-        )
-    )
-    return sorted({str(row.language) for row in result.fetchall() if row.language})
-
-
-async def _load_memory_artifact_labels_for_twin(twin_id: str, db: AsyncSession) -> list[str]:
+async def _load_memory_artifact_labels_for_twin(doctwin_id: str, db: AsyncSession) -> list[str]:
     result = await db.execute(
         select(Chunk.chunk_type).where(
-            Chunk.source_ref == _memory_ref(twin_id),
+            Chunk.source_ref == _memory_ref(doctwin_id),
             Chunk.chunk_type.in_(
                 [
                     ChunkType.feature_summary,
@@ -743,7 +715,10 @@ async def _load_memory_artifact_labels_for_twin(twin_id: str, db: AsyncSession) 
             ),
         )
     )
-    return [str(row.chunk_type.value if hasattr(row.chunk_type, "value") else row.chunk_type) for row in result.fetchall()]
+    return [
+        str(row.chunk_type.value if hasattr(row.chunk_type, "value") else row.chunk_type)
+        for row in result.fetchall()
+    ]
 
 
 def _brief_excerpt(brief: str) -> str:

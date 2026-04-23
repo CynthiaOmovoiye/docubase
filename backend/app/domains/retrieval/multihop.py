@@ -12,7 +12,7 @@ Multi-hop then traverses ChatService → RetrieverRouter → Embedder → pgvect
 and pulls in chunks from all of those modules even if the query didn't mention them.
 
 Usage:
-    additional = await multihop_retrieve(query, twin_id, db, allow_code_snippets)
+    additional = await multihop_retrieve(query, doctwin_id, db, allow_code_snippets)
 
 The returned chunks supplement (not replace) the vector search results.
 Callers should merge and deduplicate by chunk_id.
@@ -38,14 +38,14 @@ _GRAPH_CHUNK_SCORE = 0.50  # mid-range score for graph-sourced chunks
 
 async def multihop_retrieve(
     query: str,
-    twin_id: str,
+    doctwin_id: str,
     db: AsyncSession,
     allow_code_snippets: bool,
     max_additional_chunks: int = 4,
 ) -> list[dict]:
     chunks, _graph_edges = await multihop_retrieve_with_graph(
         query=query,
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         db=db,
         allow_code_snippets=allow_code_snippets,
         max_additional_chunks=max_additional_chunks,
@@ -55,7 +55,7 @@ async def multihop_retrieve(
 
 async def multihop_retrieve_with_graph(
     query: str,
-    twin_id: str,
+    doctwin_id: str,
     db: AsyncSession,
     allow_code_snippets: bool,
     max_additional_chunks: int = 4,
@@ -74,13 +74,13 @@ async def multihop_retrieve_with_graph(
     Returns ([], []) if the knowledge graph is not built or no entities match.
     All DB errors are caught; callers receive an empty list on failure.
     """
-    seed_entities = await find_entities_for_query(query, twin_id, db, top_k=3)
+    seed_entities = await find_entities_for_query(query, doctwin_id, db, top_k=3)
     if not seed_entities:
-        logger.debug("multihop_no_seed_entities", twin_id=twin_id)
+        logger.debug("multihop_no_seed_entities", doctwin_id=doctwin_id)
         return [], []
 
     all_entities, all_relationships = await traverse_graph(
-        seed_entities, twin_id, db, max_depth=2, max_nodes=15
+        seed_entities, doctwin_id, db, max_depth=2, max_nodes=15
     )
 
     source_refs: set[str] = set()
@@ -96,7 +96,7 @@ async def multihop_retrieve_with_graph(
         select(Chunk.id, Chunk.content, Chunk.chunk_type, Chunk.source_ref)
         .join(Source, Chunk.source_id == Source.id)
         .where(
-            Source.twin_id == uuid.UUID(twin_id),
+            Source.doctwin_id == uuid.UUID(doctwin_id),
             Source.status == SourceStatus.ready,
             Chunk.source_ref.in_(list(source_refs)),
         )
@@ -109,7 +109,7 @@ async def multihop_retrieve_with_graph(
         result = await db.execute(stmt)
         rows = result.fetchall()
     except Exception as exc:
-        logger.warning("multihop_chunk_fetch_failed", twin_id=twin_id, error=str(exc))
+        logger.warning("multihop_chunk_fetch_failed", doctwin_id=doctwin_id, error=str(exc))
         await db.rollback()
         return [], _format_graph_edges(all_entities, all_relationships)
 
@@ -127,7 +127,7 @@ async def multihop_retrieve_with_graph(
 
     logger.info(
         "multihop_complete",
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         seed_entities=len(seed_entities),
         traversed_entities=len(all_entities),
         source_refs=len(source_refs),

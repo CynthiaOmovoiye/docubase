@@ -4,12 +4,10 @@ Unit tests for knowledge extractors.
 Tests the extraction strategies without any DB or embedding calls.
 """
 
-import pytest
 from app.domains.knowledge.extractors import (
-    extract_chunks,
     _extract_dependency_signal,
-    _extract_documentation,
     _split_by_headings,
+    extract_chunks,
 )
 
 
@@ -52,7 +50,10 @@ class TestDocumentationExtraction:
 
 class TestDependencyExtraction:
     def test_package_json_extraction(self):
-        content = '{"dependencies": {"react": "^18.0.0", "typescript": "~5.0.0"}, "devDependencies": {"vite": "^5.0.0"}}'
+        content = (
+            '{"dependencies": {"react": "^18.0.0", "typescript": "~5.0.0"}, '
+            '"devDependencies": {"vite": "^5.0.0"}}'
+        )
         chunks = _extract_dependency_signal("package.json", content)
         assert len(chunks) == 1
         assert chunks[0]["chunk_type"] == "dependency_signal"
@@ -252,6 +253,7 @@ class TestEmbedder:
 
     def test_local_stub_returns_correct_dimensions(self):
         import asyncio
+
         from app.domains.embedding.embedder import LocalStubEmbedder, settings
         embedder = LocalStubEmbedder()
         vector = asyncio.get_event_loop().run_until_complete(embedder.embed("hello world"))
@@ -259,6 +261,7 @@ class TestEmbedder:
 
     def test_local_stub_is_deterministic(self):
         import asyncio
+
         from app.domains.embedding.embedder import LocalStubEmbedder
         embedder = LocalStubEmbedder()
         loop = asyncio.get_event_loop()
@@ -268,6 +271,7 @@ class TestEmbedder:
 
     def test_local_stub_different_inputs_differ(self):
         import asyncio
+
         from app.domains.embedding.embedder import LocalStubEmbedder
         embedder = LocalStubEmbedder()
         loop = asyncio.get_event_loop()
@@ -278,6 +282,7 @@ class TestEmbedder:
     def test_local_stub_is_unit_normalised(self):
         import asyncio
         import math
+
         from app.domains.embedding.embedder import LocalStubEmbedder
         embedder = LocalStubEmbedder()
         vector = asyncio.get_event_loop().run_until_complete(embedder.embed("normalise me"))
@@ -286,6 +291,7 @@ class TestEmbedder:
 
     def test_batch_embed_returns_correct_count(self):
         import asyncio
+
         from app.domains.embedding.embedder import LocalStubEmbedder, settings
         embedder = LocalStubEmbedder()
         texts = ["first", "second", "third"]

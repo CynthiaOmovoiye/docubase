@@ -85,7 +85,7 @@ class AnswerVerificationResult:
 def verify_single_project_answer(
     *,
     answer: str,
-    twin_name: str,
+    doctwin_name: str,
     packet: RetrievalEvidencePacket | None,
     allow_retry: bool,
 ) -> AnswerVerificationResult:
@@ -124,7 +124,7 @@ def verify_single_project_answer(
         return AnswerVerificationResult(
             content=answer,
             verified=False,
-            retry_hint=_build_single_retry_hint(packet, twin_name, issues),
+            retry_hint=_build_single_retry_hint(packet, doctwin_name, issues),
             issues=issues,
         )
 
@@ -132,7 +132,7 @@ def verify_single_project_answer(
     rewritten = False
     if issues:
         if "weak_engine_answer" in issues:
-            content = _build_single_grounded_fallback(twin_name=twin_name, packet=packet)
+            content = _build_single_grounded_fallback(doctwin_name=doctwin_name, packet=packet)
         else:
             content = _drop_lines_with_terms(content, unsupported_files + unsupported_symbols)
             content = _strip_unsupported_code_blocks(content, packet)
@@ -140,7 +140,7 @@ def verify_single_project_answer(
                 content = _drop_contradicted_absence_lines(content, packet)
         rewritten = True
         if not _contains_grounded_anchor(content, packet):
-            content = _build_single_grounded_fallback(twin_name=twin_name, packet=packet)
+            content = _build_single_grounded_fallback(doctwin_name=doctwin_name, packet=packet)
 
     if _STRONG_NEGATIVE_RE.search(content) and not _BOUNDED_NEGATIVE_RE.search(content):
         content = _append_negative_bounds(content, packet)
@@ -339,10 +339,7 @@ def _requires_anchor(mode: RetrievalMode, packet: RetrievalEvidencePacket) -> bo
 def _contains_grounded_anchor(content: str, packet: RetrievalEvidencePacket) -> bool:
     allowed_files, allowed_symbols = _build_allowed_refs(packet)
     lowered = content.lower()
-    for ref in allowed_files | allowed_symbols:
-        if ref and ref.lower() in lowered:
-            return True
-    return False
+    return any(ref and ref.lower() in lowered for ref in allowed_files | allowed_symbols)
 
 
 def _ref_appears_in_packet_content(ref: str, packet: RetrievalEvidencePacket) -> bool:
@@ -371,9 +368,7 @@ def _ref_appears_in_packet_content(ref: str, packet: RetrievalEvidencePacket) ->
     ).lower()
     if lowered_ref in blob:
         return True
-    if compact_ref and compact_ref in re.sub(r"\s+", "", blob):
-        return True
-    return False
+    return bool(compact_ref and compact_ref in re.sub(r"\s+", "", blob))
 
 
 def _has_contradicted_absence_claim(content: str, packet: RetrievalEvidencePacket) -> bool:
@@ -408,18 +403,17 @@ def _has_contradicted_absence_claim(content: str, packet: RetrievalEvidencePacke
                 "session validity",
                 "session valid",
             )
+        ) and any(
+            marker in packet_compact
+            for marker in (
+                "refresh_tokens",
+                "performtokenrefresh",
+                "tokenrefreshscheduler",
+                "isrefreshtokenvalid",
+                "isaccesstokenvalid",
+            )
         ):
-            if any(
-                marker in packet_compact
-                for marker in (
-                    "refresh_tokens",
-                    "performtokenrefresh",
-                    "tokenrefreshscheduler",
-                    "isrefreshtokenvalid",
-                    "isaccesstokenvalid",
-                )
-            ):
-                return True
+            return True
         if any(term in lowered for term in ("logout", "log out", "sign out")):
             if "clearauth" in packet_compact or "handlelogout" in packet_compact:
                 return True
@@ -491,7 +485,7 @@ def _is_engine_topic(query: str) -> bool:
 
 def _build_single_retry_hint(
     packet: RetrievalEvidencePacket,
-    twin_name: str,
+    doctwin_name: str,
     issues: list[str],
 ) -> str:
     files = ", ".join(file_ref.path for file_ref in packet.files[:6]) or "the retrieved files"
@@ -505,7 +499,7 @@ def _build_single_retry_hint(
             "Prefer prose with file/function references."
         )
     return (
-        f"Regenerate the answer for {twin_name} using only grounded file and symbol anchors. "
+        f"Regenerate the answer for {doctwin_name} using only grounded file and symbol anchors. "
         f"Use files like: {files}. Use symbols like: {symbols}. "
         f"Do not invent additional file paths, symbols, or cross-cutting implementation details. "
         "Before saying something is missing, check whether the packet contains direct evidence for it "
@@ -578,17 +572,17 @@ def _drop_contradicted_absence_lines(content: str, packet: RetrievalEvidencePack
     return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
 
 
-def _build_single_grounded_fallback(*, twin_name: str, packet: RetrievalEvidencePacket) -> str:
-    engine_fallback = _build_engine_grounded_fallback(twin_name=twin_name, packet=packet)
+def _build_single_grounded_fallback(*, doctwin_name: str, packet: RetrievalEvidencePacket) -> str:
+    engine_fallback = _build_engine_grounded_fallback(doctwin_name=doctwin_name, packet=packet)
     if engine_fallback:
         return engine_fallback
 
-    auth_fallback = _build_auth_grounded_fallback(twin_name=twin_name, packet=packet)
+    auth_fallback = _build_auth_grounded_fallback(doctwin_name=doctwin_name, packet=packet)
     if auth_fallback:
         return auth_fallback
 
     lines = [
-        f"I found these grounded anchors for **{twin_name}**, but not enough retrieved implementation detail to answer more fully.",
+        f"I found these grounded anchors for **{doctwin_name}**, but not enough retrieved implementation detail to answer more fully.",
         "",
         "## Grounded evidence",
     ]
@@ -629,7 +623,7 @@ def _build_single_grounded_fallback(*, twin_name: str, packet: RetrievalEvidence
     return "\n".join(lines)
 
 
-def _build_auth_grounded_fallback(*, twin_name: str, packet: RetrievalEvidencePacket) -> str | None:
+def _build_auth_grounded_fallback(*, doctwin_name: str, packet: RetrievalEvidencePacket) -> str | None:
     query = packet.query.lower()
     if not any(
         token in query
@@ -656,7 +650,7 @@ def _build_auth_grounded_fallback(*, twin_name: str, packet: RetrievalEvidencePa
         if ref and not ref.startswith("__memory__/"):
             files.add(ref)
 
-    lines = [f"Here is the grounded auth picture I can confirm for **{twin_name}**.", ""]
+    lines = [f"Here is the grounded auth picture I can confirm for **{doctwin_name}**.", ""]
 
     if "get_current_user" in lowered:
         lines.extend(
@@ -765,7 +759,7 @@ def _build_auth_grounded_fallback(*, twin_name: str, packet: RetrievalEvidencePa
     return "\n".join(lines).strip()
 
 
-def _build_engine_grounded_fallback(*, twin_name: str, packet: RetrievalEvidencePacket) -> str | None:
+def _build_engine_grounded_fallback(*, doctwin_name: str, packet: RetrievalEvidencePacket) -> str | None:
     query = packet.query.lower()
     if not any(
         token in query
@@ -784,7 +778,7 @@ def _build_engine_grounded_fallback(*, twin_name: str, packet: RetrievalEvidence
     files = _packet_files(packet)
     lowered_packet = _packet_text(packet).lower()
     engine_dirs = _engine_dirs_from_files(files)
-    lines = [f"Here is the grounded Scaffold engine picture for **{twin_name}**.", ""]
+    lines = [f"Here is the grounded Scaffold engine picture for **{doctwin_name}**.", ""]
 
     if "intake" in query:
         intake_files = [path for path in files if "/intake" in path.lower() or path.endswith("routes/intake.py")]

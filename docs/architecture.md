@@ -1,11 +1,11 @@
-# docubase — Architecture
+# docbase — Architecture
 
 For the canonical repo intelligence implementation roadmap, see
 `docs/repo-intelligence-roadmap.md`.
 
 ## What This Is
 
-A multi-tenant SaaS platform that lets users create interactive AI twins for any knowledge source: repositories, resumes, portfolios, projects, or documents. Each twin is a safe, conversational interface grounded in approved knowledge — no raw code leakage, no secrets exposure.
+A multi-tenant SaaS platform that lets users create interactive AI twins for any knowledge source: Drive folders, PDFs, resumes, portfolios, projects, or documents. Each twin is a safe, conversational interface grounded in approved knowledge — no raw code leakage, no secrets exposure.
 
 ---
 
@@ -26,7 +26,7 @@ ChatSession
       └── RoutingDecision (which twin/source answered)
 ```
 
-**Key modeling rule:** Repo is not the top-level concept. A GitHub repository is one `Source` of type `github_repo`. A PDF resume is one `Source` of type `pdf`. The `Twin` is the primary product abstraction.
+**Key modeling rule:** Sources attach to twins. Each `Source` (e.g. `google_drive`, `pdf`) is indexed into the twin the user chose. The `Twin` is the primary product abstraction.
 
 ---
 
@@ -48,8 +48,7 @@ The core product domain. A twin is a named, configurable AI agent grounded in on
 
 ### 4. Sources
 Each source is a data origin attached to a twin. Sources are typed:
-- `github_repo`
-- `gitlab_repo`
+- `google_drive`
 - `pdf`
 - `markdown`
 - `url`
@@ -124,7 +123,7 @@ Phase 3 answering is now evidence-bound:
 
 ### 9a. Memory
 The engineering memory layer is now evidence-backed:
-- twin memory extraction loads deterministic evidence from indexed files, symbols, relationships, and git activity
+- twin memory extraction loads deterministic evidence from indexed files, symbols, and relationships
 - memory artifacts now include feature summaries, auth flow summaries, onboarding maps, risk summaries, and change summaries
 - memory-derived chunks carry provenance metadata back to files and symbols
 - workspace synthesis is stored as a first-class workspace memory artifact instead of being smuggled into a twin
@@ -154,7 +153,7 @@ Owner dashboard. Twin management, source status, ingestion logs, usage stats.
 Background job system (Celery or ARQ). Handles:
 - Source ingestion on attach or update
 - Re-ingestion on config change
-- Scheduled re-sync for live sources (GitHub, URLs)
+- Scheduled re-sync for live sources (Google Drive watch channels, URLs)
 - Notification hooks
 
 ---

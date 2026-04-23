@@ -5,9 +5,7 @@ All tests are pure: no I/O, no DB, no LLM. classify_intent() is a regex
 classifier that must be deterministic and fast.
 """
 
-import pytest
 from app.domains.retrieval.intent import QueryIntent, classify_intent
-
 
 # ── change_query ──────────────────────────────────────────────────────────────
 

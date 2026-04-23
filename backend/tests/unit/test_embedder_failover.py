@@ -5,8 +5,8 @@ import pytest
 
 from app.domains.embedding.embedder import (
     EmbeddingProfile,
-    JinaEmbedder,
     EmbeddingRateLimitError,
+    JinaEmbedder,
     embed_batch_with_failover,
 )
 

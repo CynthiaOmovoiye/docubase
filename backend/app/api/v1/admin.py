@@ -21,7 +21,7 @@ from app.core.db import get_db
 from app.core.logging import get_logger
 from app.core.redis import get_redis
 from app.domains.ops.platform_stats import fetch_platform_stats
-from app.domains.ops.twin_memory_queue import enqueue_memory_brief_for_twin
+from app.domains.ops.doctwin_memory_queue import enqueue_memory_brief_for_twin
 from app.models.twin import Twin
 from app.models.user import User
 from app.schemas.admin import (
@@ -34,8 +34,8 @@ router = APIRouter()
 logger = get_logger(__name__)
 
 
-async def _require_twin(twin_id: uuid.UUID, db: AsyncSession) -> None:
-    row = await db.execute(select(Twin.id).where(Twin.id == twin_id))
+async def _require_twin(doctwin_id: uuid.UUID, db: AsyncSession) -> None:
+    row = await db.execute(select(Twin.id).where(Twin.id == doctwin_id))
     if row.scalar_one_or_none() is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Twin not found")
 
@@ -67,12 +67,12 @@ async def get_ingestion_logs(
 
 
 @router.post(
-    "/twins/{twin_id}/memory/rebuild",
+    "/twins/{doctwin_id}/memory/rebuild",
     response_model=AdminTwinMaintenanceResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def admin_rebuild_twin_memory(
-    twin_id: uuid.UUID,
+async def admin_rebuild_doctwin_memory(
+    doctwin_id: uuid.UUID,
     current_user: User = Depends(get_superuser),
     db: AsyncSession = Depends(get_db),
 ):
@@ -81,10 +81,10 @@ async def admin_rebuild_twin_memory(
 
     Use for operator recovery; owners should prefer POST /twins/{id}/memory/generate.
     """
-    await _require_twin(twin_id, db)
+    await _require_twin(doctwin_id, db)
     redis = get_redis()
     try:
-        detail = await enqueue_memory_brief_for_twin(twin_id=twin_id, db=db, redis=redis)
+        detail = await enqueue_memory_brief_for_twin(doctwin_id=doctwin_id, db=db, redis=redis)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -92,11 +92,11 @@ async def admin_rebuild_twin_memory(
         ) from exc
 
     logger.info(
-        "admin_twin_memory_rebuild",
+        "admin_doctwin_memory_rebuild",
         admin_user_id=str(current_user.id),
-        twin_id=str(twin_id),
+        doctwin_id=str(doctwin_id),
         **detail,
     )
-    return AdminTwinMaintenanceResponse(twin_id=str(twin_id), action="memory_rebuild", detail=detail)
+    return AdminTwinMaintenanceResponse(doctwin_id=str(doctwin_id), action="memory_rebuild", detail=detail)
 
 

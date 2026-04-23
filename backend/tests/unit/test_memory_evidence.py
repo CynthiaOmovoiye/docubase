@@ -52,7 +52,7 @@ def _activity(title: str, occurred_at: str, paths: list[str]):
 
 def _bundle() -> MemoryEvidenceBundle:
     return MemoryEvidenceBundle(
-        twin_id="00000000-0000-0000-0000-000000000123",
+        doctwin_id="00000000-0000-0000-0000-000000000123",
         workspace_id="00000000-0000-0000-0000-000000000999",
         indexed_files=[
             _file("app/auth.py", "api_routes"),
@@ -103,7 +103,7 @@ def test_auth_flow_chunks_capture_auth_files_and_symbols():
 
 def test_auth_flow_chunks_capture_relationship_only_provenance():
     bundle = MemoryEvidenceBundle(
-        twin_id="00000000-0000-0000-0000-000000000123",
+        doctwin_id="00000000-0000-0000-0000-000000000123",
         workspace_id="00000000-0000-0000-0000-000000000999",
         indexed_files=[
             _file("community_contributions/product.tsx", "library_module", "tsx"),
@@ -164,7 +164,7 @@ def test_workspace_synthesis_content_aggregates_project_rows():
         workspace_name="Studio",
         project_rows=[
             {
-                "twin_id": "1",
+                "doctwin_id": "1",
                 "name": "Alpha API",
                 "files_indexed": 4,
                 "symbols_indexed": 3,
@@ -174,7 +174,7 @@ def test_workspace_synthesis_content_aggregates_project_rows():
                 "languages": ["python"],
             },
             {
-                "twin_id": "2",
+                "doctwin_id": "2",
                 "name": "Beta Web",
                 "files_indexed": 6,
                 "symbols_indexed": 5,

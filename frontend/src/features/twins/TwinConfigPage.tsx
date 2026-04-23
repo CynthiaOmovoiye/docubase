@@ -295,7 +295,7 @@ export default function TwinConfigPage() {
               style={{ ...s.input, minHeight: 120, resize: "vertical" }}
               value={customContext}
               onChange={(e) => setCustomContext(e.target.value)}
-              placeholder="e.g. This twin represents the docubase backend API. It can explain architectural decisions, API contracts, and dependency choices based on the connected repository."
+              placeholder="e.g. This twin represents the docbase backend API. It can explain architectural decisions, API contracts, and dependency choices based on the connected repository."
               maxLength={2000}
             />
             <span style={s.charCount}>{customContext.length} / 2000</span>
@@ -414,7 +414,7 @@ function ShareLinksPanel({ twinId }: { twinId: string }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
 
-  const pageLinks = surfaces.filter((s) => s.surface_type === "twin_page");
+  const pageLinks = surfaces.filter((s) => s.surface_type === "doctwin_page");
 
   function copyUrl(url: string, id: string) {
     navigator.clipboard.writeText(url).then(() => {
@@ -771,15 +771,6 @@ function IconLock() {
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
-  );
-}
-
-function IconLink() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
     </svg>
   );
 }

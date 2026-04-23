@@ -7,9 +7,9 @@ The ingestion pipeline uses this to get the right connector for a given source.
 
 from app.connectors.base import BaseConnector
 from app.connectors.google_drive.connector import GoogleDriveConnector
-from app.connectors.pdf.connector import PDFConnector
-from app.connectors.markdown.connector import MarkdownConnector
 from app.connectors.manual.connector import ManualConnector
+from app.connectors.markdown.connector import MarkdownConnector
+from app.connectors.pdf.connector import PDFConnector
 from app.models.source import SourceType
 
 

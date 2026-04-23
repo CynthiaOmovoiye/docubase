@@ -5,8 +5,8 @@ import pytest
 
 from app.domains.sources.service import (
     _is_backfill_candidate,
-    list_sources,
     list_legacy_backfill_candidates,
+    list_sources,
     mark_sources_pending_for_backfill,
 )
 from app.models.source import SourceIndexMode, SourceStatus
@@ -46,11 +46,11 @@ class TestListLegacyBackfillCandidates:
         db.execute = AsyncMock(return_value=result)
 
         with patch(
-            "app.domains.sources.service.assert_twin_owned_by",
+            "app.domains.sources.service.assert_doctwin_owned_by",
             AsyncMock(return_value=SimpleNamespace()),
         ) as assert_owned:
             candidates = await list_legacy_backfill_candidates(
-                twin_id="00000000-0000-0000-0000-000000000001",
+                doctwin_id="00000000-0000-0000-0000-000000000001",
                 user_id="00000000-0000-0000-0000-000000000002",
                 db=db,
             )
@@ -64,17 +64,17 @@ class TestListSources:
     async def test_hides_internal_memory_sources(self):
         db = MagicMock()
         external = SimpleNamespace(name="repo")
-        internal = SimpleNamespace(name="__memory__")
+        SimpleNamespace(name="__memory__")
         result = MagicMock()
         result.scalars.return_value.all.return_value = [external]
         db.execute = AsyncMock(return_value=result)
 
         with patch(
-            "app.domains.sources.service.assert_twin_owned_by",
+            "app.domains.sources.service.assert_doctwin_owned_by",
             AsyncMock(return_value=SimpleNamespace()),
         ):
             sources = await list_sources(
-                twin_id="00000000-0000-0000-0000-000000000001",
+                doctwin_id="00000000-0000-0000-0000-000000000001",
                 user_id="00000000-0000-0000-0000-000000000002",
                 db=db,
             )

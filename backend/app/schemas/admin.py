@@ -14,7 +14,7 @@ class AdminPlatformStatsResponse(BaseModel):
 
 
 class AdminTwinMaintenanceResponse(BaseModel):
-    twin_id: str
+    doctwin_id: str
     action: str
     detail: dict = Field(default_factory=dict)
 

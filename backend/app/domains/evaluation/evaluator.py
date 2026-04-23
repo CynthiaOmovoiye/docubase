@@ -94,7 +94,7 @@ async def evaluate_response_async(
     query: str,
     context_chunks: list[dict],
     response: str,
-    twin_name: str,
+    doctwin_name: str,
     trace_id: str | None = None,
 ) -> None:
     """
@@ -107,13 +107,13 @@ async def evaluate_response_async(
         query:          The user's question.
         context_chunks: Chunks that were passed to the generator.
         response:       The assistant's response text.
-        twin_name:      Display name of the twin being evaluated.
+        doctwin_name:      Display name of the twin being evaluated.
         trace_id:       Langfuse trace ID to attach scores to, if any.
     """
     try:
         scores = await _run_evaluation(query, context_chunks, response)
     except Exception as exc:
-        logger.warning("evaluation_failed", twin_name=twin_name, error=str(exc))
+        logger.warning("evaluation_failed", doctwin_name=doctwin_name, error=str(exc))
         return
 
     numeric_scores = [value for key, value in scores.items() if key != "reasoning"]
@@ -121,7 +121,7 @@ async def evaluate_response_async(
 
     logger.info(
         "evaluation_complete",
-        twin_name=twin_name,
+        doctwin_name=doctwin_name,
         trace_id=trace_id,
         **{k: v for k, v in scores.items() if k != "reasoning"},
         average=round(avg, 2),
@@ -131,7 +131,7 @@ async def evaluate_response_async(
     if avg < _WARN_THRESHOLD:
         logger.warning(
             "evaluation_low_quality",
-            twin_name=twin_name,
+            doctwin_name=doctwin_name,
             trace_id=trace_id,
             average=round(avg, 2),
             reasoning=scores.get("reasoning", ""),

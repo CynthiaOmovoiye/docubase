@@ -20,12 +20,12 @@ export default function SecurityPage() {
             Security and privacy,<br />by design.
           </h1>
           <p style={{ fontSize: "18px", color: "var(--color-text-secondary)", lineHeight: 1.7, marginBottom: "var(--space-12)" }}>
-            docubase is built around a core promise: your code and private information stay private. Here is exactly how that works.
+            docbase is built around a core promise: your code and private information stay private. Here is exactly how that works.
           </p>
 
           {/* Three tier policy */}
           <Section title="Content policy — three tiers">
-            <p>Every piece of content that passes through docubase is governed by a three-tier policy, enforced at ingestion, at retrieval, and as a final pass before any response is generated.</p>
+            <p>Every piece of content that passes through docbase is governed by a three-tier policy, enforced at ingestion, at retrieval, and as a final pass before any response is generated.</p>
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)", margin: "var(--space-6) 0" }}>
               {[
                 {
@@ -41,7 +41,7 @@ export default function SecurityPage() {
                 {
                   color: "#14B8A6",
                   label: "Always available",
-                  desc: "Repository structure, documentation, README files, architecture summaries, feature descriptions, dependency signals, and tooling information. This is the knowledge layer docubase is designed to work from.",
+                  desc: "Repository structure, documentation, README files, architecture summaries, feature descriptions, dependency signals, and tooling information. This is the knowledge layer docbase is designed to work from.",
                 },
               ].map(t => (
                 <div key={t.label} style={{
@@ -63,12 +63,12 @@ export default function SecurityPage() {
           </Section>
 
           <Section title="What we store">
-            <p>docubase stores derived knowledge representations — structured summaries, architecture descriptions, and documentation chunks extracted from your source content. We do not store raw source files. We do not store the full text of your repository files in an API-accessible database.</p>
+            <p>docbase stores derived knowledge representations — structured summaries, architecture descriptions, and documentation chunks extracted from your source content. We do not store raw source files. We do not store the full text of your repository files in an API-accessible database.</p>
             <p>What is stored: chunk embeddings and their associated metadata (module name, file reference, chunk type). What is never stored: raw file contents, secrets, environment values, or full source code.</p>
           </Section>
 
           <Section title="Secret scanning">
-            <p>During ingestion, every file passes through an automated secret scanner before any content is indexed. The scanner checks for common patterns: API keys, bearer tokens, private key headers, AWS access key IDs, GitHub and GitLab personal access tokens, and general password assignment patterns.</p>
+            <p>During ingestion, every file passes through an automated secret scanner before any content is indexed. The scanner checks for common patterns: API keys, bearer tokens, private key headers, AWS access key IDs, common source-control personal access token shapes, and general password assignment patterns.</p>
             <p>If a file triggers the scanner, it is skipped entirely — not partially indexed, fully skipped. The ingestion log records the skip reason for the owner's visibility.</p>
           </Section>
 
@@ -87,11 +87,11 @@ export default function SecurityPage() {
           </Section>
 
           <Section title="Infrastructure">
-            <p>docubase runs on cloud infrastructure with encrypted data at rest (AES-256) and in transit (TLS 1.3). Secrets and API credentials are managed via environment-level secret stores — never hardcoded in application code or stored in the database.</p>
+            <p>docbase runs on cloud infrastructure with encrypted data at rest (AES-256) and in transit (TLS 1.3). Secrets and API credentials are managed via environment-level secret stores — never hardcoded in application code or stored in the database.</p>
           </Section>
 
           <Section title="Reporting a security issue">
-            <p>If you discover a security vulnerability, please email <a href="mailto:security@docubase.io" style={{ color: "var(--color-iris)" }}>security@docubase.io</a> directly. Do not open a public issue. We will acknowledge receipt within 24 hours and work with you on a responsible disclosure timeline.</p>
+            <p>If you discover a security vulnerability, please email <a href="mailto:security@docbase.io" style={{ color: "var(--color-iris)" }}>security@docbase.io</a> directly. Do not open a public issue. We will acknowledge receipt within 24 hours and work with you on a responsible disclosure timeline.</p>
           </Section>
 
           <div style={{ marginTop: "var(--space-10)", paddingTop: "var(--space-8)", borderTop: "1px solid var(--color-border)" }}>

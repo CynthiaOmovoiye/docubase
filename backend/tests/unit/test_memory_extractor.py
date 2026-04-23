@@ -21,8 +21,7 @@ from app.domains.memory.extractor import (
     generate_memory_brief,
 )
 
-
-TWIN_ID = "00000000-0000-0000-0000-000000000001"
+doctwin_ID = "00000000-0000-0000-0000-000000000001"
 
 
 # ── JSON parse helpers ────────────────────────────────────────────────────────
@@ -174,7 +173,7 @@ class TestExtractArchitectureChunks:
         ]
 
         with patch("app.domains.memory.extractor.get_llm_provider", return_value=mock_provider):
-            return await extract_architecture_chunks(TWIN_ID, existing_chunks)
+            return await extract_architecture_chunks(doctwin_ID, existing_chunks)
 
     @pytest.mark.asyncio
     async def test_returns_chunks_on_success(self):
@@ -188,7 +187,7 @@ class TestExtractArchitectureChunks:
     async def test_memory_ref_on_all_chunks(self):
         chunks = await self._run_with_mock_response(ARCH_RESPONSE)
         for c in chunks:
-            assert c["source_ref"] == f"__memory__/{TWIN_ID}"
+            assert c["source_ref"] == f"__memory__/{doctwin_ID}"
 
     @pytest.mark.asyncio
     async def test_returns_empty_on_malformed_json(self):
@@ -199,7 +198,7 @@ class TestExtractArchitectureChunks:
     async def test_returns_empty_when_no_input_chunks(self):
         mock_provider = MagicMock()
         with patch("app.domains.memory.extractor.get_llm_provider", return_value=mock_provider):
-            result = await extract_architecture_chunks(TWIN_ID, [])
+            result = await extract_architecture_chunks(doctwin_ID, [])
         assert result == []
         mock_provider.complete.assert_not_called()
 
@@ -211,7 +210,7 @@ class TestExtractArchitectureChunks:
             {"chunk_type": "module_description", "content": "x", "source_ref": "y", "chunk_metadata": {}}
         ]
         with patch("app.domains.memory.extractor.get_llm_provider", return_value=mock_provider):
-            result = await extract_architecture_chunks(TWIN_ID, existing_chunks)
+            result = await extract_architecture_chunks(doctwin_ID, existing_chunks)
         assert result == []
 
 
@@ -242,16 +241,21 @@ class TestExtractRiskChunks:
         mock_provider.complete = AsyncMock(return_value=mock_response)
 
         chunks = [
-            {"chunk_type": "module_description", "content": "payment code here", "source_ref": "app/payments/service.py", "chunk_metadata": {}}
+            {
+                "chunk_type": "module_description",
+                "content": "payment code here",
+                "source_ref": "app/payments/service.py",
+                "chunk_metadata": {},
+            }
         ]
 
         with patch("app.domains.memory.extractor.get_llm_provider", return_value=mock_provider):
-            result = await extract_risk_chunks(TWIN_ID, chunks)
+            result = await extract_risk_chunks(doctwin_ID, chunks)
 
         assert len(result) == 2
         for c in result:
             assert c["chunk_type"] == "risk_note"
-            assert c["source_ref"] == f"__memory__/{TWIN_ID}"
+            assert c["source_ref"] == f"__memory__/{doctwin_ID}"
 
     @pytest.mark.asyncio
     async def test_severity_in_metadata(self):
@@ -265,7 +269,7 @@ class TestExtractRiskChunks:
         ]
 
         with patch("app.domains.memory.extractor.get_llm_provider", return_value=mock_provider):
-            result = await extract_risk_chunks(TWIN_ID, chunks)
+            result = await extract_risk_chunks(doctwin_ID, chunks)
 
         severities = [c["chunk_metadata"]["severity"] for c in result]
         assert all(s == "high" for s in severities)
@@ -282,7 +286,7 @@ class TestExtractRiskChunks:
         ]
 
         with patch("app.domains.memory.extractor.get_llm_provider", return_value=mock_provider):
-            result = await extract_risk_chunks(TWIN_ID, chunks)
+            result = await extract_risk_chunks(doctwin_ID, chunks)
 
         assert result == []
 
@@ -321,18 +325,18 @@ class TestExtractChangeEntryChunks:
         ]
 
         with patch("app.domains.memory.extractor.get_llm_provider", return_value=mock_provider):
-            result = await extract_change_entry_chunks(TWIN_ID, commits)
+            result = await extract_change_entry_chunks(doctwin_ID, commits)
 
         assert len(result) == 1
         assert result[0]["chunk_type"] == "change_entry"
-        assert result[0]["source_ref"] == f"__memory__/{TWIN_ID}"
+        assert result[0]["source_ref"] == f"__memory__/{doctwin_ID}"
         assert "Week of April 14" in result[0]["content"]
 
     @pytest.mark.asyncio
     async def test_returns_empty_for_no_commits(self):
         mock_provider = MagicMock()
         with patch("app.domains.memory.extractor.get_llm_provider", return_value=mock_provider):
-            result = await extract_change_entry_chunks(TWIN_ID, [])
+            result = await extract_change_entry_chunks(doctwin_ID, [])
         # Should return early without calling LLM
         assert result == []
         mock_provider.complete.assert_not_called()
@@ -350,7 +354,7 @@ class TestGenerateMemoryBrief:
 
         with patch("app.domains.memory.extractor.get_llm_provider", return_value=mock_provider):
             result = await generate_memory_brief(
-                twin_id=TWIN_ID,
+                doctwin_id=doctwin_ID,
                 architecture_text="FastAPI backend",
                 arch_chunk_dicts=[{"chunk_type": "hotspot", "content": "**app/main.py**\nApplication entry point"}],
                 risk_chunks=[{"content": "Risk: no error handling"}],
@@ -373,7 +377,7 @@ class TestGenerateMemoryBrief:
 
         with patch("app.domains.memory.extractor.get_llm_provider", return_value=mock_provider):
             await generate_memory_brief(
-                twin_id=TWIN_ID,
+                doctwin_id=doctwin_ID,
                 architecture_text=None,
                 arch_chunk_dicts=[],
                 risk_chunks=[{"content": "Risk: something"}],
@@ -390,7 +394,7 @@ class TestGenerateMemoryBrief:
         mock_provider = MagicMock()
         with patch("app.domains.memory.extractor.get_llm_provider", return_value=mock_provider):
             result = await generate_memory_brief(
-                twin_id=TWIN_ID,
+                doctwin_id=doctwin_ID,
                 architecture_text=None,
                 arch_chunk_dicts=[],
                 risk_chunks=[],
@@ -408,7 +412,7 @@ class TestGenerateMemoryBrief:
 
         with patch("app.domains.memory.extractor.get_llm_provider", return_value=mock_provider):
             result = await generate_memory_brief(
-                twin_id=TWIN_ID,
+                doctwin_id=doctwin_ID,
                 architecture_text="some text",
                 arch_chunk_dicts=[],
                 risk_chunks=[],

@@ -9,9 +9,9 @@ def _source(*, freshness: dict | None, status: SourceStatus = SourceStatus.ready
     now = datetime.now(UTC)
     return SimpleNamespace(
         id="11111111-1111-1111-1111-111111111111",
-        twin_id="22222222-2222-2222-2222-222222222222",
-        name="Scaffold repo",
-        source_type=SourceType.github_repo,
+        doctwin_id="22222222-2222-2222-2222-222222222222",
+        name="Product docs",
+        source_type=SourceType.google_drive,
         status=status,
         last_error=None,
         snapshot_id="sha:test",
@@ -28,7 +28,7 @@ def _source(*, freshness: dict | None, status: SourceStatus = SourceStatus.ready
         },
         created_at=now,
         updated_at=now,
-        connection_config={"repo_url": "org/repo", "branch": "main"},
+        connection_config={"file_id": "abc123", "file_path": "docs/README.md"},
     )
 
 

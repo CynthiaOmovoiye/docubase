@@ -54,4 +54,4 @@ class WorkspaceMemoryArtifact(Base, UUIDMixin, TimestampMixin):
     artifact_metadata: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, nullable=False)
     generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    workspace: Mapped["Workspace"] = relationship("Workspace", back_populates="memory_artifacts")
+    workspace: Mapped[Workspace] = relationship("Workspace", back_populates="memory_artifacts")

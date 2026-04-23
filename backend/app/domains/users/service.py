@@ -8,6 +8,10 @@ All business logic lives here — the API layer just calls these.
 import re
 import uuid
 
+# Pre-computed constant-time dummy hash used in login to prevent user-enumeration
+# via timing. Must be a *real* bcrypt hash so checkpw takes the same time as
+# verifying an existing user's hash.
+import bcrypt as _bcrypt
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,10 +35,6 @@ from app.schemas.users import (
     UserUpdateRequest,
 )
 
-# Pre-computed constant-time dummy hash used in login to prevent user-enumeration
-# via timing. Must be a *real* bcrypt hash so checkpw takes the same time as
-# verifying an existing user's hash.
-import bcrypt as _bcrypt
 _DUMMY_HASH: str = _bcrypt.hashpw(b"dummy-timing-sentinel", _bcrypt.gensalt()).decode()
 
 

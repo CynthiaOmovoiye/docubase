@@ -121,7 +121,7 @@ async def handle_callback(
     try:
         user_id = uuid.UUID(user_id_str)
     except ValueError:
-        raise ValidationError("OAuth state contains invalid user ID")
+        raise ValidationError("OAuth state contains invalid user ID") from None
 
     # ── 2. Exchange code for tokens ───────────────────────────────────────────
     redirect_uri = _redirect_uri(provider, settings)
@@ -266,15 +266,10 @@ async def refresh_token_if_needed(
     """
     Return the decrypted access token, refreshing first if near expiry.
 
-    GitHub classic tokens do not expire — no refresh attempted.
-    GitLab and Google issue expiring tokens with refresh tokens.
+    Google Drive issues expiring access tokens with refresh tokens.
 
     Token is never returned as a log entry — callers must handle it securely.
     """
-    # GitHub tokens don't expire
-    if account.provider == "github":
-        return decrypt_token(account.access_token_encrypted)
-
     # Check if we need to refresh
     needs_refresh = False
     if account.token_expires_at is not None:
@@ -378,9 +373,9 @@ def _redirect_uri(provider: str, settings) -> str:
     return f"{settings.oauth_redirect_base}/api/v1/integrations/{provider}/callback"
 
 
-def _resolve_url(url_template: str, settings) -> str:
-    """Fill GitLab URL templates; pass through concrete URLs unchanged."""
-    return url_template.format(gitlab_base_url=settings.gitlab_base_url)
+def _resolve_url(url_template: str, settings) -> str:  # noqa: ARG001
+    """Return the provider URL (no templating for current providers)."""
+    return url_template
 
 
 def _build_auth_url(
@@ -399,14 +394,9 @@ def _build_auth_url(
     }
 
     if provider.name == "google_drive":
-        # Google requires response_type and access_type for offline (refresh token) access
         params["response_type"] = "code"
         params["access_type"] = "offline"
         params["prompt"] = "consent"
-    elif provider.name == "github":
-        params["response_type"] = "code"
-    elif provider.name == "gitlab":
-        params["response_type"] = "code"
 
     return f"{base_url}?{urlencode(params)}"
 
@@ -425,9 +415,7 @@ async def _exchange_code(
         "code": code,
         "redirect_uri": redirect_uri,
     }
-    if provider.name == "gitlab":
-        payload["grant_type"] = "authorization_code"
-    elif provider.name == "google_drive":
+    if provider.name == "google_drive":
         payload["grant_type"] = "authorization_code"
 
     async with httpx.AsyncClient(timeout=15) as client:
@@ -438,8 +426,6 @@ async def _exchange_code(
         )
         resp.raise_for_status()
 
-    # GitHub returns application/x-www-form-urlencoded by default; Accept: application/json
-    # forces JSON. Both GitLab and Google return JSON natively.
     return resp.json()
 
 
@@ -467,21 +453,12 @@ async def _fetch_user_info(
         resp.raise_for_status()
         data = resp.json()
 
-    if provider.name == "github":
-        # GitHub user API returns {"id": 12345, "login": "username"}
-        account_id = str(data.get("id", ""))
-        username = data.get("login")
-    elif provider.name == "gitlab":
-        # GitLab user API returns {"id": 12345, "username": "name"}
-        account_id = str(data.get("id", ""))
-        username = data.get("username")
-    elif provider.name == "google_drive":
-        # Google userinfo returns {"id": "12345...", "name": "Display Name"}
+    if provider.name == "google_drive":
         account_id = str(data.get("id", ""))
         username = data.get("name")
     else:
         account_id = str(data.get("id", ""))
-        username = data.get("login") or data.get("username") or data.get("name")
+        username = data.get("name")
 
     if not account_id:
         raise ValidationError(
@@ -492,18 +469,12 @@ async def _fetch_user_info(
 
 
 def _client_id(provider: str, settings) -> str:
-    mapping = {
-        "github": settings.github_client_id,
-        "gitlab": settings.gitlab_client_id,
-        "google_drive": settings.google_client_id,
-    }
-    return mapping.get(provider, "")
+    if provider == "google_drive":
+        return settings.google_client_id
+    return ""
 
 
 def _client_secret(provider: str, settings) -> str:
-    mapping = {
-        "github": settings.github_client_secret,
-        "gitlab": settings.gitlab_client_secret,
-        "google_drive": settings.google_client_secret,
-    }
-    return mapping.get(provider, "")
+    if provider == "google_drive":
+        return settings.google_client_secret
+    return ""

@@ -1,7 +1,7 @@
 """
 ConnectedAccount ORM model.
 
-Represents an OAuth-linked provider account (GitHub, GitLab, Google Drive)
+Represents an OAuth-linked provider account (e.g. Google Drive)
 belonging to a user. Encrypted tokens are stored here — never plaintext.
 
 Security:
@@ -32,15 +32,15 @@ from app.core.db import Base
 from app.models.base import TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from app.models.user import User
     from app.models.source import Source
+    from app.models.user import User
 
 
 class ConnectedAccount(Base, UUIDMixin, TimestampMixin):
     """
     An OAuth-connected provider account owned by a user.
 
-    One user may have multiple connected accounts (e.g., two GitHub orgs),
+    One user may have multiple connected accounts (e.g., two Google accounts),
     but the (user_id, provider, provider_account_id) triple must be unique.
     """
 
@@ -72,7 +72,7 @@ class ConnectedAccount(Base, UUIDMixin, TimestampMixin):
     access_token_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
     refresh_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Token lifecycle — nullable because GitHub classic tokens don't expire
+    # Token lifecycle — nullable when the provider does not return an expiry
     token_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

@@ -63,7 +63,7 @@ async def test_chunk_substring_fallback_can_match_auth_tokens_in_code_content():
 
     result = await _fetch_chunk_candidates_by_substring(
         db=db,
-        twin_id="twin-1",
+        doctwin_id="twin-1",
         lexical_query="authorization current_user owner_id",
         allow_code_snippets=True,
         limit=4,
@@ -73,7 +73,7 @@ async def test_chunk_substring_fallback_can_match_auth_tokens_in_code_content():
 
 
 @pytest.mark.asyncio
-async def test_retrieve_packet_for_twin_fuses_hybrid_layers():
+async def test_retrieve_packet_for_doctwin_fuses_hybrid_layers():
     db = MagicMock()
     profile = SimpleNamespace(provider="jina", model="jina-embeddings-v3", dimensions=1024)
     vector_row = SimpleNamespace(
@@ -86,7 +86,7 @@ async def test_retrieve_packet_for_twin_fuses_hybrid_layers():
 
     with (
         patch(
-            "app.domains.retrieval.router._load_twin_embedding_profiles",
+            "app.domains.retrieval.router._load_doctwin_embedding_profiles",
             AsyncMock(return_value=[profile]),
         ),
         patch(
@@ -94,7 +94,7 @@ async def test_retrieve_packet_for_twin_fuses_hybrid_layers():
             AsyncMock(return_value=[0.1, 0.2, 0.3]),
         ),
         patch(
-            "app.domains.retrieval.router._fetch_twin_candidates_for_profile",
+            "app.domains.retrieval.router._fetch_doctwin_candidates_for_profile",
             AsyncMock(return_value=[vector_row]),
         ),
         patch(
@@ -120,7 +120,7 @@ async def test_retrieve_packet_for_twin_fuses_hybrid_layers():
                     files=[
                         EvidenceFileRef(
                             path="app/auth.py",
-                            twin_id="twin-1",
+                            doctwin_id="twin-1",
                             source_id="source-1",
                             snapshot_id="snap-1",
                             reasons=["file"],
@@ -151,7 +151,7 @@ async def test_retrieve_packet_for_twin_fuses_hybrid_layers():
                             qualified_name="login_user",
                             symbol_kind="async_function",
                             path="app/auth.py",
-                            twin_id="twin-1",
+                            doctwin_id="twin-1",
                             source_id="source-1",
                             snapshot_id="snap-1",
                             reasons=["symbol"],
@@ -194,7 +194,7 @@ async def test_retrieve_packet_for_twin_fuses_hybrid_layers():
                     {
                         **chunk,
                         "source_id": "source-1",
-                        "twin_id": "twin-1",
+                        "doctwin_id": "twin-1",
                         "snapshot_id": "snap-1",
                         "start_line": 10,
                         "end_line": 20,
@@ -210,7 +210,7 @@ async def test_retrieve_packet_for_twin_fuses_hybrid_layers():
     ):
         packet = await retrieve_packet_for_twin(
             query="How is authentication implemented?",
-            twin_id="twin-1",
+            doctwin_id="twin-1",
             allow_code_snippets=True,
             db=db,
             top_k=4,
@@ -238,7 +238,7 @@ async def test_retrieve_packet_for_twin_fuses_hybrid_layers():
 
 
 @pytest.mark.asyncio
-async def test_retrieve_packet_for_twin_demotes_memory_and_meta_docs_for_implementation_queries():
+async def test_retrieve_packet_for_doctwin_demotes_memory_and_meta_docs_for_implementation_queries():
     db = MagicMock()
     profile = SimpleNamespace(provider="jina", model="jina-embeddings-v3", dimensions=1024)
     memory_row = SimpleNamespace(
@@ -258,7 +258,7 @@ async def test_retrieve_packet_for_twin_demotes_memory_and_meta_docs_for_impleme
 
     with (
         patch(
-            "app.domains.retrieval.router._load_twin_embedding_profiles",
+            "app.domains.retrieval.router._load_doctwin_embedding_profiles",
             AsyncMock(return_value=[profile]),
         ),
         patch(
@@ -266,7 +266,7 @@ async def test_retrieve_packet_for_twin_demotes_memory_and_meta_docs_for_impleme
             AsyncMock(return_value=[0.1, 0.2, 0.3]),
         ),
         patch(
-            "app.domains.retrieval.router._fetch_twin_candidates_for_profile",
+            "app.domains.retrieval.router._fetch_doctwin_candidates_for_profile",
             AsyncMock(return_value=[memory_row, doc_row]),
         ),
         patch(
@@ -290,7 +290,7 @@ async def test_retrieve_packet_for_twin_demotes_memory_and_meta_docs_for_impleme
                     files=[
                         EvidenceFileRef(
                             path="frontend/src/lib/auth.ts",
-                            twin_id="twin-1",
+                            doctwin_id="twin-1",
                             source_id="source-1",
                             snapshot_id="snap-1",
                             reasons=["file"],
@@ -321,7 +321,7 @@ async def test_retrieve_packet_for_twin_demotes_memory_and_meta_docs_for_impleme
                             qualified_name="clearAuth",
                             symbol_kind="function",
                             path="frontend/src/lib/auth.ts",
-                            twin_id="twin-1",
+                            doctwin_id="twin-1",
                             source_id="source-1",
                             snapshot_id="snap-1",
                             reasons=["symbol"],
@@ -349,7 +349,7 @@ async def test_retrieve_packet_for_twin_demotes_memory_and_meta_docs_for_impleme
     ):
         packet = await retrieve_packet_for_twin(
             query="Explain the authentication flow and provide code snippets where necessary.",
-            twin_id="twin-1",
+            doctwin_id="twin-1",
             allow_code_snippets=True,
             db=db,
             top_k=4,

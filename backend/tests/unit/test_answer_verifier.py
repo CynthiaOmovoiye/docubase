@@ -50,7 +50,7 @@ def _make_packet(
 def test_single_project_verifier_requests_retry_when_answer_has_no_grounded_anchor():
     result = verify_single_project_answer(
         answer="Authorization uses token verification and owner checks.",
-        twin_name="Scaffold",
+        doctwin_name="Scaffold",
         packet=_make_packet(),
         allow_retry=True,
     )
@@ -65,7 +65,7 @@ def test_single_project_verifier_rewrites_after_retry_budget_is_spent():
     packet.query = "how is billing implemented?"
     result = verify_single_project_answer(
         answer="Authorization uses token verification and owner checks.",
-        twin_name="Scaffold",
+        doctwin_name="Scaffold",
         packet=packet,
         allow_retry=False,
     )
@@ -90,13 +90,16 @@ def test_single_project_auth_fallback_explains_identity_and_owner_checks():
             "chunk_id": "chunk-2",
             "chunk_type": "code_snippet",
             "source_ref": "scaffold/api/v1/routes/projects.py",
-            "content": "if not project or project.owner_id != current_user.id:\n    raise HTTPException(status_code=404)",
+            "content": (
+                "if not project or project.owner_id != current_user.id:\n"
+                "    raise HTTPException(status_code=404)"
+            ),
         },
     ]
 
     result = verify_single_project_answer(
         answer="Authorization uses invented `DoesNotExist` checks.",
-        twin_name="Scaffold",
+        doctwin_name="Scaffold",
         packet=packet,
         allow_retry=False,
     )
@@ -111,7 +114,7 @@ def test_single_project_auth_fallback_explains_identity_and_owner_checks():
 def test_single_project_verifier_bounds_negative_claims():
     result = verify_single_project_answer(
         answer="There is no RBAC layer here.",
-        twin_name="Scaffold",
+        doctwin_name="Scaffold",
         packet=_make_packet(),
         allow_retry=False,
     )
@@ -184,7 +187,7 @@ def test_single_project_verifier_allows_file_paths_declared_only_on_implementati
     )
     result = verify_single_project_answer(
         answer="See `only/from/facts.py` where `handle_ping` is defined.",
-        twin_name="Twin",
+        doctwin_name="Twin",
         packet=packet,
         allow_retry=False,
     )
@@ -304,7 +307,11 @@ def test_workspace_auth_fallback_explains_flows_instead_of_dumping_refs():
         },
     ]
 
-    course_packet = _make_packet(path="backend/api/main.py", symbol_name="get_current_user_id", qualified_name="get_current_user_id")
+    course_packet = _make_packet(
+        path="backend/api/main.py",
+        symbol_name="get_current_user_id",
+        qualified_name="get_current_user_id",
+    )
     course_packet.query = scaffold_packet.query
     course_packet.files = [
         EvidenceFileRef(path="backend/api/main.py", reasons=["file:lexical"]),
@@ -341,14 +348,14 @@ def test_workspace_auth_fallback_explains_flows_instead_of_dumping_refs():
     project_contexts = [
         {"name": "Scaffold", "chunks": scaffold_packet.chunks, "evidence_packet": scaffold_packet},
         {"name": "someother chat", "chunks": course_packet.chunks, "evidence_packet": course_packet},
-        {"name": "docubase", "chunks": [], "evidence_packet": None, "status_note": "no sources attached"},
+        {"name": "docbase", "chunks": [], "evidence_packet": None, "status_note": "no sources attached"},
     ]
 
     result = verify_workspace_answer(
         answer=(
             "## Scaffold\nAuth is in `made/up.py`.\n\n"
             "## someother chat\nAuth is in `missing/auth.py`.\n\n"
-            "## docubase\nNo sources."
+            "## docbase\nNo sources."
         ),
         workspace_name="Cynthia",
         project_contexts=project_contexts,
@@ -364,7 +371,7 @@ def test_workspace_auth_fallback_explains_flows_instead_of_dumping_refs():
     assert "Clerk appears to be the authentication provider" in result.content
     assert "`get_current_user_id` extracts user identity" in result.content
     assert "Grounded files:" not in result.content
-    assert "## docubase" in result.content
+    assert "## docbase" in result.content
 
 
 def test_single_project_verifier_accepts_route_style_symbols():
@@ -375,7 +382,7 @@ def test_single_project_verifier_accepts_route_style_symbols():
             "Authentication is grounded in `app/auth.py`.\n"
             "Key symbols: `logout@POST:/logout`"
         ),
-        twin_name="Scaffold",
+        doctwin_name="Scaffold",
         packet=packet,
         allow_retry=True,
     )
@@ -393,7 +400,7 @@ def test_single_project_verifier_rejects_unsupported_code_block():
             "    pass\n"
             "```"
         ),
-        twin_name="Scaffold",
+        doctwin_name="Scaffold",
         packet=_make_packet(),
         allow_retry=False,
     )
@@ -432,7 +439,7 @@ def test_single_project_verifier_rejects_placeholder_code_even_when_signature_ma
             "    # Logic to decode the token and retrieve the user\n"
             "```\n"
         ),
-        twin_name="Scaffold",
+        doctwin_name="Scaffold",
         packet=packet,
         allow_retry=True,
     )
@@ -463,7 +470,7 @@ def test_single_project_verifier_rejects_absence_claim_contradicted_by_packet():
             "I did not find grounded evidence for frontend route protection.\n"
             "There is no logout evidence in the packet."
         ),
-        twin_name="Scaffold",
+        doctwin_name="Scaffold",
         packet=packet,
         allow_retry=True,
     )
@@ -489,7 +496,7 @@ def test_single_project_verifier_drops_contradicted_absence_after_retry_budget()
             "- I did not find grounded evidence for frontend route protection.\n"
             "- Error handling is only partially shown."
         ),
-        twin_name="Scaffold",
+        doctwin_name="Scaffold",
         packet=packet,
         allow_retry=False,
     )
@@ -500,7 +507,11 @@ def test_single_project_verifier_drops_contradicted_absence_after_retry_budget()
 
 
 def test_single_project_engine_fallback_explains_intake_flow():
-    packet = _make_packet(path="scaffold/api/v1/routes/intake.py", symbol_name="run_intake", qualified_name="run_intake")
+    packet = _make_packet(
+        path="scaffold/api/v1/routes/intake.py",
+        symbol_name="run_intake",
+        qualified_name="run_intake",
+    )
     packet.query = "Tell me about the intake engine in Scaffold"
     packet.files = [
         EvidenceFileRef(path="scaffold/api/v1/routes/intake.py", reasons=["file:lexical"]),
@@ -536,7 +547,7 @@ def test_single_project_engine_fallback_explains_intake_flow():
 
     result = verify_single_project_answer(
         answer="The intake engine lives in `made/up.py`.",
-        twin_name="Scaffold",
+        doctwin_name="Scaffold",
         packet=packet,
         allow_retry=False,
     )
@@ -549,7 +560,11 @@ def test_single_project_engine_fallback_explains_intake_flow():
 
 
 def test_single_project_engine_verifier_rewrites_weak_intake_answer_with_grounded_anchors():
-    packet = _make_packet(path="scaffold/api/v1/routes/intake.py", symbol_name="run_intake", qualified_name="run_intake")
+    packet = _make_packet(
+        path="scaffold/api/v1/routes/intake.py",
+        symbol_name="run_intake",
+        qualified_name="run_intake",
+    )
     packet.query = "Tell me about the intake engine in Scaffold"
     packet.files = [
         EvidenceFileRef(path="scaffold/api/v1/routes/intake.py", reasons=["file:lexical"]),
@@ -576,7 +591,7 @@ def test_single_project_engine_verifier_rewrites_weak_intake_answer_with_grounde
             "The intake engine uses LangGraph in `scaffold/engines/intake/graph.py` "
             "and is connected to `scaffold/api/v1/routes/intake.py` through `run_intake`."
         ),
-        twin_name="Scaffold",
+        doctwin_name="Scaffold",
         packet=packet,
         allow_retry=False,
     )
@@ -611,7 +626,7 @@ def test_single_project_engine_fallback_lists_five_scaffold_engines():
 
     result = verify_single_project_answer(
         answer="The engines are in `wrong/path.md`.",
-        twin_name="Scaffold",
+        doctwin_name="Scaffold",
         packet=packet,
         allow_retry=False,
     )

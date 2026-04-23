@@ -13,7 +13,7 @@ from app.models.sharing import ShareSurfaceType
 
 
 class CreateTwinSharePageRequest(BaseModel):
-    """No additional fields needed — twin_id comes from the path."""
+    """No additional fields needed — doctwin_id comes from the path."""
     pass
 
 
@@ -36,7 +36,7 @@ class ShareSurfaceResponse(BaseModel):
     surface_type: ShareSurfaceType
     public_slug: str
     is_active: bool
-    twin_id: uuid.UUID | None
+    doctwin_id: uuid.UUID | None
     workspace_id: uuid.UUID | None
     embed_config: dict
     created_at: datetime
@@ -47,9 +47,8 @@ class ShareSurfaceResponse(BaseModel):
 
     @classmethod
     def from_surface(cls, surface: object, base_url: str = "") -> "ShareSurfaceResponse":
-        from app.models.sharing import ShareSurface
         s = surface  # type: ShareSurface
-        if s.surface_type == ShareSurfaceType.twin_page:
+        if s.surface_type == ShareSurfaceType.doctwin_page:
             url = f"{base_url}/t/{s.public_slug}"
         elif s.surface_type == ShareSurfaceType.workspace_page:
             url = f"{base_url}/w/{s.public_slug}"
@@ -60,7 +59,7 @@ class ShareSurfaceResponse(BaseModel):
             surface_type=s.surface_type,
             public_slug=s.public_slug,
             is_active=s.is_active,
-            twin_id=s.twin_id,
+            doctwin_id=s.doctwin_id,
             workspace_id=s.workspace_id,
             embed_config=s.embed_config,
             created_at=s.created_at,
@@ -76,8 +75,8 @@ class PublicSurfaceInfoResponse(BaseModel):
     """
     surface_type: ShareSurfaceType
     public_slug: str
-    twin_name: str | None = None
-    twin_description: str | None = None
+    doctwin_name: str | None = None
+    doctwin_description: str | None = None
     workspace_name: str | None = None
     display_name: str | None = None
     accent_color: str | None = None

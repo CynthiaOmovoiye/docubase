@@ -33,7 +33,7 @@ export default function PrivacyPage() {
 
           <LegalSection title="4. Third parties">
             <p>We use a small set of third-party services to operate: a cloud infrastructure provider for hosting and storage, a payment processor for billing, and an email delivery service for transactional emails. We do not sell data to or share data with advertising networks.</p>
-            <p>When you connect a GitHub or GitLab source, authentication happens via OAuth. We store an OAuth token reference — not the token itself — in our database. The token is stored in an encrypted secret store.</p>
+            <p>When you connect Google Drive, authentication happens via OAuth. We store an OAuth token reference — not the token itself — in our database. The token is stored in an encrypted secret store.</p>
           </LegalSection>
 
           <LegalSection title="5. Cookies">
@@ -41,7 +41,7 @@ export default function PrivacyPage() {
           </LegalSection>
 
           <LegalSection title="6. Your rights">
-            <p>You may request a copy of the personal data we hold about you, request deletion of your account and data, or ask us to correct inaccurate information. To make a request, email <a href="mailto:privacy@docubase.io" style={{ color: "var(--color-iris)" }}>privacy@docubase.io</a>.</p>
+            <p>You may request a copy of the personal data we hold about you, request deletion of your account and data, or ask us to correct inaccurate information. To make a request, email <a href="mailto:privacy@docbase.io" style={{ color: "var(--color-iris)" }}>privacy@docbase.io</a>.</p>
           </LegalSection>
 
           <LegalSection title="7. Changes to this policy">
@@ -49,7 +49,7 @@ export default function PrivacyPage() {
           </LegalSection>
 
           <LegalSection title="8. Contact">
-            <p>Questions about this policy: <a href="mailto:privacy@docubase.io" style={{ color: "var(--color-iris)" }}>privacy@docubase.io</a></p>
+            <p>Questions about this policy: <a href="mailto:privacy@docbase.io" style={{ color: "var(--color-iris)" }}>privacy@docbase.io</a></p>
           </LegalSection>
         </div>
       </main>

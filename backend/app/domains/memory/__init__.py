@@ -10,6 +10,6 @@ Responsible for synthesizing institutional knowledge from ingested chunks:
 All work in this domain runs AFTER normal ingestion completes — never
 blocking the ingestion pipeline. The extract job is an independent ARQ task.
 
-Generated chunks use source_ref = "__memory__/{twin_id}" to distinguish them
+Generated chunks use source_ref = "__memory__/{doctwin_id}" to distinguish them
 from file-derived chunks, enabling targeted deletion on re-extraction.
 """

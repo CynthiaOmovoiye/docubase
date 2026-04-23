@@ -1,4 +1,3 @@
-import uuid
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, String
@@ -8,8 +7,8 @@ from app.core.db import Base
 from app.models.base import TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from app.models.workspace import Workspace
     from app.models.integration import ConnectedAccount
+    from app.models.workspace import Workspace
 
 
 class User(Base, UUIDMixin, TimestampMixin):

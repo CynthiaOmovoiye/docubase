@@ -4,7 +4,7 @@ Sharing domain service.
 Handles creation, lookup, and revocation of ShareSurfaces.
 
 Ownership chain:
-  twin_page / embed → twin → workspace → workspace.owner_id == user.id
+  doctwin_page / embed → twin → workspace → workspace.owner_id == user.id
   workspace_page    → workspace → workspace.owner_id == user.id
 
 Public slug uniqueness is enforced at the DB level (unique index).
@@ -50,19 +50,19 @@ def _generate_slug() -> str:
     return secrets.token_urlsafe(_SLUG_BYTES)
 
 
-async def _assert_twin_owned_by(
-    twin_id: uuid.UUID,
+async def _assert_doctwin_owned_by(
+    doctwin_id: uuid.UUID,
     user_id: uuid.UUID,
     db: AsyncSession,
 ) -> Twin:
     result = await db.execute(
         select(Twin)
         .options(selectinload(Twin.workspace))
-        .where(Twin.id == twin_id)
+        .where(Twin.id == doctwin_id)
     )
     twin = result.scalar_one_or_none()
     if twin is None:
-        raise NotFoundError(f"Twin {twin_id} not found")
+        raise NotFoundError(f"Twin {doctwin_id} not found")
     if twin.workspace.owner_id != user_id:
         raise ForbiddenError("You do not own this twin's workspace")
     return twin
@@ -100,10 +100,10 @@ async def _create_surface_with_retry(
             await db.flush()
             await db.refresh(surface)
             return surface
-        except IntegrityError:
+        except IntegrityError as exc:
             await db.rollback()
             if attempt + 1 == _MAX_SLUG_RETRIES:
-                raise ConflictError("Could not generate a unique slug after retries")
+                raise ConflictError("Could not generate a unique slug after retries") from exc
             surface.public_slug = _generate_slug()
     # Should not reach here
     raise ConflictError("Slug generation failed")
@@ -111,8 +111,8 @@ async def _create_surface_with_retry(
 
 # ─── Public API ───────────────────────────────────────────────────────────────
 
-async def create_twin_share_page(
-    twin_id: uuid.UUID,
+async def create_doctwin_share_page(
+    doctwin_id: uuid.UUID,
     user_id: uuid.UUID,
     db: AsyncSession,
 ) -> ShareSurface:
@@ -121,14 +121,14 @@ async def create_twin_share_page(
 
     Returns the ShareSurface with public_slug populated.
     """
-    await _assert_twin_owned_by(twin_id, user_id, db)
+    await _assert_doctwin_owned_by(doctwin_id, user_id, db)
 
     surface = ShareSurface(
         id=uuid.uuid4(),
-        surface_type=ShareSurfaceType.twin_page,
+        surface_type=ShareSurfaceType.doctwin_page,
         public_slug=_generate_slug(),
         is_active=True,
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         workspace_id=None,
         embed_config={},
     )
@@ -137,15 +137,15 @@ async def create_twin_share_page(
     logger.info(
         "share_surface_created",
         surface_id=str(result.id),
-        surface_type="twin_page",
-        twin_id=str(twin_id),
+        surface_type="doctwin_page",
+        doctwin_id=str(doctwin_id),
         slug=result.public_slug,
     )
     return result
 
 
 async def create_embed_surface(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     user_id: uuid.UUID,
     allowed_origins: list[str],
     db: AsyncSession,
@@ -156,7 +156,7 @@ async def create_embed_surface(
     allowed_origins restricts which domains can host the embed.
     Empty list = no origin restriction (open embed — owner's choice).
     """
-    await _assert_twin_owned_by(twin_id, user_id, db)
+    await _assert_doctwin_owned_by(doctwin_id, user_id, db)
 
     embed_config = {
         "allowed_origins": allowed_origins,
@@ -168,7 +168,7 @@ async def create_embed_surface(
         surface_type=ShareSurfaceType.embed,
         public_slug=_generate_slug(),
         is_active=True,
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         workspace_id=None,
         embed_config=embed_config,
     )
@@ -178,7 +178,7 @@ async def create_embed_surface(
         "share_surface_created",
         surface_id=str(result.id),
         surface_type="embed",
-        twin_id=str(twin_id),
+        doctwin_id=str(doctwin_id),
         slug=result.public_slug,
     )
     return result
@@ -197,7 +197,7 @@ async def create_workspace_share_page(
         surface_type=ShareSurfaceType.workspace_page,
         public_slug=_generate_slug(),
         is_active=True,
-        twin_id=None,
+        doctwin_id=None,
         workspace_id=workspace_id,
         embed_config={},
     )
@@ -238,7 +238,7 @@ async def revoke_share_surface(
         raise NotFoundError(f"ShareSurface {surface_id} not found")
 
     # Verify ownership through whichever anchor this surface has
-    if surface.twin_id is not None:
+    if surface.doctwin_id is not None:
         if surface.twin is None or surface.twin.workspace.owner_id != user_id:
             raise ForbiddenError("You do not own this share surface")
     elif surface.workspace_id is not None:
@@ -284,7 +284,7 @@ async def get_active_surface_by_slug(
 
 
 async def list_surfaces_for_twin(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     user_id: uuid.UUID,
     db: AsyncSession,
 ) -> list[ShareSurface]:
@@ -292,17 +292,17 @@ async def list_surfaces_for_twin(
     result_twin = await db.execute(
         select(Twin)
         .options(selectinload(Twin.workspace))
-        .where(Twin.id == twin_id)
+        .where(Twin.id == doctwin_id)
     )
     twin = result_twin.scalar_one_or_none()
     if twin is None:
-        raise NotFoundError(f"Twin {twin_id} not found")
+        raise NotFoundError(f"Twin {doctwin_id} not found")
     if twin.workspace.owner_id != user_id:
         raise ForbiddenError("You do not own this twin's workspace")
 
     result = await db.execute(
         select(ShareSurface)
-        .where(ShareSurface.twin_id == twin_id, ShareSurface.is_active.is_(True))
+        .where(ShareSurface.doctwin_id == doctwin_id, ShareSurface.is_active.is_(True))
         .order_by(ShareSurface.created_at.desc())
     )
     return list(result.scalars().all())

@@ -109,7 +109,7 @@ Hard rules:
 
 async def extract_graph_from_chunks(
     chunks: list[dict],
-    twin_id: str,
+    doctwin_id: str,
     trace_id: str | None = None,
 ) -> GraphExtractionResult:
     """
@@ -147,7 +147,7 @@ async def extract_graph_from_chunks(
     batch_count = 0
     for i in range(0, len(filtered), _BATCH_SIZE):
         batch = filtered[i : i + _BATCH_SIZE]
-        result = await _extract_batch(batch, twin_id, trace_id)
+        result = await _extract_batch(batch, doctwin_id, trace_id)
         batch_count += 1
 
         for entity in result.entities:
@@ -174,7 +174,7 @@ async def extract_graph_from_chunks(
 
     logger.info(
         "graph_extraction_complete",
-        twin_id=twin_id,
+        doctwin_id=doctwin_id,
         batches=batch_count,
         entities=len(all_entities),
         relationships=len(valid_relationships),
@@ -188,7 +188,7 @@ async def extract_graph_from_chunks(
 
 async def _extract_batch(
     chunks: list[dict],
-    twin_id: str,
+    doctwin_id: str,
     trace_id: str | None,
 ) -> GraphExtractionResult:
     parts = []
@@ -216,5 +216,5 @@ async def _extract_batch(
         data = json.loads(cleaned)
         return GraphExtractionResult.model_validate(data)
     except Exception as exc:
-        logger.warning("graph_batch_extraction_failed", twin_id=twin_id, error=str(exc))
+        logger.warning("graph_batch_extraction_failed", doctwin_id=doctwin_id, error=str(exc))
         return GraphExtractionResult()

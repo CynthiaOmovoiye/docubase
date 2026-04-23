@@ -6,7 +6,6 @@ still controls top_k defaults. These tests keep the retrieval tuning contract
 explicit without pinning production code to the older intent-boost map.
 """
 
-import pytest
 
 from app.domains.retrieval.intent import QueryIntent
 from app.domains.retrieval.planner import RetrievalMode

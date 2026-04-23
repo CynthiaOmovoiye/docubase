@@ -17,14 +17,14 @@ class TestEvidencePacket:
 
         packet = build_evidence_packet(
             plan=plan,
-            twin_id="twin-1",
+            doctwin_id="twin-1",
             chunks=[
                 {
                     "chunk_id": "chunk-1",
                     "chunk_type": "code_snippet",
                     "source_ref": "app/auth.py",
                     "source_id": "source-1",
-                    "twin_id": "twin-1",
+                    "doctwin_id": "twin-1",
                     "snapshot_id": "snap-1",
                     "start_line": 10,
                     "end_line": 20,
@@ -35,7 +35,7 @@ class TestEvidencePacket:
             file_matches=[
                 EvidenceFileRef(
                     path="app/auth.py",
-                    twin_id="twin-1",
+                    doctwin_id="twin-1",
                     source_id="source-1",
                     snapshot_id="snap-1",
                     reasons=["file"],
@@ -47,7 +47,7 @@ class TestEvidencePacket:
                     qualified_name="login_user",
                     symbol_kind="async_function",
                     path="app/auth.py",
-                    twin_id="twin-1",
+                    doctwin_id="twin-1",
                     source_id="source-1",
                     snapshot_id="snap-1",
                     reasons=["symbol"],
@@ -93,7 +93,7 @@ class TestEvidencePacket:
         ]
         packet = build_evidence_packet(
             plan=plan,
-            twin_id="twin-1",
+            doctwin_id="twin-1",
             chunks=[],
             facts=facts,
         )
@@ -122,7 +122,7 @@ class TestEvidencePacket:
         edges = [{"source": "app/routes.py", "relationship": "contains", "target": "login"}]
         packet = build_evidence_packet(
             plan=plan,
-            twin_id="twin-1",
+            doctwin_id="twin-1",
             chunks=[],
             facts=facts,
             graph_edges=edges,
@@ -139,14 +139,14 @@ class TestEvidencePacket:
 
         packet = build_evidence_packet(
             plan=plan,
-            twin_id="twin-1",
+            doctwin_id="twin-1",
             chunks=[
                 {
                     "chunk_id": "chunk-1",
                     "chunk_type": "auth_flow",
                     "source_ref": "__memory__/twin-1",
                     "source_id": "source-1",
-                    "twin_id": "twin-1",
+                    "doctwin_id": "twin-1",
                     "snapshot_id": "snap-1",
                     "score": 0.91,
                     "match_reasons": ["vector"],
@@ -156,7 +156,7 @@ class TestEvidencePacket:
                     "chunk_type": "code_snippet",
                     "source_ref": "app/auth.py",
                     "source_id": "source-1",
-                    "twin_id": "twin-1",
+                    "doctwin_id": "twin-1",
                     "snapshot_id": "snap-1",
                     "start_line": 10,
                     "end_line": 20,
@@ -178,14 +178,14 @@ class TestEvidencePacket:
 
         packet = build_evidence_packet(
             plan=plan,
-            twin_id="twin-1",
+            doctwin_id="twin-1",
             chunks=[
                 {
                     "chunk_id": "chunk-1",
                     "chunk_type": "change_entry",
                     "source_ref": "__memory__/twin-1",
                     "source_id": "source-1",
-                    "twin_id": "twin-1",
+                    "doctwin_id": "twin-1",
                     "snapshot_id": "snap-1",
                     "score": 0.55,
                     "match_reasons": ["memory"],
@@ -214,14 +214,14 @@ class TestEvidencePacket:
 
         packet = build_evidence_packet(
             plan=plan,
-            twin_id="twin-1",
+            doctwin_id="twin-1",
             chunks=[
                 {
                     "chunk_id": "chunk-1",
                     "chunk_type": "risk_note",
                     "source_ref": "__memory__/twin-1",
                     "source_id": "source-1",
-                    "twin_id": "twin-1",
+                    "doctwin_id": "twin-1",
                     "snapshot_id": "snap-1",
                     "score": 0.44,
                     "match_reasons": ["memory"],

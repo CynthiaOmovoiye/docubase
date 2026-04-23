@@ -16,16 +16,16 @@ from arq.constants import default_queue_name, job_key_prefix, result_key_prefix
 PENDING_TTL_SECONDS = 720
 
 
-def memory_brief_job_id(twin_id: str) -> str:
-    return f"memory_brief_{twin_id}"
+def memory_brief_job_id(doctwin_id: str) -> str:
+    return f"memory_brief_{doctwin_id}"
 
 
-def memory_brief_pending_key(twin_id: str) -> str:
-    return f"memory_brief_pending:{twin_id}"
+def memory_brief_pending_key(doctwin_id: str) -> str:
+    return f"memory_brief_pending:{doctwin_id}"
 
 
-async def clear_memory_brief_arq_job(redis, twin_id: str) -> None:
+async def clear_memory_brief_arq_job(redis, doctwin_id: str) -> None:
     """Remove stale ARQ job/result rows and queued score so enqueue_job can run."""
-    jid = memory_brief_job_id(twin_id)
+    jid = memory_brief_job_id(doctwin_id)
     await redis.delete(job_key_prefix + jid, result_key_prefix + jid)
     await redis.zrem(default_queue_name, jid)

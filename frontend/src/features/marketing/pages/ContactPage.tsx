@@ -121,7 +121,7 @@ export default function ContactPage() {
 
           <div style={{ marginTop: "var(--space-12)", paddingTop: "var(--space-8)", borderTop: "1px solid var(--color-border)" }}>
             <p style={{ fontSize: "13px", color: "var(--color-text-tertiary)" }}>
-              For urgent security issues, email <a href="mailto:security@docubase.io" style={{ color: "var(--color-iris)" }}>security@docubase.io</a> directly.
+              For urgent security issues, email <a href="mailto:security@docbase.io" style={{ color: "var(--color-iris)" }}>security@docbase.io</a> directly.
             </p>
           </div>
         </div>

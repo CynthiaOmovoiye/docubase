@@ -29,8 +29,7 @@ import type { Source } from "@/types";
 
 // ─── Source type labels & icons ───────────────────────────────────────────────
 const SOURCE_LABEL: Record<string, string> = {
-  github_repo: "GitHub",
-  gitlab_repo: "GitLab",
+  google_drive: "Google Drive",
   pdf:         "PDF",
   markdown:    "Markdown",
   url:         "Website",
@@ -303,7 +302,7 @@ function NoSourcesPrompt({ twinId }: { twinId: string }) {
       </div>
       <h2 style={s.promptTitle}>Connect a source to get started</h2>
       <p style={s.promptBody}>
-        This twin has no knowledge sources yet. Add a GitHub repo, PDF, website, or other source so it can answer questions.
+        This twin has no knowledge sources yet. Add a Google Drive file or folder, PDF, website, or other source so it can answer questions.
       </p>
       <Link to={`/twin/${twinId}/sources`} style={s.promptCta}>
         Add first source
@@ -319,7 +318,7 @@ function MemoryBriefPanel({
   twinId: string;
   displayName: string;
 }) {
-  const { data: brief, isLoading, isError } = useMemoryBrief(twinId);
+  const { data: brief, isLoading } = useMemoryBrief(twinId);
   const trigger = useTriggerMemoryGeneration();
 
   // "ready" — show the brief
@@ -441,14 +440,6 @@ function IconShield() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </svg>
-  );
-}
-
-function IconChat() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   );
 }

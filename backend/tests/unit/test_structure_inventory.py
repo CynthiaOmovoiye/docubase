@@ -1,4 +1,3 @@
-import pytest
 
 from app.domains.knowledge.pipeline import (
     _build_structure_index,

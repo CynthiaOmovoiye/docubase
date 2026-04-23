@@ -7,7 +7,7 @@
 
 ## Context
 
-Phase 1 gave docubase deterministic file, symbol, relationship, and git indexes,
+Phase 1 gave docbase deterministic file, symbol, relationship, and git indexes,
 but retrieval was still primarily chunk-vector driven. That left three product
 gaps:
 
@@ -54,7 +54,7 @@ We adopt a **hybrid retrieval architecture** with these rules:
    - hydrated spans
    - searched layers
    - negative-evidence scope
-   - namespace identity (`twin_id`, `source_id`, `snapshot_id`)
+   - namespace identity (`doctwin_id`, `source_id`, `snapshot_id`)
 
 5. **Workspace retrieval is policy-aware**
    Workspace routing still scopes evidence per twin, but final retrieval now

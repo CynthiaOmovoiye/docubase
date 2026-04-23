@@ -1,13 +1,8 @@
 /**
  * SourcesPage — manage knowledge sources attached to a twin.
  *
- * Integrated OAuth flow for GitHub, GitLab, and Google Drive:
- *   - If no account is connected for that provider, user is directed to /integrations.
- *   - If connected, a repo / folder browser is shown inline so the user picks directly
- *     from their own resources — they cannot attach someone else's repo by pasting a URL.
- *
- * Text-based sources (Markdown, Manual) retain the paste flow.
- * PDF sources show a placeholder upload zone (full upload wired in a future ticket).
+ * Google Drive OAuth: connect at /integrations, then pick files or folders here.
+ * Markdown and manual sources use the paste flow; PDF uses upload.
  */
 
 import { useState } from "react";
@@ -24,41 +19,24 @@ import {
 } from "@/hooks/useSources";
 import {
   useConnectedAccount,
-  useAccountRepos,
   useAccountDriveFiles,
 } from "@/hooks/useIntegrations";
-import type { RepoItem, DriveFileItem, Source, SourceType } from "@/types";
+import type { DriveFileItem, Source, SourceType } from "@/types";
 
 // ─── Source type catalog ──────────────────────────────────────────────────────
 
-type SourceFlow = "oauth_repo" | "oauth_drive" | "text" | "pdf";
+type SourceFlow = "oauth_drive" | "text" | "pdf";
 
 interface SourceTypeDef {
   value: SourceType;
   label: string;
   description: string;
   flow: SourceFlow;
-  provider?: "github" | "gitlab" | "google_drive";
+  provider?: "google_drive";
   icon: React.ReactNode;
 }
 
 const SOURCE_TYPES: SourceTypeDef[] = [
-  {
-    value: "github_repo",
-    label: "GitHub Repository",
-    description: "Connect a repo from your GitHub account. Syncs on every push.",
-    flow: "oauth_repo",
-    provider: "github",
-    icon: <IconGithub />,
-  },
-  {
-    value: "gitlab_repo",
-    label: "GitLab Repository",
-    description: "Connect a project from your GitLab account. Syncs on every push.",
-    flow: "oauth_repo",
-    provider: "gitlab",
-    icon: <IconGitlab />,
-  },
   {
     value: "google_drive",
     label: "Google Drive",
@@ -119,13 +97,8 @@ export default function SourcesPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
 
-  // The item picked from a repo/file browser, plus the account ID it came from
-  const [pickedRepo, setPickedRepo] = useState<RepoItem | null>(null);
-  const [pickedRepoAccountId, setPickedRepoAccountId] = useState<string>("");
   const [pickedDriveFile, setPickedDriveFile] = useState<DriveFileItem | null>(null);
   const [pickedDriveAccountId, setPickedDriveAccountId] = useState<string>("");
-  // Comma-separated path prefixes to exclude from ingestion (repos only)
-  const [excludePathsRaw, setExcludePathsRaw] = useState<string>("");
 
   function resetModal() {
     setAddingSource(false);
@@ -134,11 +107,8 @@ export default function SourcesPage() {
     setFormText("");
     setFormError(null);
     setPdfFile(null);
-    setPickedRepo(null);
-    setPickedRepoAccountId("");
     setPickedDriveFile(null);
     setPickedDriveAccountId("");
-    setExcludePathsRaw("");
   }
 
   async function handleSubmit() {
@@ -153,20 +123,7 @@ export default function SourcesPage() {
 
     const flow = selectedType.flow;
 
-    if (flow === "oauth_repo") {
-      if (!pickedRepo) { setFormError("Select a repository first."); return; }
-      if (!pickedRepoAccountId) { setFormError("Account ID missing — please re-select the repository."); return; }
-      const excludePaths = excludePathsRaw
-        .split(",")
-        .map((p) => p.trim())
-        .filter(Boolean);
-      connection_config = {
-        repo_url: pickedRepo.full_name,
-        branch: pickedRepo.default_branch,
-        ...(excludePaths.length > 0 ? { exclude_paths: excludePaths } : {}),
-      } as Record<string, unknown> as Record<string, string>;
-      connected_account_id = pickedRepoAccountId;
-    } else if (flow === "oauth_drive") {
+    if (flow === "oauth_drive") {
       if (!pickedDriveFile) { setFormError("Select a file or folder first."); return; }
       if (!pickedDriveAccountId) { setFormError("Account ID missing — please reconnect Google Drive."); return; }
       // Folders get listed recursively; individual files are fetched directly.
@@ -315,7 +272,7 @@ export default function SourcesPage() {
               detail={
                 parserCoverageValues.length > 0
                   ? `${parserCoverageValues.length} source${parserCoverageValues.length === 1 ? "" : "s"} with parser stats`
-                  : "Implementation index not ready yet"
+                  : "No parser stats on sources yet"
               }
               tone="iris"
             />
@@ -355,21 +312,15 @@ export default function SourcesPage() {
                 formText={formText}
                 formError={formError}
                 pdfFile={pdfFile}
-                pickedRepo={pickedRepo}
                 pickedDriveFile={pickedDriveFile}
                 onNameChange={setFormName}
                 onTextChange={setFormText}
                 onPdfFileChange={setPdfFile}
-                onPickRepo={(r, accountId) => { setPickedRepo(r); setPickedRepoAccountId(accountId); }}
                 onPickDriveFile={(f, accountId) => { setPickedDriveFile(f); setPickedDriveAccountId(accountId); }}
-                excludePathsRaw={excludePathsRaw}
-                onExcludePathsChange={setExcludePathsRaw}
                 onBack={() => {
                   setSelectedType(null); setFormError(null);
                   setPdfFile(null);
-                  setPickedRepo(null); setPickedRepoAccountId("");
                   setPickedDriveFile(null); setPickedDriveAccountId("");
-                  setExcludePathsRaw("");
                 }}
                 onSubmit={handleSubmit}
                 onCancel={resetModal}
@@ -435,15 +386,11 @@ function SourceForm({
   formText,
   formError,
   pdfFile,
-  pickedRepo,
   pickedDriveFile,
-  excludePathsRaw,
   onNameChange,
   onTextChange,
   onPdfFileChange,
-  onPickRepo,
   onPickDriveFile,
-  onExcludePathsChange,
   onBack,
   onSubmit,
   onCancel,
@@ -454,15 +401,11 @@ function SourceForm({
   formText: string;
   formError: string | null;
   pdfFile: File | null;
-  pickedRepo: RepoItem | null;
   pickedDriveFile: DriveFileItem | null;
-  excludePathsRaw: string;
   onNameChange: (v: string) => void;
   onTextChange: (v: string) => void;
   onPdfFileChange: (f: File | null) => void;
-  onPickRepo: (r: RepoItem | null, accountId: string) => void;
   onPickDriveFile: (f: DriveFileItem | null, accountId: string) => void;
-  onExcludePathsChange: (v: string) => void;
   onBack: () => void;
   onSubmit: () => void;
   onCancel: () => void;
@@ -488,37 +431,6 @@ function SourceForm({
       </div>
 
       {/* Provider-specific content */}
-      {typeDef.flow === "oauth_repo" && typeDef.provider && (
-        <>
-          <RepoSelector
-            provider={typeDef.provider as "github" | "gitlab"}
-            picked={pickedRepo}
-            onPick={(r, accountId) => {
-              onPickRepo(r, accountId);
-              if (r && !formName) onNameChange(r.name);
-            }}
-          />
-          <div style={s.formGroup}>
-            <label style={s.label}>
-              Exclude paths
-              <span style={{ fontWeight: 400, color: "var(--color-text-tertiary)", marginLeft: 6 }}>optional</span>
-            </label>
-            <input
-              style={s.input}
-              type="text"
-              placeholder="e.g. community_contributions/, week1/, guides/"
-              value={excludePathsRaw}
-              onChange={(e) => onExcludePathsChange(e.target.value)}
-            />
-            <span style={s.fieldHint}>
-              Comma-separated path prefixes to skip during ingestion. Use this to exclude
-              community folders, course material, or generated directories that don't
-              represent the core project.
-            </span>
-          </div>
-        </>
-      )}
-
       {typeDef.flow === "oauth_drive" && (
         <DriveSelector
           picked={pickedDriveFile}
@@ -601,105 +513,6 @@ function SourceForm({
   );
 }
 
-// ─── RepoSelector ─────────────────────────────────────────────────────────────
-
-function RepoSelector({
-  provider,
-  picked,
-  onPick,
-}: {
-  provider: "github" | "gitlab";
-  picked: RepoItem | null;
-  onPick: (r: RepoItem | null, accountId: string) => void;
-}) {
-  const { account, isLoading: accountLoading } = useConnectedAccount(provider);
-  const { data: repos = [], isLoading: reposLoading } = useAccountRepos(account?.id);
-  const [search, setSearch] = useState("");
-
-  if (accountLoading) {
-    return <div style={s.browserPlaceholder}><div style={s.spinnerSm} /></div>;
-  }
-
-  if (!account) {
-    return (
-      <div style={s.connectPrompt}>
-        <div style={s.connectPromptIcon}>{provider === "github" ? <IconGithub /> : <IconGitlab />}</div>
-        <div>
-          <div style={s.connectPromptTitle}>
-            Connect {provider === "github" ? "GitHub" : "GitLab"} first
-          </div>
-          <p style={s.connectPromptBody}>
-            You need to authorize docubase before attaching a repository.
-            Your connection is encrypted and only you can add sources from it.
-          </p>
-          <Link to="/integrations" style={{ ...s.primaryBtn, textDecoration: "none" }}>
-            Connect {provider === "github" ? "GitHub" : "GitLab"} →
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  const filtered = repos.filter(
-    (r) =>
-      !search ||
-      r.full_name.toLowerCase().includes(search.toLowerCase()) ||
-      (r.description ?? "").toLowerCase().includes(search.toLowerCase())
-  );
-
-  return (
-    <div style={s.formGroup}>
-      <label style={s.label}>
-        Repository
-        <span style={s.accountTag}> · {account.provider_username ?? "connected"}</span>
-      </label>
-
-      {picked && (
-        <div style={s.pickedItem}>
-          <span style={s.pickedItemName}>{picked.full_name}</span>
-          <span style={s.pickedItemMeta}>{picked.default_branch}</span>
-          <button style={s.pickedClear} onClick={() => onPick(null, "")}>✕</button>
-        </div>
-      )}
-
-      {!picked && (
-        <>
-          <input
-            style={s.input}
-            type="search"
-            placeholder="Search repositories…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <div style={s.browser}>
-            {reposLoading ? (
-              <div style={s.browserCenter}><div style={s.spinnerSm} /></div>
-            ) : filtered.length === 0 ? (
-              <div style={s.browserCenter}>No repositories found.</div>
-            ) : (
-              filtered.map((repo) => (
-                <button
-                  key={repo.id}
-                  style={s.browserItem}
-                  onClick={() => onPick(repo, account.id)}
-                >
-                  <div style={s.browserItemMain}>
-                    <span style={s.browserItemName}>{repo.full_name}</span>
-                    {repo.private && <span style={s.privateBadge}>Private</span>}
-                  </div>
-                  {repo.description && (
-                    <span style={s.browserItemDesc}>{repo.description}</span>
-                  )}
-                </button>
-              ))
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
 // ─── DriveSelector ────────────────────────────────────────────────────────────
 
 const GDRIVE_FOLDER_MIME = "application/vnd.google-apps.folder";
@@ -734,7 +547,7 @@ function DriveSelector({
         <div>
           <div style={s.connectPromptTitle}>Connect Google Drive first</div>
           <p style={s.connectPromptBody}>
-            Authorize docubase to read from your Drive. Only files you explicitly
+            Authorize docbase to read from your Drive. Only files you explicitly
             attach are ingested — no broad access.
           </p>
           <Link to="/integrations" style={{ ...s.primaryBtn, textDecoration: "none" }}>
@@ -1035,22 +848,6 @@ function formatFreshnessAge(ageMinutes?: number | null): string {
 }
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
-
-function IconGithub() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
-    </svg>
-  );
-}
-
-function IconGitlab() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 0 1-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 0 1 4.82 2a.43.43 0 0 1 .58 0 .42.42 0 0 1 .11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0 1 18.6 2a.43.43 0 0 1 .58 0 .42.42 0 0 1 .11.18l2.44 7.51L23 13.45a.84.84 0 0 1-.35.94z" />
-    </svg>
-  );
-}
 
 function IconDrive() {
   return (

@@ -3,7 +3,7 @@ Structured logging setup.
 
 Uses structlog for JSON-formatted logs in production,
 pretty console output in development.
-All log entries include request_id, user_id, and twin_id where available.
+All log entries include request_id, user_id, and doctwin_id where available.
 """
 
 import logging
@@ -24,10 +24,11 @@ def setup_logging() -> None:
         structlog.processors.StackInfoRenderer(),
     ]
 
-    if settings.log_format == "json":
-        renderer = structlog.processors.JSONRenderer()
-    else:
-        renderer = structlog.dev.ConsoleRenderer()
+    renderer = (
+        structlog.processors.JSONRenderer()
+        if settings.log_format == "json"
+        else structlog.dev.ConsoleRenderer()
+    )
 
     structlog.configure(
         processors=shared_processors + [renderer],

@@ -53,17 +53,17 @@ class TestResolveRefsFromInventory:
 
 class TestRouteByStructure:
     @pytest.mark.asyncio
-    async def test_returns_twin_when_only_one_matches(self):
+    async def test_returns_doctwin_when_only_one_matches(self):
         db = MagicMock()
-        twin_id = uuid.uuid4()
+        doctwin_id = uuid.uuid4()
         result = MagicMock()
         result.fetchall.return_value = [
             SimpleNamespace(
-                twin_id=twin_id,
+                doctwin_id=doctwin_id,
                 structure_index={"meaningful_dirs": {"week3": ["week3/README.md"]}},
             ),
             SimpleNamespace(
-                twin_id=uuid.uuid4(),
+                doctwin_id=uuid.uuid4(),
                 structure_index={"meaningful_dirs": {"app/api": ["app/api/routes.py"]}},
             ),
         ]
@@ -71,7 +71,7 @@ class TestRouteByStructure:
 
         routed = await _route_by_structure(str(uuid.uuid4()), ["week 3"], db)
 
-        assert routed == str(twin_id)
+        assert routed == str(doctwin_id)
 
     @pytest.mark.asyncio
     async def test_returns_none_when_ambiguous(self):
@@ -79,11 +79,11 @@ class TestRouteByStructure:
         result = MagicMock()
         result.fetchall.return_value = [
             SimpleNamespace(
-                twin_id=uuid.uuid4(),
+                doctwin_id=uuid.uuid4(),
                 structure_index={"meaningful_dirs": {"week3": ["week3/README.md"]}},
             ),
             SimpleNamespace(
-                twin_id=uuid.uuid4(),
+                doctwin_id=uuid.uuid4(),
                 structure_index={"meaningful_dirs": {"week3": ["week3/overview.md"]}},
             ),
         ]

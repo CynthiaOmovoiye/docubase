@@ -19,7 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.db import get_db
 from app.domains.sharing import service as sharing_svc
-from app.models.sharing import ShareSurfaceType
 from app.models.user import User
 from app.schemas.sharing import (
     CreateEmbedSurfaceRequest,
@@ -31,12 +30,12 @@ router = APIRouter()
 
 
 @router.post(
-    "/twin/{twin_id}/page",
+    "/twin/{doctwin_id}/page",
     status_code=status.HTTP_201_CREATED,
     response_model=ShareSurfaceResponse,
 )
-async def create_twin_share_page(
-    twin_id: uuid.UUID,
+async def create_doctwin_share_page(
+    doctwin_id: uuid.UUID,
     request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -46,7 +45,7 @@ async def create_twin_share_page(
     Caller must own the twin's workspace.
     """
     try:
-        surface = await sharing_svc.create_twin_share_page(twin_id, current_user.id, db)
+        surface = await sharing_svc.create_doctwin_share_page(doctwin_id, current_user.id, db)
     except sharing_svc.NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except sharing_svc.ForbiddenError as exc:
@@ -60,12 +59,12 @@ async def create_twin_share_page(
 
 
 @router.post(
-    "/twin/{twin_id}/embed",
+    "/twin/{doctwin_id}/embed",
     status_code=status.HTTP_201_CREATED,
     response_model=ShareSurfaceResponse,
 )
 async def create_embed_surface(
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     body: CreateEmbedSurfaceRequest,
     request: Request,
     current_user: User = Depends(get_current_user),
@@ -78,7 +77,7 @@ async def create_embed_surface(
     """
     try:
         surface = await sharing_svc.create_embed_surface(
-            twin_id, current_user.id, body.allowed_origins, db
+            doctwin_id, current_user.id, body.allowed_origins, db
         )
     except sharing_svc.NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
@@ -122,18 +121,18 @@ async def create_workspace_share_page(
 
 
 @router.get(
-    "/twin/{twin_id}",
+    "/twin/{doctwin_id}",
     response_model=list[ShareSurfaceResponse],
 )
-async def list_twin_surfaces(
-    twin_id: uuid.UUID,
+async def list_doctwin_surfaces(
+    doctwin_id: uuid.UUID,
     request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """List all share surfaces for a twin."""
     try:
-        surfaces = await sharing_svc.list_surfaces_for_twin(twin_id, current_user.id, db)
+        surfaces = await sharing_svc.list_surfaces_for_twin(doctwin_id, current_user.id, db)
     except sharing_svc.NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except sharing_svc.ForbiddenError as exc:
@@ -212,20 +211,21 @@ async def get_public_surface_info(
         )
 
     # Build a safe public response — no owner fields
-    twin_name = None
-    twin_description = None
+    doctwin_name = None
+    doctwin_description = None
     workspace_name = None
     display_name = None
     accent_color = None
 
     if surface.twin is not None:
-        twin_name = surface.twin.name
-        twin_description = surface.twin.description
+        doctwin_name = surface.twin.name
+        doctwin_description = surface.twin.description
         # Load twin config for display fields
         from sqlalchemy import select
+
         from app.models.twin import TwinConfig
         config_result = await db.execute(
-            select(TwinConfig).where(TwinConfig.twin_id == surface.twin.id)
+            select(TwinConfig).where(TwinConfig.doctwin_id == surface.twin.id)
         )
         config = config_result.scalar_one_or_none()
         if config:
@@ -238,8 +238,8 @@ async def get_public_surface_info(
     return PublicSurfaceInfoResponse(
         surface_type=surface.surface_type,
         public_slug=surface.public_slug,
-        twin_name=twin_name,
-        twin_description=twin_description,
+        doctwin_name=doctwin_name,
+        doctwin_description=doctwin_description,
         workspace_name=workspace_name,
         display_name=display_name,
         accent_color=accent_color,

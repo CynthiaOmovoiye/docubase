@@ -193,7 +193,6 @@ class JinaEmbedder(BaseEmbedder):
         texts: list[str],
         task: str = "document",
     ) -> list[list[float]]:
-        import httpx
 
         truncated = [t[:32_000] for t in texts]
         results: list[list[float]] = []
@@ -508,7 +507,7 @@ async def embed_batch_with_failover(
                 [texts[index] for index in missing_indices],
                 task=task,
             )
-            for index, vector in zip(missing_indices, new_vectors):
+            for index, vector in zip(missing_indices, new_vectors, strict=False):
                 cached_vectors[index] = vector
             await _store_cached_embeddings(
                 texts=[texts[index] for index in missing_indices],
@@ -638,7 +637,7 @@ async def _store_cached_embeddings(
         return
 
     values = []
-    for text, embedding in zip(texts, embeddings):
+    for text, embedding in zip(texts, embeddings, strict=False):
         values.append(
             {
                 "text_hash": _cache_text_hash(text),

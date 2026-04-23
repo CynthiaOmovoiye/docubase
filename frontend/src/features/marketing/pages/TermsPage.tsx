@@ -15,20 +15,20 @@ export default function TermsPage() {
           <p style={{ fontSize: "13px", color: "var(--color-text-tertiary)", marginBottom: "var(--space-10)" }}>Last updated: {LAST_UPDATED}</p>
 
           <LegalSection title="1. Agreement">
-            <p>By creating an account or using docubase, you agree to these Terms. If you are using docubase on behalf of an organisation, you represent that you have authority to bind that organisation to these Terms.</p>
+            <p>By creating an account or using docbase, you agree to these Terms. If you are using docbase on behalf of an organisation, you represent that you have authority to bind that organisation to these Terms.</p>
           </LegalSection>
 
           <LegalSection title="2. The service">
-            <p>docubase provides tools to create AI-powered conversational interfaces ("twins") grounded in knowledge sources you connect. We are not responsible for the accuracy of answers generated from your source content, and you are responsible for the knowledge sources you connect.</p>
+            <p>docbase provides tools to create AI-powered conversational interfaces ("twins") grounded in knowledge sources you connect. We are not responsible for the accuracy of answers generated from your source content, and you are responsible for the knowledge sources you connect.</p>
           </LegalSection>
 
           <LegalSection title="3. Your content">
-            <p>You own the content you connect to docubase. You grant us a limited licence to process that content solely for the purpose of operating your twins and providing the service to you. We do not claim any ownership over your repositories, documents, or profile data.</p>
-            <p>You are responsible for ensuring you have the right to connect any source to docubase. Do not connect repositories or documents you do not own or are not authorised to share.</p>
+            <p>You own the content you connect to docbase. You grant us a limited licence to process that content solely for the purpose of operating your twins and providing the service to you. We do not claim any ownership over your repositories, documents, or profile data.</p>
+            <p>You are responsible for ensuring you have the right to connect any source to docbase. Do not connect repositories or documents you do not own or are not authorised to share.</p>
           </LegalSection>
 
           <LegalSection title="4. Acceptable use">
-            <p>You may not use docubase to: impersonate others, create twins intended to deceive or mislead visitors, distribute malware, violate applicable law, scrape or extract data from other users' twins, or attempt to circumvent the platform's safety controls.</p>
+            <p>You may not use docbase to: impersonate others, create twins intended to deceive or mislead visitors, distribute malware, violate applicable law, scrape or extract data from other users' twins, or attempt to circumvent the platform's safety controls.</p>
             <p>We may suspend or terminate accounts that violate these terms without prior notice.</p>
           </LegalSection>
 
@@ -45,7 +45,7 @@ export default function TermsPage() {
           </LegalSection>
 
           <LegalSection title="8. Contact">
-            <p>Legal questions: <a href="mailto:legal@docubase.io" style={{ color: "var(--color-iris)" }}>legal@docubase.io</a></p>
+            <p>Legal questions: <a href="mailto:legal@docbase.io" style={{ color: "var(--color-iris)" }}>legal@docbase.io</a></p>
           </LegalSection>
         </div>
       </main>

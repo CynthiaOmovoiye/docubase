@@ -2,18 +2,18 @@ services:
   # ─── Postgres with pgvector ──────────────────────────────────────────────────
   db:
     image: pgvector/pgvector:pg16
-    container_name: twin_db
+    container_name: doctwin_db
     environment:
-      POSTGRES_USER: twin_user
-      POSTGRES_PASSWORD: twin_pass
-      POSTGRES_DB: twin_db
+      POSTGRES_USER: doctwin_user
+      POSTGRES_PASSWORD: doctwin_pass
+      POSTGRES_DB: doctwin_db
     ports:
-      - "5433:5432"
+      - "5434:5432"
     # No host port: avoids clashes with local Postgres; use `make db-shell` or docker compose exec db psql ...
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U twin_user -d twin_db"]
+      test: ["CMD-SHELL", "pg_isready -U doctwin_user -d doctwin_db"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -21,7 +21,7 @@ services:
   # ─── Redis ───────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    container_name: twin_redis
+    container_name: doctwin_redis
     # No host port: avoids conflicts with another Redis on 6379; backend/worker reach this via redis:6379 on the Compose network. Shell access: docker compose exec redis redis-cli
     volumes:
       - redis_data:/data
@@ -36,20 +36,20 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: twin_backend
+    container_name: doctwin_backend
     env_file: .env
     environment:
       # Override host-oriented .env so in-container code uses Compose network DNS.
-      DATABASE_URL: postgresql+asyncpg://twin_user:twin_pass@db:5432/twin_db
+      DATABASE_URL: postgresql+asyncpg://doctwin_user:doctwin_pass@db:5432/doctwin_db
       REDIS_URL: redis://redis:6379/0
       # Shared named volume — both backend and worker must use the same path
       # so uploaded files written by the API are readable by the ingestion worker.
-      STORAGE_LOCAL_PATH: /var/lib/docubase/uploads
+      STORAGE_LOCAL_PATH: /var/lib/docbase/uploads
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - uploads_data:/var/lib/docubase/uploads
+      - uploads_data:/var/lib/docbase/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -62,15 +62,15 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: twin_worker
+    container_name: doctwin_worker
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://twin_user:twin_pass@db:5432/twin_db
+      DATABASE_URL: postgresql+asyncpg://doctwin_user:doctwin_pass@db:5432/doctwin_db
       REDIS_URL: redis://redis:6379/0
-      STORAGE_LOCAL_PATH: /var/lib/docubase/uploads
+      STORAGE_LOCAL_PATH: /var/lib/docbase/uploads
     volumes:
       - ./backend:/app
-      - uploads_data:/var/lib/docubase/uploads
+      - uploads_data:/var/lib/docbase/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -84,7 +84,7 @@ services:
   # ─── Redis Commander (dev UI) ────────────────────────────────────────────────
   redis-commander:
     image: rediscommander/redis-commander:latest
-    container_name: twin_redis_ui
+    container_name: doctwin_redis_ui
     environment:
       - REDIS_HOSTS=local:redis:6379
     ports:
@@ -100,7 +100,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: twin_frontend
+    container_name: doctwin_frontend
     ports:
       - "5173:5173"
     volumes:

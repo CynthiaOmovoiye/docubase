@@ -90,7 +90,7 @@ def build_workspace_quality_metrics(
             if packet is not None
         ),
         missing_evidence_count=sum(
-            len((project.get("evidence_packet").missing_evidence if project.get("evidence_packet") else []))
+            len(project.get("evidence_packet").missing_evidence if project.get("evidence_packet") else [])
             for project in project_contexts
         ),
         citation_count=sum(
@@ -166,10 +166,7 @@ def _contains_grounded_anchor(
     allowed_symbols: set[str],
 ) -> bool:
     lowered = answer.lower()
-    for ref in allowed_files | allowed_symbols:
-        if ref and ref.lower() in lowered:
-            return True
-    return False
+    return any(ref and ref.lower() in lowered for ref in allowed_files | allowed_symbols)
 
 
 def _extract_explicit_refs(answer: str) -> tuple[set[str], set[str]]:

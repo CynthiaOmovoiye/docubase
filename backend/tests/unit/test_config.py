@@ -17,7 +17,7 @@ def test_placeholder_secrets_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APP_SECRET_KEY", "change-me-to-a-long-random-string")
     monkeypatch.setenv("JWT_SECRET_KEY", "change-me-to-another-long-random-string")
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost:5432/db")
-    monkeypatch.delenv("DOCUBASE_ALEMBIC", raising=False)
+    monkeypatch.delenv("DOCBASE_ALEMBIC", raising=False)
     with pytest.raises(ValidationError) as exc:
         Settings()
     assert "Secret key" in str(exc.value)
@@ -27,7 +27,7 @@ def test_placeholder_secrets_allowed_for_alembic_dev(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("APP_SECRET_KEY", "change-me-to-a-long-random-string")
     monkeypatch.setenv("JWT_SECRET_KEY", "change-me-to-another-long-random-string")
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost:5432/db")
-    monkeypatch.setenv("DOCUBASE_ALEMBIC", "1")
+    monkeypatch.setenv("DOCBASE_ALEMBIC", "1")
     monkeypatch.setenv("APP_ENV", "development")
     s = Settings()
     assert s.app_secret_key.startswith("change-me")
@@ -39,7 +39,7 @@ def _valid_secrets_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost:5432/db")
 
 
-def test_cors_allow_origins_includes_loopback_twin_in_development(
+def test_cors_allow_origins_includes_loopback_doctwin_in_development(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _valid_secrets_env(monkeypatch)
@@ -105,7 +105,7 @@ def test_placeholder_secrets_rejected_in_production_even_with_alembic_flag(
     monkeypatch.setenv("APP_SECRET_KEY", "change-me-to-a-long-random-string")
     monkeypatch.setenv("JWT_SECRET_KEY", "change-me-to-another-long-random-string")
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost:5432/db")
-    monkeypatch.setenv("DOCUBASE_ALEMBIC", "1")
+    monkeypatch.setenv("DOCBASE_ALEMBIC", "1")
     monkeypatch.setenv("APP_ENV", "production")
     with pytest.raises(ValidationError):
         Settings()

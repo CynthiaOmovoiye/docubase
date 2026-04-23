@@ -3,7 +3,7 @@ from app.domains.chat.service import (
     _build_workspace_scope_response,
     _build_workspace_topic_gap_response,
     _is_any_project_query,
-    _resolve_workspace_twin_from_query,
+    _resolve_workspace_doctwin_from_query,
 )
 
 
@@ -34,14 +34,14 @@ class TestNoGroundingFallback:
 
         assert response is not None
         assert "don't have any knowledge sources attached" in response
-        assert "repo, document, PDF, website, or notes source" in response
+        assert "Drive file, document, PDF, website, or notes source" in response
 
     def test_question_with_only_non_ready_sources_blocks_answer(self):
         response = _build_no_grounding_response(
             query="tell me about this project",
             scope_name="This Project",
             sources=[
-                {"name": "production", "source_type": "github_repo", "status": "processing"},
+                {"name": "production", "source_type": "google_drive", "status": "processing"},
                 {"name": "resume", "source_type": "pdf", "status": "failed"},
             ],
             has_context_chunks=False,
@@ -59,7 +59,7 @@ class TestNoGroundingFallback:
             query="yea details on the architecture",
             scope_name="This Project",
             sources=[
-                {"name": "production", "source_type": "github_repo", "status": "ready"},
+                {"name": "production", "source_type": "google_drive", "status": "ready"},
             ],
             has_context_chunks=False,
             has_memory_brief=False,
@@ -75,7 +75,7 @@ class TestNoGroundingFallback:
             query="hello",
             scope_name="This Project",
             sources=[
-                {"name": "production", "source_type": "github_repo", "status": "ready"},
+                {"name": "production", "source_type": "google_drive", "status": "ready"},
             ],
             has_context_chunks=False,
             has_memory_brief=False,
@@ -130,7 +130,7 @@ class TestWorkspaceScopeResponse:
         assert "**Docs Twin**" in response
         assert "portfolio.pdf" in response
 
-    def test_workspace_twin_count_query_reports_ready_and_active_counts(self):
+    def test_workspace_doctwin_count_query_reports_ready_and_active_counts(self):
         response = _build_workspace_scope_response(
             "how many twins are you serving?",
             {
@@ -191,7 +191,7 @@ class TestWorkspaceScopeResponse:
 
 class TestWorkspaceRoutingModes:
     def test_resolves_named_project_from_workspace_query(self):
-        match = _resolve_workspace_twin_from_query(
+        match = _resolve_workspace_doctwin_from_query(
             "walk me through the auth implementation on Alpha API project",
             {
                 "workspace_name": "Studio",

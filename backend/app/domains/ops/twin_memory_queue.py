@@ -28,26 +28,26 @@ logger = get_logger(__name__)
 
 async def enqueue_memory_brief_for_twin(
     *,
-    twin_id: uuid.UUID,
+    doctwin_id: uuid.UUID,
     db: AsyncSession,
     redis,
 ) -> dict:
     """
     Match twin owner POST /twins/{id}/memory/generate semantics.
 
-    Returns {"status": "generating"|"queued", "twin_id": str}.
+    Returns {"status": "generating"|"queued", "doctwin_id": str}.
     """
-    twin_id_str = str(twin_id)
-    lock_key = f"memory_lock:{twin_id}"
+    doctwin_id_str = str(doctwin_id)
+    lock_key = f"memory_lock:{doctwin_id}"
     if await redis.exists(lock_key):
-        return {"status": "generating", "twin_id": twin_id_str}
+        return {"status": "generating", "doctwin_id": doctwin_id_str}
 
-    job_id = memory_brief_job_id(twin_id_str)
-    await clear_memory_brief_arq_job(redis, twin_id_str)
+    job_id = memory_brief_job_id(doctwin_id_str)
+    await clear_memory_brief_arq_job(redis, doctwin_id_str)
 
     await db.execute(
         update(TwinConfig)
-        .where(TwinConfig.twin_id == twin_id)
+        .where(TwinConfig.doctwin_id == doctwin_id)
         .values(memory_brief_status="generating")
     )
     await db.commit()
@@ -57,11 +57,11 @@ async def enqueue_memory_brief_for_twin(
     try:
         await redis_pool.enqueue_job(
             "generate_memory_brief",
-            twin_id_str,
+            doctwin_id_str,
             _job_id=job_id,
         )
     finally:
         await redis_pool.aclose()
 
-    await redis.setex(memory_brief_pending_key(twin_id_str), PENDING_TTL_SECONDS, "1")
-    return {"status": "queued", "twin_id": twin_id_str}
+    await redis.setex(memory_brief_pending_key(doctwin_id_str), PENDING_TTL_SECONDS, "1")
+    return {"status": "queued", "doctwin_id": doctwin_id_str}
