@@ -1,0 +1,105 @@
+/* docubase Design Tokens
+   Single source of truth for all visual decisions.
+   All components reference these tokens — never raw values.
+*/
+
+:root {
+  /* ── Brand ─────────────────────────────────────────── */
+  --color-iris:        #6366F1;
+  --color-iris-light:  #818CF8;
+  --color-iris-dim:    #4F46E5;
+  --color-iris-muted:  #EEF2FF;
+  --color-teal:        #14B8A6;
+  --color-teal-dim:    #0F766E;
+  --color-amber:       #F59E0B;
+  --color-rose:        #F43F5E;
+
+  /* ── Gradient ───────────────────────────────────────── */
+  --gradient-brand: linear-gradient(135deg, #6366F1 0%, #14B8A6 100%);
+  --gradient-hero:  linear-gradient(135deg, rgba(99,102,241,0.15) 0%, rgba(20,184,166,0.10) 100%);
+
+  /* ── Neutrals — Light mode ──────────────────────────── */
+  --color-bg:              #F5F5F8;
+  --color-surface:         #FFFFFF;
+  --color-surface-raised:  #F9F9FB;
+  --color-border:          #E5E7EB;
+  --color-border-strong:   #D1D5DB;
+  --color-text-primary:    #111827;
+  --color-text-secondary:  #6B7280;
+  --color-text-tertiary:   #9CA3AF;
+  --color-text-inverse:    #FFFFFF;
+
+  /* ── Spacing ─────────────────────────────────────────── */
+  --space-1:   4px;
+  --space-2:   8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  /* ── Border radius ───────────────────────────────────── */
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   16px;
+  --radius-xl:   24px;
+  --radius-full: 9999px;
+
+  /* ── Shadows ─────────────────────────────────────────── */
+  --shadow-sm:   0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md:   0 4px 12px rgba(0,0,0,0.10);
+  --shadow-lg:   0 8px 30px rgba(0,0,0,0.14);
+  --shadow-iris: 0 4px 20px rgba(99,102,241,0.25);
+
+  /* ── Typography ──────────────────────────────────────── */
+  --font-display: 'Geist', system-ui, -apple-system, sans-serif;
+  --font-body:    'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, 'Cascadia Code', monospace;
+
+  /* ── Duration ────────────────────────────────────────── */
+  --duration-fast:   100ms;
+  --duration-base:   150ms;
+  --duration-smooth: 200ms;
+  --duration-enter:  250ms;
+  --duration-exit:   200ms;
+
+  /* ── Easing ──────────────────────────────────────────── */
+  --ease-out: cubic-bezier(0.0, 0.0, 0.2, 1);
+  --ease-in:  cubic-bezier(0.4, 0.0, 1, 1);
+
+  /* ── Layout ──────────────────────────────────────────── */
+  --max-width-content: 1120px;
+  --max-width-prose:   680px;
+  --nav-height:        64px;
+}
+
+/* ── Dark mode ───────────────────────────────────────── */
+[data-theme="dark"] {
+  --color-bg:              #0A0A0F;
+  --color-surface:         #13131A;
+  --color-surface-raised:  #1E1E2E;
+  --color-border:          #2D2D3F;
+  --color-border-strong:   #3D3D55;
+  --color-text-primary:    #F1F5F9;
+  --color-text-secondary:  #94A3B8;
+  --color-text-tertiary:   #475569;
+  --color-iris:            #818CF8;
+  --color-iris-muted:      #1E1B4B;
+  --shadow-sm:   0 1px 3px rgba(0,0,0,0.30);
+  --shadow-md:   0 4px 12px rgba(0,0,0,0.35);
+  --shadow-lg:   0 8px 30px rgba(0,0,0,0.40);
+}
+
+/* ── Reduced motion ──────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

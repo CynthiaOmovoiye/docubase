@@ -1,0 +1,119 @@
+services:
+  # ─── Postgres with pgvector ──────────────────────────────────────────────────
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: twin_db
+    environment:
+      POSTGRES_USER: twin_user
+      POSTGRES_PASSWORD: twin_pass
+      POSTGRES_DB: twin_db
+    ports:
+      - "5433:5432"
+    # No host port: avoids clashes with local Postgres; use `make db-shell` or docker compose exec db psql ...
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U twin_user -d twin_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis ───────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: twin_redis
+    # No host port: avoids conflicts with another Redis on 6379; backend/worker reach this via redis:6379 on the Compose network. Shell access: docker compose exec redis redis-cli
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── Backend ─────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: twin_backend
+    env_file: .env
+    environment:
+      # Override host-oriented .env so in-container code uses Compose network DNS.
+      DATABASE_URL: postgresql+asyncpg://twin_user:twin_pass@db:5432/twin_db
+      REDIS_URL: redis://redis:6379/0
+      # Shared named volume — both backend and worker must use the same path
+      # so uploaded files written by the API are readable by the ingestion worker.
+      STORAGE_LOCAL_PATH: /var/lib/docubase/uploads
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - uploads_data:/var/lib/docubase/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ─── Background Workers ──────────────────────────────────────────────────────
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: twin_worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://twin_user:twin_pass@db:5432/twin_db
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_LOCAL_PATH: /var/lib/docubase/uploads
+    volumes:
+      - ./backend:/app
+      - uploads_data:/var/lib/docubase/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # No --watch flag: hot-reload on the worker kills long-running jobs (memory
+    # extraction can run for 3-5 minutes). Code changes are picked up by restarting
+    # the service explicitly with `make worker-restart`.
+    command: python -m arq app.jobs.ingestion.WorkerSettings
+
+  # ─── Redis Commander (dev UI) ────────────────────────────────────────────────
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: twin_redis_ui
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles:
+      - dev-tools   # opt-in: `docker compose --profile dev-tools up -d`
+
+  # ─── Frontend ────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: twin_frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      # Browser uses same-origin /api → Vite proxies to backend (Compose DNS).
+      - API_PROXY_TARGET=http://backend:8000
+    depends_on:
+      - backend
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads_data:

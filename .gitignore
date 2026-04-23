@@ -1,0 +1,53 @@
+# ─── Secrets — NEVER commit these ────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+*.pfx
+*_rsa
+*_rsa.pub
+secrets/
+credentials.json
+
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Node / Frontend ──────────────────────────────────────────────────────────
+node_modules/
+.npm
+dist/
+.next/
+out/
+
+# ─── Docker ───────────────────────────────────────────────────────────────────
+*.log
+
+# ─── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ─── IDE ──────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ─── Uploads / local storage ──────────────────────────────────────────────────
+/tmp/
+uploads/
