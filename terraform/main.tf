@@ -65,10 +65,9 @@ resource "aws_s3_bucket_policy" "frontend" {
 resource "aws_cloudfront_distribution" "main" {
   aliases = local.aliases
 
-  depends_on = var.use_custom_domain ? [aws_acm_certificate_validation.site[0]] : []
-
   viewer_certificate {
-    acm_certificate_arn            = var.use_custom_domain ? aws_acm_certificate.site[0].arn : null
+    # Reference the validation resource so CloudFront waits for ISSUED cert (depends_on cannot use ? :).
+    acm_certificate_arn = var.use_custom_domain ? aws_acm_certificate_validation.site[0].certificate_arn : null
     cloudfront_default_certificate = var.use_custom_domain ? false : true
     ssl_support_method             = var.use_custom_domain ? "sni-only" : null
     minimum_protocol_version       = "TLSv1.2_2021"
