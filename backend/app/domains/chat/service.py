@@ -1516,7 +1516,7 @@ def _build_no_grounding_response(
                 "from it."
             )
         return (
-            f"I can't answer that reliably yet because none of the attached sources for "
+            f"I can see sources attached to {scope_label} but none are ready yet: "
             f"{scope_label} are ready: {source_summary}. Once processing finishes, ask again."
         )
 
@@ -1531,9 +1531,9 @@ def _build_no_grounding_response(
         return None
 
     return (
-        f"I don't have enough grounded project context available for {scope_label} to answer "
-        "that reliably right now, so I won't guess. Try a more specific question, or retry "
-        "once indexing and memory generation are complete."
+        f"I don't have enough indexed content available for {scope_label} to answer "
+        "that right now. Try a more specific question, or retry "
+        "once indexing finishes."
     )
 
 
