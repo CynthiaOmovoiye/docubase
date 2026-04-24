@@ -1,20 +1,18 @@
 """
-Memory extraction orchestrator.
+Memory / knowledge brief orchestrator.
 
-`run_memory_extraction()` is the single entry point called by the
-`generate_memory_brief` ARQ job. It:
-  1. Acquires a per-twin Redis lock (prevents concurrent extraction runs)
-  2. Loads existing chunks for the twin (**only from sources in `ready` status**,
-     matching strict retrieval so memory and chat agree on answerable evidence)
-  3. Runs the three extraction passes (architecture, risk, changes)
-  4. Generates the Memory Brief
-  5. Writes everything to the DB
-  6. Updates doctwin_configs.memory_brief_status / memory_brief_generated_at
+Post-ingestion ARQ job (`generate_memory_brief` in ``app/jobs/ingestion.py``) now
+uses **incremental** brief generation by default:
 
-Design guarantees:
-  - Fully idempotent: step 3 deletes all __memory__/* chunks before re-inserting
-  - Never raises — exceptions are caught, status set to "failed", job returns stats
-  - The Redis lock uses SET NX with a 600-second TTL so a crashed worker releases it
+  - With ``source_id``: concatenates raw chunk text from that source, merges with
+    the existing ``TwinConfig.memory_brief`` via LLM, persists brief + ``memory_brief``
+    embedding chunk, then marks that source ``ready``.
+
+  - Without ``source_id`` (manual regenerate): merges each ``ready`` source
+    sequentially, then promotes any ``processing`` sources on success.
+
+``run_memory_extraction()`` remains for tests and legacy tooling; it performs the
+older multi-pass architecture/risk extraction pipeline.
 """
 
 from __future__ import annotations
@@ -30,6 +28,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.logging import get_logger
 from app.core.redis import get_redis
+from app.domains.answering.llm_provider import get_llm_provider
 from app.domains.embedding.embedder import embed_batch_with_failover
 from app.domains.graph.deterministic import build_deterministic_graph, merge_graph_extractions
 from app.domains.graph.extractor import extract_graph_from_chunks
@@ -50,6 +49,7 @@ from app.domains.memory.extractor import (
     extract_change_entry_chunks,
     generate_memory_brief,
 )
+from app.domains.memory.prompts import INCREMENTAL_KNOWLEDGE_BRIEF_SYSTEM
 from app.models.chunk import Chunk, ChunkLineage, ChunkType
 from app.models.source import Source, SourceStatus, SourceType
 from app.models.twin import Twin, TwinConfig
@@ -151,13 +151,28 @@ async def run_memory_extraction(
             db,
             structure_overview=structure_overview,
         )
+        # Log chunk type breakdown for diagnostics
+        type_counts: dict[str, int] = defaultdict(int)
+        for c in existing_chunks:
+            type_counts[str(c.get("chunk_type", "unknown"))] += 1
         logger.info(
             "memory_extraction_start",
             doctwin_id=doctwin_id,
             input_chunks=len(existing_chunks),
             commit_history_count=len(commit_history) if commit_history else 0,
             structure_groups=len(structure_overview),
+            chunk_type_breakdown=dict(type_counts),
         )
+        if existing_chunks:
+            sample = existing_chunks[0]
+            logger.info(
+                "memory_extraction_sample_chunk",
+                doctwin_id=doctwin_id,
+                chunk_type=sample.get("chunk_type"),
+                source_ref=sample.get("source_ref"),
+                content_len=len(sample.get("content", "")),
+                content_preview=(sample.get("content") or "")[:200],
+            )
 
         # Delete all previously generated memory chunks (idempotency)
         deleted_count = await clear_memory_chunks_for_twin(doctwin_id, db)
@@ -741,3 +756,219 @@ def _collect_provenance(chunk_dicts: list[dict]) -> list[dict]:
             seen.add(key)
             collected.append(ref)
     return collected[:40]
+
+
+# ── Incremental knowledge brief (raw chunk text → LLM, per source or full rebuild) ──
+
+_RAW_TEXT_CAP = 120_000
+
+
+async def _concat_chunks_for_source(source_id: str, db: AsyncSession) -> tuple[str, int]:
+    """Concatenate all chunk content for a source in stable order (ingestion order)."""
+    result = await db.execute(
+        select(Chunk.content)
+        .where(Chunk.source_id == uuid.UUID(source_id))
+        .order_by(Chunk.created_at.asc(), Chunk.id.asc())
+    )
+    parts = [row[0] or "" for row in result.fetchall()]
+    joined = "\n\n".join(parts)
+    if len(joined) > _RAW_TEXT_CAP:
+        joined = joined[:_RAW_TEXT_CAP]
+    return joined, len(parts)
+
+
+async def _incremental_llm_merge_brief(
+    existing_brief: str,
+    raw_document_text: str,
+    document_label: str,
+    *,
+    trace_id: str | None,
+) -> str:
+    provider = get_llm_provider()
+    prev = existing_brief.strip() if existing_brief else ""
+    user_body = (
+        f"## PREVIOUS_BRIEF\n\n{prev or '(none — first document for this twin)'}\n\n"
+        f"## RAW_DOCUMENT_TEXT (source: {document_label})\n\n{raw_document_text}"
+    )
+    response = await provider.complete(
+        system_prompt=INCREMENTAL_KNOWLEDGE_BRIEF_SYSTEM,
+        messages=[{"role": "user", "content": user_body}],
+        max_tokens=8192,
+        temperature=0.1,
+        trace_id=trace_id,
+        generation_name="incremental_knowledge_brief",
+    )
+    return (response.content or "").strip()
+
+
+async def _persist_incremental_memory_brief(doctwin_id: str, brief_text: str, db: AsyncSession) -> None:
+    """Replace `memory_brief` chunks + TwinConfig text; leave other memory_* chunk types."""
+    synthetic_source_id = uuid.uuid5(uuid.NAMESPACE_DNS, f"memory:{doctwin_id}")
+    await _ensure_memory_source(doctwin_id, synthetic_source_id, db)
+    await db.execute(
+        delete(Chunk).where(
+            Chunk.source_id == synthetic_source_id,
+            Chunk.chunk_type == ChunkType.memory_brief,
+        )
+    )
+    await db.flush()
+    safe = brief_text.replace("\x00", "")
+    await _embed_and_write_chunks(
+        [
+            {
+                "chunk_type": "memory_brief",
+                "content": safe,
+                "source_ref": _memory_ref(doctwin_id),
+                "chunk_metadata": {
+                    "extraction": "incremental_knowledge_brief",
+                    "provenance": [],
+                },
+            }
+        ],
+        doctwin_id,
+        db,
+    )
+    await _save_memory_brief(doctwin_id, safe, db)
+    await _rebuild_workspace_synthesis_for_twin(doctwin_id, db)
+
+
+async def run_incremental_brief_for_source(
+    doctwin_id: str,
+    source_id: str,
+    db: AsyncSession,
+    trace_id: str | None = None,
+) -> dict:
+    """
+    Merge RAW text from one source's chunks with the existing TwinConfig brief via LLM.
+
+    Called after ingestion indexed chunks for that source (source may still be
+    ``processing``). Caller must commit.
+    """
+    stats: dict = {
+        "doctwin_id": doctwin_id,
+        "source_id": source_id,
+        "status": "failed",
+        "brief_generated": False,
+        "error": None,
+        "raw_chars": 0,
+        "chunk_rows": 0,
+    }
+    try:
+        src = await db.get(Source, uuid.UUID(source_id))
+        if src is None or str(src.doctwin_id) != str(doctwin_id) or src.name == "__memory__":
+            stats["error"] = "invalid_source"
+            await _set_brief_status(doctwin_id, "failed", db)
+            return stats
+
+        raw, n = await _concat_chunks_for_source(source_id, db)
+        stats["raw_chars"] = len(raw)
+        stats["chunk_rows"] = n
+        if not raw.strip():
+            stats["error"] = "no_chunk_text"
+            await _set_brief_status(doctwin_id, "failed", db)
+            return stats
+
+        existing = (await get_memory_brief(doctwin_id, db)) or ""
+        brief = await _incremental_llm_merge_brief(
+            existing, raw, src.name, trace_id=trace_id
+        )
+        if not brief.strip():
+            stats["error"] = "empty_llm_brief"
+            await _set_brief_status(doctwin_id, "failed", db)
+            return stats
+
+        await _persist_incremental_memory_brief(doctwin_id, brief, db)
+        await _set_brief_status(doctwin_id, "ready", db)
+        stats["brief_generated"] = True
+        stats["status"] = "ready"
+        logger.info(
+            "incremental_memory_brief_ok",
+            doctwin_id=doctwin_id,
+            source_id=source_id,
+            brief_len=len(brief),
+            chunk_rows=n,
+        )
+        return stats
+    except Exception as exc:
+        stats["error"] = str(exc)
+        logger.error(
+            "incremental_memory_brief_failed",
+            doctwin_id=doctwin_id,
+            source_id=source_id,
+            error=str(exc),
+            exc_info=True,
+        )
+        await _set_brief_status(doctwin_id, "failed", db)
+        return stats
+
+
+async def run_incremental_brief_full_rebuild(
+    doctwin_id: str,
+    db: AsyncSession,
+    trace_id: str | None = None,
+) -> dict:
+    """
+    Rebuild the knowledge brief by merging each ready source sequentially.
+
+    Used when the ARQ job runs without a ``source_id`` (manual regenerate).
+    """
+    stats: dict = {
+        "doctwin_id": doctwin_id,
+        "source_id": None,
+        "status": "failed",
+        "brief_generated": False,
+        "error": None,
+        "sources_processed": 0,
+    }
+    try:
+        rows = await db.execute(
+            select(Source)
+            .where(
+                Source.doctwin_id == uuid.UUID(doctwin_id),
+                Source.name != "__memory__",
+                Source.status == SourceStatus.ready,
+            )
+            .order_by(Source.created_at.asc())
+        )
+        sources = list(rows.scalars().all())
+        if not sources:
+            stats["error"] = "no_ready_sources"
+            await _set_brief_status(doctwin_id, "failed", db)
+            return stats
+
+        merged = ""
+        for src in sources:
+            raw, n = await _concat_chunks_for_source(str(src.id), db)
+            if not raw.strip():
+                continue
+            merged = await _incremental_llm_merge_brief(
+                merged, raw, src.name, trace_id=trace_id
+            )
+            stats["sources_processed"] += 1
+
+        if not merged.strip():
+            stats["error"] = "empty_after_merge"
+            await _set_brief_status(doctwin_id, "failed", db)
+            return stats
+
+        await _persist_incremental_memory_brief(doctwin_id, merged, db)
+        await _set_brief_status(doctwin_id, "ready", db)
+        stats["brief_generated"] = True
+        stats["status"] = "ready"
+        logger.info(
+            "incremental_memory_brief_full_rebuild_ok",
+            doctwin_id=doctwin_id,
+            sources=stats["sources_processed"],
+            brief_len=len(merged),
+        )
+        return stats
+    except Exception as exc:
+        stats["error"] = str(exc)
+        logger.error(
+            "incremental_memory_brief_full_rebuild_failed",
+            doctwin_id=doctwin_id,
+            error=str(exc),
+            exc_info=True,
+        )
+        await _set_brief_status(doctwin_id, "failed", db)
+        return stats

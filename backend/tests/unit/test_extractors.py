@@ -6,6 +6,7 @@ Tests the extraction strategies without any DB or embedding calls.
 
 from app.domains.knowledge.extractors import (
     _extract_dependency_signal,
+    _is_binary_content,
     _split_by_headings,
     extract_chunks,
 )
@@ -225,6 +226,46 @@ export class AuthService {
         assert "authApi.login" in snippet_chunks[0]["content"]
         assert "setSessionTokens" in snippet_chunks[0]["content"]
         assert "// ... (truncated for safety)" in snippet_chunks[0]["content"]
+
+
+class TestPdfExtraction:
+    def test_clean_text_produces_documentation_chunks(self):
+        content = "--- Page 1 ---\nCynthia Omovoiye\nSoftware Engineer\n\nExperience:\nBuilt AI pipelines."
+        chunks = extract_chunks("Resume.pdf [abc123def456]", content, allow_code_snippets=False)
+        assert len(chunks) >= 1
+        assert all(c["chunk_type"] == "documentation" for c in chunks)
+
+    def test_binary_mojibake_is_rejected(self):
+        # Simulate binary PDF bytes decoded as UTF-8 with replacement chars
+        binary_like = "\ufffd" * 50 + "".join(chr(i) for i in range(1, 20)) + "\ufffd" * 50
+        chunks = extract_chunks("Resume.pdf [abc123def456]", binary_like, allow_code_snippets=False)
+        assert chunks == []
+
+    def test_drive_virtual_filename_routes_to_pdf_extractor(self):
+        # Virtual Drive filenames like "Name.pdf [fileId]" must be handled correctly
+        content = "--- Page 1 ---\nSome resume text here."
+        chunks = extract_chunks(
+            "Cynthia_Omovoiye_Resume.pdf [11JmWkaOATrc7Fx9RIws4]",
+            content,
+            allow_code_snippets=False,
+        )
+        assert len(chunks) >= 1
+        assert all(c["chunk_type"] == "documentation" for c in chunks)
+
+    def test_high_control_byte_density_is_rejected(self):
+        # Simulate content with many control bytes (binary stream decoded as string)
+        control_heavy = "Normal text " + "".join(chr(i) for i in range(1, 32)) * 20
+        chunks = extract_chunks("doc.pdf", control_heavy, allow_code_snippets=False)
+        assert chunks == []
+
+    def test_is_binary_content_rejects_replacement_chars(self):
+        assert _is_binary_content("\ufffd" * 10) is True
+
+    def test_is_binary_content_accepts_normal_prose(self):
+        assert _is_binary_content("Hello, this is a normal resume.\nSkills: Python, SQL.") is False
+
+    def test_is_binary_content_rejects_empty(self):
+        assert _is_binary_content("") is True
 
 
 class TestManualSource:

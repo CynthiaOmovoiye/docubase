@@ -213,6 +213,52 @@ def test_workspace_verifier_requests_retry_when_project_labels_are_missing():
     assert "missing_project_labels" in result.issues
 
 
+def test_workspace_verifier_treats_what_is_your_name_as_conversational_including_typo():
+    project_contexts = [
+        {
+            "name": "Cynthia",
+            "chunks": [{"chunk_id": "1", "content": "x", "source_ref": "a.pdf"}],
+            "evidence_packet": _make_packet(path="resume/a.pdf"),
+        },
+    ]
+    body = "I'm Cynthia Omovoiye — good to meet you."
+
+    for q in ("what is your name?", "what is you name?", "who are you", "What's your name??"):
+        result = verify_workspace_answer(
+            answer=body,
+            workspace_name="W",
+            project_contexts=project_contexts,
+            allow_retry=False,
+            query=q,
+        )
+        assert result.content == body, q
+        assert not result.rewritten, q
+
+
+def test_workspace_verifier_does_not_replace_conversational_replies_with_evidence_dump():
+    project_contexts = [
+        {
+            "name": "Cynthia",
+            "chunks": [{"chunk_id": "1", "content": "x", "source_ref": "a.pdf"}],
+            "evidence_packet": _make_packet(path="resume/a.pdf"),
+        },
+    ]
+    body = "Hello Doe — great to meet you. How can I help you learn more about my background?"
+
+    result = verify_workspace_answer(
+        answer=body,
+        workspace_name="W",
+        project_contexts=project_contexts,
+        allow_retry=False,
+        query="Hi, my name is Doe",
+    )
+
+    assert result.content == body
+    assert not result.rewritten
+    assert "grounded evidence i can confirm" not in result.content.lower()
+    assert "negative-evidence scope" not in result.content.lower()
+
+
 def test_workspace_verifier_rewrites_cross_project_leakage_after_retry_budget_is_spent():
     project_contexts = [
         {"name": "Alpha API", "chunks": [{"chunk_id": "1"}], "evidence_packet": _make_packet(path="alpha/auth.py")},

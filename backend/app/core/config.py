@@ -150,6 +150,11 @@ class Settings(BaseSettings):
     chat_total_latency_budget_ms: int = 12000
     workspace_chat_total_latency_budget_ms: int = 18000
 
+    # Active LLM-as-judge: reject drafts and regenerate with feedback (adds latency).
+    chat_quality_gate_enabled: bool = True
+    # Extra generation rounds after the first draft (0 = gate only logs accept/reject, no regen).
+    chat_quality_gate_max_regenerations: int = 2
+
     # ─── OAuth integrations ───────────────────────────────────────────────────
     # Google OAuth 2.0 credentials (from Google Cloud Console)
     google_client_id: str = ""

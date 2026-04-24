@@ -33,7 +33,7 @@ class ChunkType(enum.StrEnum):
 
     Deterministic (produced by extractors.py from raw file content):
       architecture_summary, module_description, feature_description,
-      dependency_signal, documentation, code_snippet,
+      dependency_signal, documentation, code_snippet, implementation_fact,
       career_summary, experience_entry, project_description, skill_profile, manual_note
 
     LLM-generated (produced by domains/memory/extractor.py — post-ingestion):
@@ -49,6 +49,7 @@ class ChunkType(enum.StrEnum):
     dependency_signal = "dependency_signal"
     documentation = "documentation"
     code_snippet = "code_snippet"  # Only present if allow_code_snippets=True in TwinConfig
+    implementation_fact = "implementation_fact"  # Span-backed facts for RAG (see implementation_facts)
     career_summary = "career_summary"
     experience_entry = "experience_entry"
     project_description = "project_description"

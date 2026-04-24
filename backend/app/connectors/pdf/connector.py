@@ -73,31 +73,27 @@ class PDFConnector(BaseConnector):
         errors: list[str] = []
 
         try:
-            from pypdf import PdfReader
+            from app.connectors.pdf.text_extract import extract_readable_pdf_text_from_path
 
-            reader = PdfReader(file_path)
-            full_text_parts = []
             stat = os.stat(file_path)
-
-            for page_num, page in enumerate(reader.pages, start=1):
-                try:
-                    text = page.extract_text() or ""
-                    full_text_parts.append(f"--- Page {page_num} ---\n{text}")
-                except Exception as e:
-                    errors.append(f"Failed to extract page {page_num}: {e}")
-
-            full_text = "\n\n".join(full_text_parts)
-
-            files.append(RawFile(
-                path=os.path.basename(file_path),
-                content=full_text,
-                size_bytes=len(full_text.encode()),
-                metadata={
-                    "page_count": len(reader.pages),
-                    "source_path": file_path,
-                    "revision_id": f"file:{os.path.basename(file_path)}:{int(stat.st_mtime_ns)}:{stat.st_size}",
-                },
-            ))
+            full_text = extract_readable_pdf_text_from_path(file_path)
+            if not full_text:
+                errors.append("No readable text extracted from PDF (parse failure or tagged-PDF noise)")
+            else:
+                files.append(
+                    RawFile(
+                        path=os.path.basename(file_path),
+                        content=full_text,
+                        size_bytes=len(full_text.encode()),
+                        metadata={
+                            "page_count": full_text.count("--- Page "),
+                            "source_path": file_path,
+                            "revision_id": (
+                                f"file:{os.path.basename(file_path)}:{int(stat.st_mtime_ns)}:{stat.st_size}"
+                            ),
+                        },
+                    )
+                )
 
         except ForbiddenError:
             raise  # propagate — do not swallow security errors

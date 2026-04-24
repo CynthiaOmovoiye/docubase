@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,14 +20,19 @@ from app.api.deps import get_superuser
 from app.core.db import get_db
 from app.core.logging import get_logger
 from app.core.redis import get_redis
-from app.domains.ops.platform_stats import fetch_platform_stats
 from app.domains.ops.doctwin_memory_queue import enqueue_memory_brief_for_twin
+from app.domains.ops.platform_stats import fetch_platform_stats
+from app.domains.retrieval.diagnostics import collect_twin_rag_index_stats, preview_twin_retrieval
 from app.models.twin import Twin
 from app.models.user import User
 from app.schemas.admin import (
     AdminIngestionLogsResponse,
     AdminPlatformStatsResponse,
+    AdminRagChunkTypeRow,
+    AdminRagEmbeddingProfileRow,
+    AdminRagSourceRow,
     AdminTwinMaintenanceResponse,
+    AdminTwinRagDiagnosticsResponse,
 )
 
 router = APIRouter()
@@ -64,6 +69,55 @@ async def get_ingestion_logs(
     _ = db  # reserved for future query
     logger.info("admin_ingestion_logs_view", admin_user_id=str(current_user.id))
     return AdminIngestionLogsResponse()
+
+
+@router.get(
+    "/twins/{doctwin_id}/rag-diagnostics",
+    response_model=AdminTwinRagDiagnosticsResponse,
+)
+async def admin_twin_rag_diagnostics(
+    doctwin_id: uuid.UUID,
+    q: str | None = Query(
+        default=None,
+        max_length=2000,
+        description="Optional user message; when set, runs retrieve_packet_for_twin and returns hits.",
+    ),
+    current_user: User = Depends(get_superuser),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Inspect indexed sources, embedding coverage, and (optionally) retrieval for ``q``.
+
+    Use when the knowledge brief or chat answers do not reflect uploaded documents.
+    """
+    await _require_twin(doctwin_id, db)
+    stats = await collect_twin_rag_index_stats(str(doctwin_id), db)
+    retrieval_preview = None
+    if q and q.strip():
+        retrieval_preview = await preview_twin_retrieval(
+            doctwin_id=str(doctwin_id),
+            query=q.strip(),
+            db=db,
+            top_k=12,
+        )
+    logger.info(
+        "admin_rag_diagnostics",
+        admin_user_id=str(current_user.id),
+        doctwin_id=str(doctwin_id),
+        preview=bool(retrieval_preview),
+    )
+    return AdminTwinRagDiagnosticsResponse(
+        doctwin_id=str(doctwin_id),
+        sources=[AdminRagSourceRow.model_validate(s) for s in stats["sources"]],
+        chunk_types_ready_non_memory=[
+            AdminRagChunkTypeRow.model_validate(r) for r in stats["chunk_types_ready_non_memory"]
+        ],
+        embedding_profiles_from_indexed_chunks=[
+            AdminRagEmbeddingProfileRow.model_validate(p)
+            for p in stats["embedding_profiles_from_indexed_chunks"]
+        ],
+        retrieval_preview=retrieval_preview,
+    )
 
 
 @router.post(

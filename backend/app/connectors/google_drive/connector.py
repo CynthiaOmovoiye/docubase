@@ -11,8 +11,12 @@ Sync strategy:
                files changed since the last sync.  result.next_page_token carries
                the new cursor that the ingestion job stores on the Source row.
 
-Supported MIME types: Google Docs (exported as text/plain), plain text, Markdown,
-PDF (exported as text/plain).  Binary files are skipped.
+Supported MIME types: Google Docs (exported as UTF-8 text), Sheets (CSV), Slides (plain),
+plain text, Markdown, Office (DOCX/PPTX via binary parse), PDF (binary + pypdf — same as
+local ``PDFConnector``).  Single-file ingest also allows ``application/octet-stream`` when the
+file name ends in a known extension (Drive often mis-labels PDFs).  Folder sync does not
+list generic octet-stream (too noisy).  All ``alt=media`` bodies are decoded from bytes
+(never ``response.text`` on PDFs) so chunks stay human-readable.
 
 Security: file_id and folder_id are validated to be Drive IDs (alphanumeric + dash)
 before use to prevent accidental traversal.
@@ -20,12 +24,14 @@ before use to prevent accidental traversal.
 
 from __future__ import annotations
 
+import io
 import re
 from collections.abc import AsyncIterator
 
 import httpx
 
 from app.connectors.base import BaseConnector, ConnectorResult, RawFile
+from app.connectors.pdf.text_extract import align_pdf_bytes, extract_readable_pdf_text_from_bytes
 from app.core.exceptions import ForbiddenError
 from app.core.logging import get_logger
 
@@ -44,7 +50,7 @@ _NATIVE_TEXT_TYPES = {
     "text/plain",
     "text/markdown",
     "text/x-markdown",
-    "application/pdf",
+    "application/pdf",  # listed for Drive queries; content fetched via pypdf below
 }
 # Microsoft Office formats uploaded to Drive — downloaded as binary, parsed locally.
 # Maps MIME type → parser label used in _fetch_file_content.
@@ -55,11 +61,116 @@ _OFFICE_TYPES = {
     "application/vnd.ms-powerpoint": "pptx",
 }
 
+# Drive often labels uploads (especially PDFs) as generic binary — still listable / fetchable.
+_OCTET_STREAM_MIMES = frozenset(
+    {
+        "application/octet-stream",
+        "binary/octet-stream",
+        "application/x-download",
+    }
+)
+_ZIP_MAGIC = b"PK\x03\x04"
+
 _DRIVE_FILES_API = "https://www.googleapis.com/drive/v3/files"
 _DRIVE_CHANGES_API = "https://www.googleapis.com/drive/v3/changes"
 _DRIVE_START_PAGE_TOKEN_API = "https://www.googleapis.com/drive/v3/changes/startPageToken"
 
 MAX_FILE_SIZE_BYTES = 5_000_000  # 5 MB for Drive files
+
+
+def _drive_file_extension(name: str) -> str:
+    """Lowercase extension including dot (e.g. '.pdf'). Empty if none."""
+    base = name.rsplit("/", 1)[-1].split("[", 1)[0].strip().lower()
+    if "." not in base:
+        return ""
+    return "." + base.rsplit(".", 1)[-1]
+
+
+def _looks_like_binary_mojibake(text: str) -> bool:
+    """Reject bodies that are clearly binary mistaken for UTF-8 text."""
+    if not text:
+        return True
+    if text.count("\ufffd") > max(3, len(text) // 150):
+        return True
+    bad_ctrl = sum(1 for c in text if ord(c) < 32 and c not in "\t\n\r\v\f")
+    return len(text) > 400 and bad_ctrl > len(text) // 40
+
+
+def _decode_drive_file_body(data: bytes, *, name: str, mime: str) -> str | None:
+    """
+    Normalise a Drive ``alt=media`` download to readable UTF-8 text for chunking.
+
+    Handles: PDF (magic or ``.pdf`` name), DOCX/PPTX (ZIP + python-docx / python-pptx),
+    and plain text/markdown with strict rejection of binary mojibake.
+    """
+    if not data:
+        return None
+    ext = _drive_file_extension(name)
+
+    def _try_extract_pdf() -> str | None:
+        extracted = extract_readable_pdf_text_from_bytes(data, name=name)
+        if not extracted or not extracted.strip():
+            return None
+        if _looks_like_binary_mojibake(extracted):
+            logger.warning("gdrive_pdf_extraction_still_binary", name=name)
+            return None
+        return extracted
+
+    # PDF: never UTF-8-decode raw bytes (mojibake + xref/``%%EOF`` junk in ``chunks``).
+    # WPS and similar tools may prefix the file; alignment lives inside the extractor.
+    is_declared_pdf = (
+        ext == ".pdf"
+        or mime == "application/pdf"
+        or (mime in _OCTET_STREAM_MIMES and ext == ".pdf")
+    )
+    if is_declared_pdf:
+        return _try_extract_pdf()
+
+    # Drive sometimes serves ``text/plain`` for a real PDF, or a non-``.pdf`` name on PDF bytes.
+    # If the body has a standard ``%PDF`` header (possibly after a short prefix) but the name
+    # is ``.txt`` / ``.md``, try UTF-8 below when extraction does not produce prose.
+    _native_text_exts = {".txt", ".md", ".markdown", ".csv"}
+    if align_pdf_bytes(data) is not None and ext not in _native_text_exts:
+        return _try_extract_pdf()
+
+    docx_mimes = {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
+    }
+    pptx_mimes = {
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.ms-powerpoint",
+    }
+    if ext in (".docx", ".doc") or mime in docx_mimes:
+        if ext in (".docx", ".doc") or (len(data) >= 4 and data[:4] == _ZIP_MAGIC):
+            text = _extract_office_text(data, "docx", name)
+            if text and text.strip():
+                return text
+    if ext == ".pptx" or mime in pptx_mimes:
+        if ext == ".pptx" or (len(data) >= 4 and data[:4] == _ZIP_MAGIC):
+            text = _extract_office_text(data, "pptx", name)
+            if text and text.strip():
+                return text
+
+    # A PDF mis-labelled as text/plain and named ``.txt`` / ``.md`` still has ``%PDF`` in bytes.
+    if align_pdf_bytes(data) is not None and ext in _native_text_exts:
+        extracted = _try_extract_pdf()
+        if extracted:
+            return extracted
+
+    text = data.decode("utf-8-sig", errors="replace").replace("\x00", "")
+    text = text.strip()
+    if not text:
+        return None
+    if _looks_like_binary_mojibake(text):
+        logger.warning(
+            "gdrive_decode_rejected_binary_like",
+            name=name,
+            mime=mime,
+            body_len=len(data),
+        )
+        return None
+    return text
 
 
 def _validate_drive_id(id_str: str, label: str = "id") -> str:
@@ -174,10 +285,23 @@ class GoogleDriveConnector(BaseConnector):
             )
 
         mime = item.get("mimeType", "")
+        name_for_gate = str(item.get("name") or "")
+        ext_gate = _drive_file_extension(name_for_gate)
+        octet_ok = mime in _OCTET_STREAM_MIMES and ext_gate in {
+            ".pdf",
+            ".docx",
+            ".doc",
+            ".pptx",
+            ".txt",
+            ".md",
+            ".markdown",
+            ".csv",
+        }
         if (
             mime not in _EXPORTABLE_GOOGLE_TYPES
             and mime not in _NATIVE_TEXT_TYPES
             and mime not in _OFFICE_TYPES
+            and not octet_ok
         ):
             return ConnectorResult(
                 source_id=source_id,
@@ -347,10 +471,22 @@ class GoogleDriveConnector(BaseConnector):
                     deleted_paths.append(path)
                     continue
 
+                ext_d = _drive_file_extension(str(name))
+                octet_ok_d = mime in _OCTET_STREAM_MIMES and ext_d in {
+                    ".pdf",
+                    ".docx",
+                    ".doc",
+                    ".pptx",
+                    ".txt",
+                    ".md",
+                    ".markdown",
+                    ".csv",
+                }
                 if (
                     mime not in _EXPORTABLE_GOOGLE_TYPES
                     and mime not in _NATIVE_TEXT_TYPES
                     and mime not in _OFFICE_TYPES
+                    and not octet_ok_d
                 ):
                     continue  # skip non-text types
 
@@ -416,7 +552,8 @@ async def _fetch_file_content(
 
     - Google Docs / Sheets / Slides  → export endpoint (text/plain or text/csv)
     - Office formats (DOCX, PPTX)    → download binary, parse locally
-    - Plain text / Markdown / PDF    → download as text
+    - PDF                            → download binary, pypdf text extraction
+    - Plain text / Markdown          → download decoded as UTF-8 text
     """
     file_id = item.get("id", "")
     name = item.get("name", file_id)
@@ -433,35 +570,46 @@ async def _fetch_file_content(
                 params={"mimeType": export_mime},
             )
             resp.raise_for_status()
-            content = resp.text
+            raw = resp.content
+            content = raw.decode("utf-8-sig", errors="replace").replace("\x00", "")
             return content if content.strip() else None, None
 
-        # Office formats — download binary then parse
-        if mime in _OFFICE_TYPES:
-            size = int(item.get("size", 0) or 0)
-            if size > MAX_FILE_SIZE_BYTES:
-                logger.debug("gdrive_skip_large_office_file", name=name, size=size)
+        if mime in _OCTET_STREAM_MIMES:
+            ext_o = _drive_file_extension(name)
+            if ext_o not in {
+                ".pdf",
+                ".docx",
+                ".doc",
+                ".pptx",
+                ".txt",
+                ".md",
+                ".markdown",
+                ".csv",
+            }:
                 return None, None
-            resp = await client.get(
-                f"https://www.googleapis.com/drive/v3/files/{file_id}",
-                params={"alt": "media"},
-            )
-            resp.raise_for_status()
-            text = _extract_office_text(resp.content, _OFFICE_TYPES[mime], name)
-            return text if text and text.strip() else None, None
 
-        # Native text / PDF — download as text
+        # Office / PDF / plain / octet-stream (single-file only) — bytes only, never resp.text.
         size = int(item.get("size", 0) or 0)
         if size > MAX_FILE_SIZE_BYTES:
-            logger.debug("gdrive_skip_large_file", name=name, size=size)
+            logger.debug("gdrive_skip_large_file", name=name, mime=mime, size=size)
             return None, None
         resp = await client.get(
             f"https://www.googleapis.com/drive/v3/files/{file_id}",
             params={"alt": "media"},
         )
         resp.raise_for_status()
-        content = resp.text
-        return content if content.strip() else None, None
+        data = resp.content
+
+        if mime in _OFFICE_TYPES:
+            text = _extract_office_text(data, _OFFICE_TYPES[mime], name)
+            return text if text and text.strip() else None, None
+
+        if mime == "application/pdf" or mime in _OCTET_STREAM_MIMES:
+            text = _decode_drive_file_body(data, name=name, mime=mime)
+            return text if text and text.strip() else None, None
+
+        text = _decode_drive_file_body(data, name=name, mime=mime)
+        return text if text and text.strip() else None, None
 
     except Exception as e:
         logger.warning("gdrive_file_fetch_error", file_id=file_id, name=name, error=str(e))
@@ -471,7 +619,6 @@ async def _fetch_file_content(
 def _extract_office_text(data: bytes, parser: str, name: str) -> str | None:
     """Extract plain text from a downloaded Office binary (DOCX or PPTX)."""
     try:
-        import io
         if parser == "docx":
             from docx import Document
             doc = Document(io.BytesIO(data))

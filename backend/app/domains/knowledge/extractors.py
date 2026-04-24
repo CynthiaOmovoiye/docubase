@@ -50,6 +50,93 @@ _DEPENDENCY_FILES = {
 # Documentation / markdown
 _DOC_EXTENSIONS = {".md", ".mdx", ".rst", ".txt"}
 
+# Google Drive virtual filenames: ``Name.ext [driveFileId]`` — strip id for suffix detection.
+_VIRTUAL_DRIVE_FILE_ID_SUFFIX = re.compile(r"\s*\[[a-zA-Z0-9_\-]{10,100}\]\s*$")
+
+
+def _leaf_basename_without_virtual_drive_id(path: str) -> str:
+    """
+    ``pathlib.PurePosixPath`` treats ``Resume.pdf [abc…]`` as suffix ``.pdf [abc…]``, so PDFs
+    miss ``.pdf`` classification and raw/structure text is chunked as generic documentation.
+    """
+    leaf = path.replace("\\", "/").split("/")[-1]
+    return _VIRTUAL_DRIVE_FILE_ID_SUFFIX.sub("", leaf.strip())
+
+
+def _try_recover_pdf_bytes_from_latin1_string(s: str) -> bytes | None:
+    """If a PDF was decoded as Latin-1 into a str, recover bytes for pypdf."""
+    t = s.lstrip("\ufeff \n\r\t")
+    if len(t) < 5 or not t.startswith("%PDF"):
+        return None
+    try:
+        return t.encode("latin-1")
+    except UnicodeEncodeError:
+        return None
+
+
+def _is_binary_content(text: str) -> bool:
+    """
+    True when the string is almost certainly binary data masquerading as text.
+
+    Two independent signals, either of which is sufficient to reject:
+    1. High density of Unicode replacement chars (\\ufffd) or low-ASCII control
+       bytes — typical of UTF-8 decode errors on raw binary.
+    2. Low ratio of "readable prose" characters — catches pypdf output on PDFs
+       with broken/non-standard CMap tables, where the result is wrong-but-valid
+       Unicode (not replacement chars) so signal #1 misses it.
+    """
+    if not text:
+        return True
+    # Signal 1: replacement chars + control bytes
+    bad = sum(1 for c in text if c == "\ufffd" or (ord(c) < 32 and c not in "\t\n\r\v\f"))
+    if bad > max(3, len(text) // 100):
+        return True
+    # Signal 2: readable character ratio (same logic as text_extract._readable_char_ratio)
+    def _ok(c: str) -> bool:
+        cp = ord(c)
+        return (
+            c in " \t\n\r\v\f"
+            or 0x20 <= cp <= 0x7E
+            or 0xA0 <= cp <= 0x024F
+            or 0x2000 <= cp <= 0x206F
+            or 0x4E00 <= cp <= 0x9FFF
+        )
+    ratio = sum(1 for c in text if _ok(c)) / len(text)
+    return ratio < 0.70
+
+
+def _extract_pdf_as_documentation(path: str, content: str) -> list[dict]:
+    """
+    PDFs arrive as pre-extracted plaintext from connectors; repair raw-PDF strings if needed.
+    """
+    from app.connectors.pdf.text_extract import (
+        extract_readable_pdf_text_from_bytes,
+        pdf_syntax_noise_score,
+    )
+
+    body = content
+    recovered = _try_recover_pdf_bytes_from_latin1_string(body)
+    if recovered is not None:
+        text = extract_readable_pdf_text_from_bytes(recovered, name=path)
+        if text:
+            body = text
+        else:
+            logger.warning("ingestion_pdf_rejected_or_unparsed", path=path)
+            return []
+    elif pdf_syntax_noise_score(body) > 0.025:
+        logger.warning(
+            "ingestion_pdf_high_syntax_noise",
+            path=path,
+            score=round(pdf_syntax_noise_score(body), 5),
+        )
+        return []
+
+    if _is_binary_content(body):
+        logger.warning("ingestion_pdf_binary_content_rejected", path=path)
+        return []
+
+    return _extract_documentation(path, body)
+
 
 # ─── Public entry point ───────────────────────────────────────────────────────
 
@@ -67,11 +154,15 @@ def extract_chunks(
       - source_ref: str
       - chunk_metadata: dict
     """
-    suffix = PurePosixPath(path).suffix.lower()
-    filename = PurePosixPath(path).name.lower()
+    leaf = _leaf_basename_without_virtual_drive_id(path)
+    suffix = PurePosixPath(leaf).suffix.lower()
+    filename = leaf.lower()
 
     if filename in _DEPENDENCY_FILES:
         return _extract_dependency_signal(path, content)
+
+    if suffix == ".pdf":
+        return _extract_pdf_as_documentation(path, content)
 
     if suffix in _DOC_EXTENSIONS:
         return _extract_documentation(path, content)
@@ -196,7 +287,7 @@ def _extract_documentation(path: str, content: str) -> list[dict]:
         for i, (piece, start_line, end_line) in enumerate(pieces):
             if not piece.strip():
                 continue
-            label = section_title or PurePosixPath(path).name
+            label = section_title or PurePosixPath(_leaf_basename_without_virtual_drive_id(path)).name
             chunks.append({
                 "chunk_type": "documentation",
                 "content": f"{label}\n\n{piece}".strip(),

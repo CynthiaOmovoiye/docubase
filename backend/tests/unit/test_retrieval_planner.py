@@ -74,3 +74,11 @@ class TestRetrievalPlanner:
         assert "file" in plan.searched_layers
         assert "file" in plan.negative_evidence_scope
         assert "logout" in plan.search_query
+
+
+async def test_analyse_query_identity_skips_llm_expansion():
+    from app.domains.retrieval.intent import QueryIntent, analyse_query
+
+    r = await analyse_query("What is your name?")
+    assert r.expanded_query == ""
+    assert r.intent == QueryIntent.general

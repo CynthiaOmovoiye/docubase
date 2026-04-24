@@ -4,10 +4,11 @@ Chat schemas.
 Request/response models for chat sessions and messages.
 """
 
+import re
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.chat import MessageRole
 
@@ -28,6 +29,38 @@ class CreateSessionResponse(BaseModel):
             doctwin_id=session.doctwin_id,  # type: ignore[attr-defined]
             created_at=session.created_at,  # type: ignore[attr-defined]
         )
+
+
+_VISITOR_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{8,64}$")
+
+
+class CreatePublicSessionRequest(BaseModel):
+    """Optional body for anonymous public share sessions."""
+
+    visitor_id: str | None = Field(
+        default=None,
+        description=(
+            "Opaque random id (no personal data). When set, new sessions are tied to this id "
+            "so they can be listed and resumed later. Use 8–64 URL-safe characters."
+        ),
+    )
+
+    @field_validator("visitor_id", mode="before")
+    @classmethod
+    def strip_visitor(cls, v: object) -> object:
+        if isinstance(v, str):
+            s = v.strip()
+            return s or None
+        return v
+
+    @field_validator("visitor_id")
+    @classmethod
+    def validate_visitor(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if not _VISITOR_ID_RE.match(v):
+            raise ValueError("visitor_id must be 8–64 characters: letters, digits, hyphen, underscore")
+        return v
 
 
 class SendMessageRequest(BaseModel):

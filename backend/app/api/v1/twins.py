@@ -14,9 +14,10 @@ GET    /twins/{id}/evidence-health — Phase 0 twin-level index / readiness roll
 """
 
 import uuid
+from collections import Counter
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -36,6 +37,9 @@ from app.domains.twins.service import (
     update_doctwin_config,
     update_twin,
 )
+from app.domains.retrieval.router import retrieve_packet_for_twin
+from app.models.chunk import Chunk
+from app.models.source import Source
 from app.models.twin import TwinConfig
 from app.models.user import User
 from app.schemas.twins import (
@@ -256,3 +260,86 @@ async def get_memory_brief(
         generated_at=config.memory_brief_generated_at,
         brief=config.memory_brief,
     )
+
+
+@router.get("/{doctwin_id}/debug/chunks")
+async def debug_chunks(
+    doctwin_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Owner-only: inspect what chunks are stored for this twin.
+
+    Returns chunk count by type, embedding coverage, source breakdown,
+    and a sample of stored content — useful for diagnosing why retrieval
+    or brief generation is producing unexpected results.
+    """
+    await get_twin(doctwin_id, current_user, db)
+
+    rows = await db.execute(
+        text(
+            """
+            SELECT
+                c.chunk_type,
+                c.source_ref,
+                c.content,
+                c.embedding IS NOT NULL AS has_embedding,
+                s.name AS source_name,
+                s.status AS source_status,
+                s.embedding_provider,
+                s.embedding_model,
+                s.embedding_dimensions
+            FROM chunks c
+            JOIN sources s ON s.id = c.source_id
+            WHERE s.doctwin_id = :doctwin_id
+            ORDER BY s.name, c.chunk_type
+            """
+        ),
+        {"doctwin_id": str(doctwin_id)},
+    )
+    all_rows = rows.fetchall()
+
+    chunk_type_counts: Counter = Counter()
+    embedding_by_type: Counter = Counter()
+    sources: dict[str, dict] = {}
+    samples: list[dict] = []
+
+    for row in all_rows:
+        ctype = str(row.chunk_type)
+        chunk_type_counts[ctype] += 1
+        if row.has_embedding:
+            embedding_by_type[ctype] += 1
+
+        src_key = str(row.source_name or row.source_ref or "unknown")
+        if src_key not in sources:
+            sources[src_key] = {
+                "name": src_key,
+                "status": str(row.source_status or ""),
+                "embedding_provider": row.embedding_provider,
+                "embedding_model": row.embedding_model,
+                "embedding_dimensions": row.embedding_dimensions,
+                "chunk_count": 0,
+                "chunks_with_embeddings": 0,
+            }
+        sources[src_key]["chunk_count"] += 1
+        if row.has_embedding:
+            sources[src_key]["chunks_with_embeddings"] += 1
+
+        if len(samples) < 5 and not str(row.source_ref or "").startswith("__memory__/"):
+            samples.append({
+                "chunk_type": ctype,
+                "source_ref": row.source_ref,
+                "has_embedding": row.has_embedding,
+                "content_len": len(row.content or ""),
+                "content_preview": (row.content or "")[:300],
+            })
+
+    return {
+        "doctwin_id": str(doctwin_id),
+        "total_chunks": len(all_rows),
+        "chunk_types": dict(chunk_type_counts),
+        "chunks_with_embeddings": dict(embedding_by_type),
+        "sources": list(sources.values()),
+        "content_samples": samples,
+    }

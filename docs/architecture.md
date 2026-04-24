@@ -1,11 +1,12 @@
 # docbase — Architecture
 
-For the canonical repo intelligence implementation roadmap, see
-`docs/repo-intelligence-roadmap.md`.
+High-level domain model and data flow. For a **reviewer-oriented** summary (problem, evaluation, deployment), see [`README.md`](../README.md). Directory layout: [`workspace.md`](workspace.md).
+
+---
 
 ## What This Is
 
-A multi-tenant SaaS platform that lets users create interactive AI twins for any knowledge source: Drive folders, PDFs, resumes, portfolios, projects, or documents. Each twin is a safe, conversational interface grounded in approved knowledge — no raw code leakage, no secrets exposure.
+A multi-tenant platform for **AI twins**: each twin owns **sources** (Google Drive, PDFs, URLs, markdown, manual notes). Indexed knowledge is retrieved with **intent hints**, answers are **evidence-verified**, and an optional **active quality gate** (Pydantic-validated LLM judge + bounded regeneration) runs **before** assistant messages are persisted. Public **share surfaces** expose read-only chat — no owner credentials or raw source browsing.
 
 ---
 
@@ -13,152 +14,120 @@ A multi-tenant SaaS platform that lets users create interactive AI twins for any
 
 ```
 User
- └── Workspace (one per user initially, multi-workspace later)
+ └── Workspace
       ├── Twin (many per workspace)
-      │    ├── Source (one or many attached sources)
-      │    ├── TwinConfig (visibility, policy, branding)
-      │    └── PublicShareSurface (optional public link / embed)
-      └── WorkspaceShareSurface (optional general public link)
+      │    ├── Source (typed attachment; indexed into this twin)
+      │    ├── TwinConfig (display name, persona, policy, memory brief, branding)
+      │    └── ShareSurface (optional public twin link / embed)
+      └── ShareSurface (optional workspace-wide public chat link)
 
 ChatSession
- └── belongs to either a Twin or a Workspace
-      ├── Messages
-      └── RoutingDecision (which twin/source answered)
+ └── anchored to Workspace; optional doctwin_id (null = workspace-level routing)
+      └── Message (user + assistant; chunk ids on assistant for audit)
 ```
 
-**Key modeling rule:** Sources attach to twins. Each `Source` (e.g. `google_drive`, `pdf`) is indexed into the twin the user chose. The `Twin` is the primary product abstraction.
+**Key rule:** Sources attach to **twins**. The twin is the primary product abstraction — not a repo root or vendor folder.
 
 ---
 
 ## Domains and Responsibilities
 
 ### 1. Users & Auth
-Handles registration, login, JWT issuance, API key management. Owns the `User` model.
+Registration, login, JWT, API keys. Owns `User`.
 
 ### 2. Workspaces
-A workspace is a user's container for twins. Handles workspace creation, settings, member access (future), and workspace-level public share surfaces.
+Container for twins; ownership and future multi-member boundaries. Workspace-level **share surfaces** for routed / aggregate public chat.
 
 ### 3. Twins
-The core product domain. A twin is a named, configurable AI agent grounded in one or more sources. Handles:
-- Twin CRUD
-- Source attachment
-- Twin config (policy overrides, branding, visibility)
-- Twin-level public share surfaces
-- Twin routing metadata
+Named, configurable agents: CRUD, source attachment, `TwinConfig` (policy, `custom_context`, **Memory Brief** when ready), twin-scoped share links, routing metadata for workspace chat.
 
 ### 4. Sources
-Each source is a data origin attached to a twin. Sources are typed:
-- `google_drive`
-- `pdf`
-- `markdown`
-- `url`
-- `manual`
+Typed origins: `google_drive`, `pdf`, `markdown`, `url`, `manual`. Owns connection config and sync triggers; **does not** own chunking/embeddings (Knowledge Processing).
 
-The source domain owns the connection config and raw ingestion trigger. It does NOT own processing — that belongs to Knowledge Processing.
-
-Operationally, a source is only considered **ready** when:
-- its file-derived chunks are fully embedded with no null vectors
-- the twin-level Memory Brief has been rebuilt successfully after the sync
-
-Between chunk indexing and memory completion, sources remain in an intermediate
-`processing` state and are excluded from normal retrieval.
+**Ready** when file-derived chunks are embedded and indexing rules satisfied; intermediate `processing` excludes normal retrieval. **Memory Brief** generation is a separate job after ingest (see Memory).
 
 ### 5. Connectors
-One connector per source type. Connectors are responsible for:
-- Authenticating with the external system
-- Fetching raw content
-- Returning a normalized raw content stream to the ingestion pipeline
-
-Connectors never store data — they fetch and hand off.
+One integration per source type: auth, fetch bytes/text, return normalized stream to ingestion. **No persistence** inside connectors.
 
 ### 6. Knowledge Processing
-Receives raw content from connectors. Responsible for:
-- Content normalization (chunking, cleaning)
-- Safe metadata extraction (structure, summaries, architecture signals)
-- Feature/module description derivation
-- Dependency and tooling signals
-- NO raw code storage unless policy explicitly permits snippet indexing
-
-Embedding is profile-aware. Each persisted vector set carries the provider/model
-profile used to create it so retrieval can query matching vector spaces only.
-Full syncs may fail over from the primary embedder to a configured backup
-provider on rate limits; delta syncs keep the existing source profile sticky to
-avoid mixing incompatible vector spaces inside a partially updated source.
+Normalize, chunk, extract metadata, embeddings. **Profile-aware vectors** (provider/model) so retrieval only queries compatible spaces; failover and sticky profiles on partial syncs. No raw code storage unless policy allows snippet indexing.
 
 ### 7. Policy / Safety
-Owns the rules for what can and cannot be surfaced. Applied at:
-- Ingestion time (what gets indexed)
-- Retrieval time (what chunks are eligible to return)
-- Answer time (what the response can include)
-
-Policy levels:
-- **Always blocked:** `.env`, secrets, credentials, API keys, private keys
-- **Off by default, user-enabled:** code snippets (scoped, never full files)
-- **Always available:** structure, architecture, docs, summaries, dependencies
+Three tiers (always blocked secrets; opt-in code snippets; always-on structure/docs). Applied at **ingest**, **retrieve**, and **pre-LLM** answer assembly.
 
 ### 8. Retrieval / Routing
-Given a user query, determines:
-- Which twin is most relevant (workspace-level chat)
-- Which evidence layers are relevant (vector, lexical, path, symbol, graph)
-- Which source chunks are most relevant (twin-level chat)
-- Returns structured evidence packets for answer generation
-
-Phase 2 retrieval is now hybrid:
-- deterministic query planning selects a retrieval mode and evidence budgets
-- PostgreSQL full-text search is the lexical substrate for chunks, indexed files, and indexed symbols
-- vector, lexical, path, symbol, and graph candidates are fused before reranking
-- canonical hydration refreshes the winning spans from strict source snapshots
-- workspace retrieval stays namespace-safe and respects each twin's snippet policy
+Hybrid retrieval: deterministic planning + pgvector + PostgreSQL full-text + path/symbol/graph signals where configured; hydration from source snapshots. **Workspace** paths: aggregate across twins with namespace safety, or route to one twin by query; **twin** paths: single evidence packet.
 
 ### 9. Answering
-Receives policy-filtered context + user query. Generates a grounded response using an LLM. Never allowed to speculate beyond approved context. Cites source when helpful.
+`generate_answer` / `generate_workspace_answer` in `domains/answering/generator.py`: owner notes, Memory Brief block, retrieved chunks, conversation history; sanitised injection; regeneration hints on verifier retry.
 
-Phase 3 answering is now evidence-bound:
-- answer generation receives the retrieval packet mode and evidence index, not only loose chunks
-- prompts include explicit answer contracts for implementation, onboarding, recruiter, status, and workspace modes
-- a cheap verifier checks explicit file and symbol references against the packet namespace
-- absence claims are rewritten or bounded to the searched layers when needed
-- workspace answers must keep one project per labeled section; cross-project leakage falls back to a grounded rewrite
-- the verifier can request at most one regeneration pass before rewriting deterministically
+**Verifier** (`domains/answering/verifier.py`): grounded file/symbol references, workspace section discipline, bounded-negative phrasing. **Conversational workspace turns** (greetings, identity questions, etc.) skip strict per-project `##` headers so natural prose is not replaced by internal evidence templates.
 
 ### 9a. Memory
-The engineering memory layer is now evidence-backed:
-- twin memory extraction loads deterministic evidence from indexed files, symbols, and relationships
-- memory artifacts now include feature summaries, auth flow summaries, onboarding maps, risk summaries, and change summaries
-- memory-derived chunks carry provenance metadata back to files and symbols
-- workspace synthesis is stored as a first-class workspace memory artifact instead of being smuggled into a twin
-- `memory_brief` remains the owner-visible long-form summary, but it is now assembled from the evidence-backed artifact set
+Engineering memory: evidence-backed extraction, memory-derived chunk types, provenance to files/symbols. **`memory_brief`** on `TwinConfig` — system-authored long summary injected into the answer prompt (not `custom_context`). Workspace synthesis as a first-class workspace artifact where implemented.
 
-### 9b. Trust, Evaluation, And SLOs
-Phase 5 makes repo intelligence measurable and owner-visible:
-- source responses now expose dynamic freshness state, stale warnings, strict-vs-legacy trust mode, and parser coverage derived from the deterministic implementation index
-- chat runtime logs deterministic quality metrics such as grounded anchor presence, citation count, verifier catches, bounded-negative handling, and workspace label completeness
-- chat runtime also logs latency reports against explicit retrieval, generation, verification, and total-turn budgets
-- the asynchronous LLM evaluator now scores usefulness in addition to the earlier grounding/depth dimensions
-- a golden evaluation suite exists for engineer, recruiter, PM, and workspace-comparison scenarios so question-mode coverage is explicit instead of implicit
+### 9b. Evaluation & quality gates
+| Mechanism | When | Role |
+|-----------|------|------|
+| **Evidence verifier** | Every non-deterministic LLM path | Namespace-safe answers; workspace rewrite on violation |
+| **Active quality gate** | `chat_quality_gate_enabled` (default on in `config`) | Sync judge → JSON → **`ResponseQualityGate`** (Pydantic) → if reject, bounded `generate_*` + re-verify **before persist**; workspace aggregate runs inside `_answer_across_workspace` |
+| **Passive LLM judge** | Gate **disabled** | Async `evaluate_response_async` — dimensional scores + Langfuse |
+| **Structured logs** | Always | Latency budgets, authority diagnosis, gate accept/reject, retrieval mode |
+
+Configurable: `CHAT_QUALITY_GATE_*` in `.env` (see `.env.example`).
 
 ### 10. Sharing
-Manages public share surfaces:
-- Per-twin public pages (`/t/{slug}`)
-- Per-workspace public pages (`/w/{slug}`)
-- Embed tokens and widget config
+Active share surfaces: per-twin (`/t/:slug`), per-workspace (`/w/:slug`), embed tokens. Revocation, rate limits on public chat APIs.
 
-### 11. Embedding
-Handles the embeddable widget surface. Generates embed codes. Provides a minimal JS widget that communicates with the chat API.
+### 11. Embedding (product surface)
+Embeddable widget + minimal JS; talks to versioned chat API.
 
-### 12. Admin
-Owner dashboard. Twin management, source status, ingestion logs, usage stats.
+### 12. Admin / owner UI
+Dashboard: twins, sources, ingestion status, share links, workspace chat (authenticated).
 
 ### 13. Jobs
-Background job system (Celery or ARQ). Handles:
-- Source ingestion on attach or update
-- Re-ingestion on config change
-- Scheduled re-sync for live sources (Google Drive watch channels, URLs)
-- Notification hooks
+**ARQ** (async Redis queue): ingest on attach/update, re-sync (Drive, URLs), **memory brief** jobs, notifications. Idempotent workers.
 
 ---
 
-## Data Flow
+## Chat request flow (conceptual)
+
+```
+User message
+     │
+     ▼
+Langfuse trace (optional)
+     │
+     ▼
+Intent / query analysis
+     │
+     ▼
+Retrieve ──► twin packet | workspace aggregate | routed twin
+     │
+     ▼
+Generate (twin or workspace prompt)
+     │
+     ▼
+Verify (single-project or workspace verifier)
+     │
+     ▼
+[Optional] Verifier-requested regeneration + verify again
+     │
+     ▼
+Active quality gate? ──yes──► Judge (Pydantic JSON) → reject? → regen + verify (bounded)
+     │              └──no──► (passive judge may run async after persist)
+     ▼
+Persist Message + chunk ids
+     │
+     ▼
+Response to client
+```
+
+Deterministic fallbacks (no chunks, template workspace meta replies, etc.) **skip** the gate and passive judge where configured.
+
+---
+
+## Data flow (ingestion)
 
 ```
 User attaches Source to Twin
@@ -167,80 +136,61 @@ User attaches Source to Twin
 Connector fetches raw content
         │
         ▼
-Ingestion pipeline receives raw stream
+Ingestion pipeline
         │
         ▼
-Policy/safety filters what can be indexed
+Policy filters what may be indexed
         │
         ▼
-Knowledge processing normalizes, chunks, extracts metadata
+Knowledge processing → chunks + embeddings
         │
         ▼
-Vector index + structured metadata stored
+PostgreSQL + pgvector (+ lexical indexes as configured)
         │
         ▼
-User sends message to Twin (or Workspace)
-        │
-        ▼
-Retrieval/routing identifies relevant twin + source chunks
-        │
-        ▼
-Policy/safety and evidence hydration filter what chunks can be returned
-        │
-        ▼
-Answering generates grounded response
-        │
-        ▼
-Response returned to user via chat interface or embed widget
+(Async) Memory extraction / Memory Brief job
 ```
 
 ---
 
-## Privacy Model
+## Privacy model
 
-Three-tier content policy, enforced at ingestion and retrieval:
+| Tier | Default | Configurable |
+|------|---------|--------------|
+| Always blocked | `.env`, secrets, keys, credentials | Never |
+| Opt-in | Code snippets (scoped, never full files) | Per twin |
+| Always available | Structure, docs, summaries, architecture | On |
 
-| Tier | Content | Default | Configurable |
-|------|---------|---------|--------------|
-| Always blocked | `.env`, secrets, keys, credentials | Blocked | Never |
-| Opt-in | Code snippets (scoped sections, not full files) | Off | User can enable per twin |
-| Always available | Structure, docs, summaries, architecture, dependencies | On | Cannot disable |
-
-The config lives in a `.twinconfig` file at the repo root (for repo sources) or in the platform UI for other source types.
+Policy is enforced in the **platform** (twin config + policy engine), not via a single repo-local `.twinconfig` file for all source types.
 
 ---
 
-## Technology Stack
+## Technology stack
 
-| Layer | Choice | Rationale |
-|-------|--------|-----------|
-| Backend | Python + FastAPI | Async-friendly, strong typing with Pydantic, fast iteration |
-| Frontend | React + TypeScript | Component ecosystem, type safety, wide hiring pool |
-| Primary DB | PostgreSQL | Relational integrity for users/workspaces/twins/sources |
-| Vector DB | pgvector (initially) | Keeps infra simple at early stage; swap to Qdrant/Pinecone at scale |
-| Cache / Sessions | Redis | Fast session lookup, rate limiting, job queue backend |
-| Job Queue | ARQ (async Redis queue) | Lightweight, Python-native, sufficient for v1 |
-| LLM | OpenAI (abstracted) | Start with OpenAI, abstraction layer allows swap |
-| Auth | JWT + httpOnly cookies | Secure defaults |
-| Local Dev | Docker Compose | Single command local stack |
+| Layer | Choice |
+|-------|--------|
+| Backend | Python 3.11+, FastAPI, Pydantic v2 |
+| Frontend | React 18, TypeScript, Vite |
+| DB | PostgreSQL + pgvector |
+| Cache / queue | Redis + **ARQ** |
+| LLM | OpenAI-compatible client (OpenRouter / OpenAI via `llm_provider`) |
+| Auth | JWT + httpOnly cookies |
+| Local | Docker Compose |
 
 ---
 
-## API Design
+## API design
 
-- All API routes versioned under `/api/v1/`
-- RESTful resource structure
-- Async everywhere in the backend
-- Public share pages served as SSR or static from frontend with API calls
-- Embed widget served as a small standalone JS bundle
+- Versioned under `/api/v1/`
+- Async SQLAlchemy throughout
+- Public share routes: anonymous chat only; ownership checks on owner APIs
 
 ---
 
-## Security Principles
+## Security principles
 
-- No raw source content stored in API-accessible tables
-- Policy enforcement is a separate, auditable layer — not mixed into business logic
-- Secret scanning runs at ingestion time before any content is indexed
-- All public share surfaces are read-only
-- Embed tokens are scoped and revocable
-- API keys hashed at rest
+- Chunks are derived, policy-filtered views — not raw file APIs
+- Policy domain testable and not buried in unrelated modules
+- Secret scanning at ingest
+- Share surfaces read-only; embed tokens revocable
+- Multi-tenant isolation on every query and retrieval scope

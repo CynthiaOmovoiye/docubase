@@ -47,8 +47,10 @@ async def test_generate_workspace_answer_includes_project_blocks():
 
     assert response.content == "ok"
     system_prompt = mock_provider.complete.await_args.kwargs["system_prompt"]
-    assert '<project name="Alpha API"' in system_prompt
+    assert "### Alpha API" in system_prompt
     assert "Studio" in system_prompt
+    assert "Conversation memory" in system_prompt
+    assert "Clerk-issued JWTs" in system_prompt
 
 
 @pytest.mark.asyncio
@@ -128,18 +130,20 @@ async def test_generate_answer_keeps_grounded_code_snippets():
 
 
 @pytest.mark.asyncio
-async def test_generate_workspace_answer_strips_indented_code_examples():
+async def test_generate_workspace_answer_returns_provider_content_unchanged():
+    """Workspace path does not post-process the LLM body (unlike single-twin verifier flows)."""
+    body = (
+        "## Scaffold\n"
+        "Authorization is role-based.\n\n"
+        "python\n"
+        "    def authorize_user(user_role, required_role):\n"
+        "        if user_role != required_role:\n"
+        "            raise HTTPException(status_code=403)\n"
+    )
     mock_provider = AsyncMock()
     mock_provider.complete = AsyncMock(
         return_value=LLMResponse(
-            content=(
-                "## Scaffold\n"
-                "Authorization is role-based.\n\n"
-                "python\n"
-                "    def authorize_user(user_role, required_role):\n"
-                "        if user_role != required_role:\n"
-                "            raise HTTPException(status_code=403)\n"
-            ),
+            content=body,
             model="test-model",
             input_tokens=10,
             output_tokens=6,
@@ -166,10 +170,9 @@ async def test_generate_workspace_answer_strips_indented_code_examples():
                 }
             ],
             conversation_history=[],
-    )
+        )
 
-    assert "def authorize_user" not in response.content
-    assert "Omitted illustrative code" not in response.content
+    assert response.content == body
 
 
 @pytest.mark.asyncio

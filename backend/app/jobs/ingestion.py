@@ -28,6 +28,7 @@ a delta sync prunes only the changed paths.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
 from time import perf_counter
@@ -68,6 +69,7 @@ from app.domains.sources.service import (
     mark_source_failed,
     mark_source_ingesting,
     mark_source_processing,
+    mark_source_ready,
 )
 from app.models.chunk import Chunk
 from app.models.source import Source, SourceIndexMode, SourceStatus, SourceType
@@ -263,7 +265,7 @@ async def ingest_source(ctx: dict, source_id: str) -> dict:
 
             # ── 13. Enqueue memory extraction (required before source is ready) ──
             try:
-                await _enqueue_memory_extraction(doctwin_id)
+                await _enqueue_memory_extraction(doctwin_id, source_id=source_id)
                 logger.info("memory_extraction_enqueued", doctwin_id=doctwin_id, source_id=source_id)
             except Exception as exc:
                 msg = f"Memory brief enqueue failed: {exc}"
@@ -455,17 +457,25 @@ async def _set_memory_brief_status(
         await db.flush()
 
 
-async def _enqueue_memory_extraction(doctwin_id: str) -> None:
+async def _enqueue_memory_extraction(doctwin_id: str, *, source_id: str | None = None) -> None:
     from arq import create_pool
 
     redis_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     try:
         await clear_memory_brief_arq_job(redis_pool, doctwin_id)
-        await redis_pool.enqueue_job(
-            "generate_memory_brief",
-            doctwin_id,
-            _job_id=memory_brief_job_id(doctwin_id),
-        )
+        if source_id:
+            await redis_pool.enqueue_job(
+                "generate_memory_brief",
+                doctwin_id,
+                source_id,
+                _job_id=memory_brief_job_id(doctwin_id),
+            )
+        else:
+            await redis_pool.enqueue_job(
+                "generate_memory_brief",
+                doctwin_id,
+                _job_id=memory_brief_job_id(doctwin_id),
+            )
         await redis_pool.setex(
             memory_brief_pending_key(doctwin_id),
             PENDING_TTL_SECONDS,
@@ -478,89 +488,113 @@ async def _enqueue_memory_extraction(doctwin_id: str) -> None:
 # ─── Memory extraction job ────────────────────────────────────────────────────
 
 
-async def generate_memory_brief(ctx: dict, doctwin_id: str) -> dict:
-    """
-    Post-ingestion memory extraction job.
+_MEMORY_LOCK_WAIT_SECONDS = 180
 
-    Runs after ingest_source completes for any source belonging to this twin.
-    Loads eligible sources, then runs run_memory_extraction() (redis-locked,
-    idempotent). External commit history feeds are not used in docbase.
+
+async def _acquire_memory_lock_wait(redis_client, lock_key: str) -> bool:
+    """Block up to _MEMORY_LOCK_WAIT_SECONDS for the per-twin memory lock."""
+    from app.domains.memory.service import _LOCK_TTL_SECONDS
+
+    for _ in range(_MEMORY_LOCK_WAIT_SECONDS):
+        if await redis_client.set(lock_key, "1", nx=True, ex=_LOCK_TTL_SECONDS):
+            return True
+        await asyncio.sleep(1)
+    return False
+
+
+async def generate_memory_brief(ctx: dict, doctwin_id: str, source_id: str | None = None) -> dict:
+    """
+    Post-ingestion knowledge brief job.
+
+    With ``source_id`` (normal after ingest): merges raw chunk text from that
+    source with the existing TwinConfig brief via LLM, then marks **only** that
+    source ``ready``.
+
+    Without ``source_id`` (manual regenerate): sequentially merges every
+    ``ready`` source and finalises any still-``processing`` sources on success.
 
     Returns a stats dict. Never raises.
     """
-    logger.info("memory_extraction_job_start in ingestion.py", doctwin_id=doctwin_id)
+    from app.core.redis import get_redis
+    from app.domains.memory.service import _LOCK_PREFIX
+
+    lock_key = f"{_LOCK_PREFIX}{doctwin_id}"
+    redis_client = get_redis()
+    logger.info(
+        "memory_brief_job_start",
+        doctwin_id=doctwin_id,
+        source_id=source_id,
+    )
+
+    if not await _acquire_memory_lock_wait(redis_client, lock_key):
+        logger.error("memory_brief_lock_timeout", doctwin_id=doctwin_id, source_id=source_id)
+        if source_id:
+            try:
+                async with get_async_session() as db:
+                    await mark_source_failed(
+                        source_id,
+                        "Knowledge brief job could not acquire lock (timeout).",
+                        db,
+                    )
+                    await db.commit()
+            except Exception:
+                logger.warning(
+                    "memory_brief_lock_timeout_source_mark_failed",
+                    source_id=source_id,
+                    exc_info=True,
+                )
+        return {"doctwin_id": doctwin_id, "status": "failed", "error": "memory_lock_timeout"}
 
     try:
         async with get_async_session() as db:
             try:
-                # Load the twin's eligible sources for memory extraction
-                from sqlalchemy.orm import selectinload as _slo
-
-                from app.domains.memory.service import run_memory_extraction
-                from app.models.source import Source
-
-                sources_result = await db.execute(
-                    select(Source)
-                    .options(_slo(Source.connected_account))
-                    .where(
-                        Source.doctwin_id == uuid.UUID(doctwin_id),
-                        Source.status.in_([SourceStatus.ready, SourceStatus.processing]),
-                        Source.name != "__memory__",  # exclude phantom memory anchor source
-                    )
-                )
-                sources = sources_result.scalars().all()
-    
-                if not sources:
-                    logger.info(
-                        "memory_extraction_no_ready_sources",
-                        doctwin_id=doctwin_id,
-                    )
-                    return {"doctwin_id": doctwin_id, "status": "skipped", "reason": "no eligible sources"}
-    
-                logger.info(
-                    "memory_extraction_sources_found",
-                    doctwin_id=doctwin_id,
-                    count=len(sources),
+                from app.domains.memory.service import (
+                    run_incremental_brief_for_source,
+                    run_incremental_brief_full_rebuild,
                 )
 
-                stats = await run_memory_extraction(
-                    doctwin_id=doctwin_id,
-                    db=db,
-                    commit_history=None,
-                )
-                if stats is None:
-                    stats = {
-                        "doctwin_id": doctwin_id,
-                        "status": "failed",
-                        "arch_chunks": 0,
-                        "risk_chunks": 0,
-                        "change_chunks": 0,
-                        "brief_generated": False,
-                        "error": "run_memory_extraction returned no stats",
-                    }
-                finalised_sources = 0
-                if stats.get("status") == "ready":
-                    finalised_sources = await mark_processing_sources_ready(doctwin_id, db)
-                elif stats.get("status") == "failed":
-                    finalised_sources = await mark_processing_sources_failed(
+                if source_id:
+                    stats = await run_incremental_brief_for_source(
                         doctwin_id,
-                        stats.get("error") or "Memory brief generation failed.",
+                        source_id,
                         db,
+                        trace_id=None,
                     )
-                if finalised_sources:
+                    if stats.get("status") == "ready":
+                        await mark_source_ready(source_id, db)
+                    else:
+                        await mark_source_failed(
+                            source_id,
+                            stats.get("error") or "Knowledge brief merge failed.",
+                            db,
+                        )
                     await db.commit()
-                    stats["processing_sources_finalised"] = finalised_sources
-                logger.info("stats in generate_memory_brief in ingestion.py", stats=stats)
-                # Exclude doctwin_id from stats before unpacking — stats dict already
-                # includes doctwin_id from run_memory_extraction(), and passing it as
-                # both a keyword arg and via **stats causes TypeError.
+                    stats["processing_sources_finalised"] = 1 if stats.get("status") == "ready" else 0
+                else:
+                    stats = await run_incremental_brief_full_rebuild(
+                        doctwin_id,
+                        db,
+                        trace_id=None,
+                    )
+                    finalised = 0
+                    if stats.get("status") == "ready":
+                        finalised = await mark_processing_sources_ready(doctwin_id, db)
+                    elif stats.get("status") == "failed":
+                        finalised = await mark_processing_sources_failed(
+                            doctwin_id,
+                            stats.get("error") or "Knowledge brief rebuild failed.",
+                            db,
+                        )
+                    stats["processing_sources_finalised"] = finalised
+                    await db.commit()
+
                 stats_log = {k: v for k, v in stats.items() if k != "doctwin_id"}
-                logger.info("memory_extraction_job_complete", doctwin_id=doctwin_id, **stats_log)
+                logger.info("memory_brief_job_complete", doctwin_id=doctwin_id, **stats_log)
                 return stats
-    
+
             except Exception as exc:
                 logger.error(
-                    "memory_extraction_job_unexpected_error",
+                    "memory_brief_job_unexpected_error",
                     doctwin_id=doctwin_id,
                     error=str(exc),
                     exc_info=True,
@@ -568,10 +602,10 @@ async def generate_memory_brief(ctx: dict, doctwin_id: str) -> dict:
                 return {"doctwin_id": doctwin_id, "status": "failed", "error": str(exc)}
     finally:
         try:
-            from app.core.redis import get_redis
             from app.domains.memory.queue_state import memory_brief_pending_key
 
-            await get_redis().delete(memory_brief_pending_key(doctwin_id))
+            await redis_client.delete(lock_key)
+            await redis_client.delete(memory_brief_pending_key(doctwin_id))
         except Exception:
             logger.warning(
                 "memory_brief_pending_cleanup_failed",

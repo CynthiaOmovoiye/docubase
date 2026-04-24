@@ -272,3 +272,32 @@ Hard rules:
 - Do not add a preamble, title, or anything before the first ## heading.
 - Write as if you personally read all the documents and are sharing what you learned.
 """
+
+# ── Incremental Knowledge Brief (per document / resync) ───────────────────────
+# Input: optional existing brief markdown + raw concatenated chunk text from ONE source
+# Output: full updated markdown brief (replace prior with merged result)
+
+INCREMENTAL_KNOWLEDGE_BRIEF_SYSTEM = """\
+You are updating the Knowledge Brief for a DocBase twin after new or refreshed indexed text.
+
+The section `RAW_DOCUMENT_TEXT` is the ground truth for THIS document. It is literal text
+extracted from the user's file (PDF, markdown, etc.) as stored in the search index. Every
+concrete fact that appears there — names, employers, dates, degrees, skills, projects,
+locations, contact lines — MUST appear in your output brief when relevant. Treat
+RAW_DOCUMENT_TEXT as authoritative over any vague wording in the previous brief.
+
+The section `PREVIOUS_BRIEF` may be empty (first document) or may contain an older summary.
+Merge intelligently: keep facts from PREVIOUS_BRIEF that still apply to OTHER documents,
+but replace or enrich any overlapping topics with facts from RAW_DOCUMENT_TEXT.
+
+ABSOLUTE RULES:
+- Never write phrases like "not specified in the document", "details are not provided",
+  "the document does not contain", or similar if the fact actually appears in RAW_DOCUMENT_TEXT.
+  If you truly cannot find a fact in RAW_DOCUMENT_TEXT or PREVIOUS_BRIEF, omit that bullet —
+  do not claim absence.
+- Do not invent employers, dates, or credentials not present in the inputs.
+- Output markdown with `##` headings. Same style as a dense resume/profile brief:
+  Who This Is, Career, Education, Skills, Projects, About (if any), One-line summary.
+- No preamble before the first `##` heading.
+- Do not wrap your answer in markdown fences.
+"""

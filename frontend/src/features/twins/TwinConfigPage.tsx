@@ -60,7 +60,7 @@ export default function TwinConfigPage() {
   const [customContext, setCustomContext] = useState("");
 
   // Policy
-  const [allowCodeSnippets, setAllowCodeSnippets] = useState(false);
+  // const [allowCodeSnippets, setAllowCodeSnippets] = useState(false);
 
   // Visibility
   const [isPublic, setIsPublic] = useState(false);
@@ -76,7 +76,7 @@ export default function TwinConfigPage() {
       setDisplayName(twin.config.display_name ?? twin.name ?? "");
       setAccentColor(twin.config.accent_color ?? "#6366F1");
       setCustomContext(twin.config.custom_context ?? "");
-      setAllowCodeSnippets(twin.config.allow_code_snippets ?? false);
+      // setAllowCodeSnippets(twin.config.allow_code_snippets ?? false);
       setIsPublic(twin.config.is_public ?? false);
     } else if (twin) {
       setDisplayName(twin.name);
@@ -138,18 +138,18 @@ export default function TwinConfigPage() {
     }
   }
 
-  async function savePolicy() {
-    if (!twinId) return;
-    setSaving(true);
-    try {
-      await updateConfig.mutateAsync({ twinId, allow_code_snippets: allowCodeSnippets });
-      markSaved("policy");
-    } catch {
-      setErrors({ policy: "Failed to save. Please try again." });
-    } finally {
-      setSaving(false);
-    }
-  }
+  // async function savePolicy() {
+  //   if (!twinId) return;
+  //   setSaving(true);
+  //   try {
+  //     await updateConfig.mutateAsync({ twinId, allow_code_snippets: allowCodeSnippets });
+  //     markSaved("policy");
+  //   } catch {
+  //     setErrors({ policy: "Failed to save. Please try again." });
+  //   } finally {
+  //     setSaving(false);
+  //   }
+  // }
 
   async function saveVisibility() {
     if (!twinId) return;
@@ -313,7 +313,7 @@ export default function TwinConfigPage() {
 
           <div style={s.policyTierTable}>
             <PolicyRow
-              label=".env files, secrets, credentials"
+              label="secrets, credentials"
               tier="Always blocked"
               tierColor="var(--color-rose)"
               locked
@@ -324,7 +324,7 @@ export default function TwinConfigPage() {
               tierColor="var(--color-teal)"
               locked
             />
-            <PolicyRow
+            {/* <PolicyRow
               label="Code snippets (scoped sections, not full files)"
               tier={allowCodeSnippets ? "Enabled" : "Disabled"}
               tierColor={allowCodeSnippets ? "var(--color-iris)" : "var(--color-text-tertiary)"}
@@ -334,11 +334,11 @@ export default function TwinConfigPage() {
                   onChange={(v) => setAllowCodeSnippets(v)}
                 />
               }
-            />
+            /> */}
           </div>
 
           {errors.policy && <p style={s.errorText}>{errors.policy}</p>}
-          <SaveButton onClick={savePolicy} saving={saving} />
+          {/* <SaveButton onClick={savePolicy} saving={saving} /> */}
         </Section>
 
         {/* ── Section: Visibility ───────────────────────────────────────── */}

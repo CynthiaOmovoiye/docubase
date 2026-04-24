@@ -20,8 +20,9 @@ Security:
 Observability:
 - Each send_message call creates a Langfuse trace (when configured).
 - The trace carries retrieval metadata and links to the LLM generation span.
-- A background LLM-as-judge evaluator fires after the response is persisted,
-  adding quality scores to the trace without blocking the response.
+- When ``chat_quality_gate_enabled`` is false, a passive LLM-as-judge may still run
+  after persist for dimensional scores. When the gate is enabled, an active judge
+  runs before persist (bounded regeneration).
 """
 
 import asyncio
@@ -71,6 +72,16 @@ _MAX_HISTORY_TURNS = 10
 # than _MAX_MESSAGE_CHARS are truncated to prevent one turn monopolising context.
 _MAX_HISTORY_CHARS = 12_000
 _MAX_MESSAGE_CHARS = 2_000
+
+
+def _session_belongs_to_surface(session: ChatSession, surface: ShareSurface) -> bool:
+    """True if this chat session was created for the given public share surface."""
+    if surface.doctwin_id is not None:
+        return session.doctwin_id == surface.doctwin_id
+    if surface.workspace_id is None:
+        return False
+    return session.workspace_id == surface.workspace_id and session.doctwin_id is None
+
 
 # Context chunks for focused questions (default)
 _CONTEXT_CHUNKS_FOCUSED = 8
@@ -235,11 +246,14 @@ async def create_workspace_session(
 async def create_public_session(
     public_slug: str,
     db: AsyncSession,
+    *,
+    visitor_id: str | None = None,
 ) -> ChatSession:
     """
     Create an anonymous chat session via a public share surface.
 
     No authentication required. The share surface must be active.
+    When ``visitor_id`` is set, the session can be listed and resumed with the same id.
     """
     surface = await _load_active_surface(public_slug, db)
 
@@ -257,6 +271,7 @@ async def create_public_session(
         workspace_id=workspace_id,
         doctwin_id=doctwin_id,
         user_id=None,  # Anonymous
+        visitor_id=visitor_id,
     )
     db.add(session)
     await db.flush()
@@ -320,6 +335,9 @@ async def send_message(
         except Exception as exc:
             logger.warning("langfuse_trace_open_failed", error=str(exc))
 
+    # Correlates structured RAG logs (retrieval stages → LLM chunks) in one request.
+    pipeline_trace_id = str(uuid.uuid4())
+
     # Persist the user message
     user_message = Message(
         id=uuid.uuid4(),
@@ -338,6 +356,7 @@ async def send_message(
     verification_elapsed_ms = 0.0
     quality_metrics = None
     verification = None
+    answer_from_workspace_aggregate = False
 
     # Load twin config for policy decisions
     doctwin_config = await _load_doctwin_config(session.doctwin_id, db) if session.doctwin_id else None
@@ -361,8 +380,10 @@ async def send_message(
 
     workspace_summary: dict | None = None
     workspace_scope_response: str | None = None
+    workspace_scope_id: uuid.UUID | None = None
     if session.doctwin_id is None:
-        workspace_summary = await _load_workspace_summary(session.workspace_id, db)
+        workspace_scope_id = session.workspace_id
+        workspace_summary = await _load_workspace_summary(workspace_scope_id, db)
         workspace_scope_response = _build_workspace_scope_response(content, workspace_summary)
 
     answer: LLMResponse | None = None
@@ -407,21 +428,26 @@ async def send_message(
                 path_hints=analysis.path_hints,
                 guaranteed_refs=guaranteed_refs,
                 expanded_query=analysis.expanded_query,
+                pipeline_trace_id=pipeline_trace_id,
             )
             retrieval_elapsed_ms += (perf_counter() - retrieval_started_at) * 1000
             chunks = retrieval_packet.chunks
         else:
             targeted_workspace_twin = _resolve_workspace_doctwin_from_query(content, workspace_summary or {})
             if targeted_workspace_twin is None and not _is_any_project_query(content):
+                assert workspace_scope_id is not None
                 answer, chunks, workspace_metrics = await _answer_across_workspace(
                     session=session,
+                    workspace_id=workspace_scope_id,
                     query=content,
                     history=history,
                     analysis=analysis,
                     workspace_summary=workspace_summary or {},
                     db=db,
                     trace_id=trace_id,
+                    pipeline_trace_id=pipeline_trace_id,
                 )
+                answer_from_workspace_aggregate = True
                 retrieval_elapsed_ms += workspace_metrics["retrieval_ms"]
                 generation_elapsed_ms += workspace_metrics["generation_ms"]
                 verification_elapsed_ms += workspace_metrics["verification_ms"]
@@ -455,6 +481,7 @@ async def send_message(
                             await _load_structure_inventory(routed_id_str, db),
                         ),
                         expanded_query=analysis.expanded_query,
+                        pipeline_trace_id=pipeline_trace_id,
                     )
                     retrieval_elapsed_ms += (perf_counter() - retrieval_started_at) * 1000
                     chunks = retrieval_packet.chunks
@@ -462,7 +489,7 @@ async def send_message(
                     retrieval_started_at = perf_counter()
                     routed_id_str, retrieval_packet = await route_and_retrieve_packet_for_workspace(
                         query=content,
-                        workspace_id=str(session.workspace_id),
+                        workspace_id=str(workspace_scope_id),
                         db=db,
                         top_k=top_k_ws,
                         intent=intent,
@@ -564,6 +591,7 @@ async def send_message(
                     sources=source_list,
                     memory_brief=memory_brief,
                     retrieval_packet=retrieval_packet,
+                    pipeline_trace_id=pipeline_trace_id,
                 )
                 generation_elapsed_ms += (perf_counter() - generation_started_at) * 1000
                 retry_hint: str | None = None
@@ -613,6 +641,7 @@ async def send_message(
                         memory_brief=memory_brief,
                         regeneration_hint=retry_hint,
                         retrieval_packet=retrieval_packet,
+                        pipeline_trace_id=pipeline_trace_id,
                     )
                     generation_elapsed_ms += (perf_counter() - generation_started_at) * 1000
                     verification_started_at = perf_counter()
@@ -648,6 +677,49 @@ async def send_message(
                         **quality_metrics.to_log_dict(),
                     )
 
+    from app.core.config import get_settings
+
+    _cfg = get_settings()
+    if (
+        _cfg.chat_quality_gate_enabled
+        and not used_deterministic_fallback
+        and not answer.model.startswith("deterministic")
+        and not answer_from_workspace_aggregate
+        and (session.doctwin_id is not None or routed_doctwin_id is not None)
+    ):
+        from app.domains.evaluation.quality_gate import apply_twin_path_quality_gate
+
+        answer, qg_gen_ms, qg_ver_ms = await apply_twin_path_quality_gate(
+            answer=answer,
+            query=content,
+            context_chunks=chunks,
+            doctwin_name=doctwin_name,
+            conversation_history=history,
+            custom_context=custom_context,
+            allow_code_snippets=allow_code_snippets,
+            trace_id=trace_id,
+            sources=source_list,
+            memory_brief=memory_brief,
+            retrieval_packet=retrieval_packet,
+            pipeline_trace_id=pipeline_trace_id,
+        )
+        generation_elapsed_ms += qg_gen_ms
+        verification_elapsed_ms += qg_ver_ms
+        if retrieval_packet is not None:
+            verification = verify_single_project_answer(
+                answer=answer.content,
+                doctwin_name=doctwin_name,
+                packet=retrieval_packet,
+                allow_retry=False,
+            )
+            answer.content = verification.content
+            quality_metrics = build_single_project_quality_metrics(
+                answer=answer.content,
+                packet=retrieval_packet,
+                verification=verification,
+                retry_requested=True,
+            )
+
     # Persist assistant message
     context_chunk_ids = [c["chunk_id"] for c in chunks if "chunk_id" in c]
     assistant_message = Message(
@@ -665,6 +737,7 @@ async def send_message(
     logger.info(
         "chat_message_processed",
         session_id=str(session_id),
+        pipeline_trace_id=pipeline_trace_id,
         chunks_used=len(chunks),
         intent=intent.value,
         memory_brief_injected=memory_brief is not None,
@@ -737,12 +810,11 @@ async def send_message(
         except Exception as exc:
             logger.warning("langfuse_trace_update_failed", error=str(exc))
 
-    # ── Fire async LLM-as-judge evaluation (non-blocking) ─────────────────────
-    # Runs in the background after the response is already persisted.
-    # Errors in evaluation are caught internally and never surface to the user.
-    if not used_deterministic_fallback:
+    # ── Passive LLM-as-judge (non-blocking) when active gate is off ────────────
+    if not used_deterministic_fallback and not _cfg.chat_quality_gate_enabled:
         try:
             from app.domains.evaluation.evaluator import evaluate_response_async
+
             asyncio.create_task(
                 evaluate_response_async(
                     query=content,
@@ -764,18 +836,26 @@ async def send_public_message(
     session_id: uuid.UUID,
     content: str,
     db: AsyncSession,
+    *,
+    visitor_id: str | None = None,
 ) -> Message:
     """
     Send a message in a public (anonymous) session.
 
     Verifies the session is anonymous and that the share surface is still active.
+    Sessions created with a ``visitor_id`` require the same id on each message.
     """
-    # Verify the surface is still active (owner may have revoked it)
-    await _load_active_surface(public_slug, db)
+    surface = await _load_active_surface(public_slug, db)
 
     session = await _load_session(session_id, db)
     if session.user_id is not None:
         raise ForbiddenError("Session is not a public anonymous session")
+    if not _session_belongs_to_surface(session, surface):
+        raise ForbiddenError("Session does not match this share link")
+    if session.visitor_id is not None and (
+        visitor_id is None or session.visitor_id != visitor_id
+    ):
+        raise ForbiddenError("Matching visitor_id required for this session")
 
     result = await send_message(
         session_id=session_id,
@@ -866,6 +946,66 @@ async def get_history(
     """Return all messages in a session. Verifies ownership."""
     session = await _load_session(session_id, db)
     _assert_session_access(session, user_id)
+
+    result = await db.execute(
+        select(Message)
+        .where(Message.session_id == session_id)
+        .order_by(Message.created_at)
+    )
+    return list(result.scalars().all())
+
+
+async def list_public_sessions(
+    public_slug: str,
+    visitor_id: str,
+    db: AsyncSession,
+    limit: int = 30,
+) -> list[dict]:
+    """
+    List recent anonymous sessions for a share surface and visitor id.
+
+    Used by public pages so visitors can resume prior chats when they reuse the same
+    opaque visitor_id (stored locally, not personal data).
+    """
+    surface = await _load_active_surface(public_slug, db)
+
+    conditions = [
+        ChatSession.user_id.is_(None),
+        ChatSession.visitor_id == visitor_id,
+    ]
+    if surface.doctwin_id is not None:
+        conditions.append(ChatSession.doctwin_id == surface.doctwin_id)
+    else:
+        if surface.workspace_id is None:
+            return []
+        conditions.append(ChatSession.workspace_id == surface.workspace_id)
+        conditions.append(ChatSession.doctwin_id.is_(None))
+
+    sessions_result = await db.execute(
+        select(ChatSession)
+        .where(*conditions)
+        .order_by(ChatSession.created_at.desc())
+        .limit(limit)
+    )
+    sessions = list(sessions_result.scalars().all())
+    return await _summarize_sessions(sessions, db)
+
+
+async def get_public_history(
+    public_slug: str,
+    session_id: uuid.UUID,
+    visitor_id: str,
+    db: AsyncSession,
+) -> list[Message]:
+    """Load messages for a public session; requires matching visitor_id on the session."""
+    surface = await _load_active_surface(public_slug, db)
+    session = await _load_session(session_id, db)
+    if session.user_id is not None:
+        raise ForbiddenError("Session is not a public anonymous session")
+    if not _session_belongs_to_surface(session, surface):
+        raise ForbiddenError("Session does not match this share link")
+    if session.visitor_id is None or session.visitor_id != visitor_id:
+        raise ForbiddenError("Invalid visitor id for this session")
 
     result = await db.execute(
         select(Message)
@@ -1088,21 +1228,17 @@ async def _load_workspace_summary(
 
 
 def _build_workspace_scope_response(query: str, workspace_summary: dict) -> str | None:
-    if not (_is_greeting(query) or _is_source_query(query) or _is_workspace_coverage_query(query)):
+    # Greetings and self-intros ("Hi, my name is …") must go through the LLM so the model
+    # can use conversation history and twin context — never short-circuit them here.
+    if not (_is_source_query(query) or _is_workspace_coverage_query(query)):
         return None
 
-    workspace_name = workspace_summary.get("workspace_name") or "this workspace"
     twins = workspace_summary.get("twins") or []
     total_twins = int(workspace_summary.get("total_twins") or 0)
     ready_twins = int(workspace_summary.get("ready_twins") or 0)
     active_twins = int(workspace_summary.get("active_twins") or 0)
 
     if total_twins == 0:
-        if _is_greeting(query):
-            return (
-                "Hi! This workspace is set up, but it doesn't have any twins attached yet. "
-                "Once twins are added, I can route questions across them."
-            )
         return (
             "This workspace currently has **0 twins**, so there's nothing I can route across yet. "
             "Add a twin first, then I can answer workspace-wide questions."
@@ -1129,12 +1265,6 @@ def _build_workspace_scope_response(query: str, workspace_summary: dict) -> str 
         f"**{ready_twins}** {'have' if ready_twins != 1 else 'has'} ready sources I can answer from right now, "
         f"and **{active_twins}** {'are' if active_twins != 1 else 'is'} marked active."
     )
-
-    if _is_greeting(query):
-        return (
-            f"Hi! I'm the workspace chat for **{workspace_name}**. {summary_line} "
-            "Ask about a specific twin, or ask what this workspace covers."
-        )
 
     heading = "## Workspace coverage" if _is_workspace_coverage_query(query) else "## Available twins"
     return (
@@ -1231,12 +1361,14 @@ def _build_workspace_topic_gap_response(
 async def _answer_across_workspace(
     *,
     session: ChatSession,
+    workspace_id: uuid.UUID,
     query: str,
     history: list[dict],
     analysis: QueryAnalysis,
     workspace_summary: dict,
     db: AsyncSession,
     trace_id: str | None,
+    pipeline_trace_id: str | None = None,
 ) -> tuple[LLMResponse, list[dict], dict]:
     project_summaries = workspace_summary.get("twins") or []
     workspace_name = workspace_summary.get("workspace_name") or "this workspace"
@@ -1287,6 +1419,7 @@ async def _answer_across_workspace(
                 path_hints=analysis.path_hints,
                 guaranteed_refs=guaranteed_refs,
                 expanded_query=analysis.expanded_query,
+                pipeline_trace_id=pipeline_trace_id,
             )
             project_chunks = project_packet.chunks
             for chunk in project_chunks:
@@ -1311,7 +1444,7 @@ async def _answer_across_workspace(
         retrieval_elapsed_ms = (perf_counter() - retrieval_started_at) * 1000
         logger.info(
             "workspace_topic_no_grounding",
-            workspace_id=str(session.workspace_id),
+            workspace_id=str(workspace_id),
             query_length=len(query),
             projects_checked=len(project_contexts),
         )
@@ -1329,6 +1462,7 @@ async def _answer_across_workspace(
                 workspace_name=workspace_name,
                 project_contexts=project_contexts,
                 allow_retry=False,
+                query=query,
             ),
             retry_requested=False,
         )
@@ -1341,18 +1475,18 @@ async def _answer_across_workspace(
         )
         logger.info(
             "workspace_answer_quality_metrics",
-            workspace_id=str(session.workspace_id),
+            workspace_id=str(workspace_id),
             **quality_metrics.to_log_dict(),
         )
         logger.info(
             "workspace_chat_latency_metrics",
-            workspace_id=str(session.workspace_id),
+            workspace_id=str(workspace_id),
             **latency_report.to_log_dict(),
         )
         if latency_report.budget_exceeded:
             logger.warning(
                 "workspace_chat_latency_budget_exceeded",
-                workspace_id=str(session.workspace_id),
+                workspace_id=str(workspace_id),
                 **latency_report.to_log_dict(),
             )
         return answer, merged_chunks, {
@@ -1365,11 +1499,12 @@ async def _answer_across_workspace(
     retrieval_elapsed_ms = (perf_counter() - retrieval_started_at) * 1000
     logger.info(
         "workspace_aggregate_retrieval_complete",
-        workspace_id=str(session.workspace_id),
+        workspace_id=str(workspace_id),
         projects_checked=len(project_contexts),
         projects_with_hits=sum(1 for project in project_contexts if project["chunks"]),
         chunks_returned=len(merged_chunks),
     )
+    workspace_memory_text = await get_workspace_synthesis(str(workspace_id), db)
     generation_started_at = perf_counter()
     answer = await generate_workspace_answer(
         workspace_name=workspace_name,
@@ -1377,7 +1512,7 @@ async def _answer_across_workspace(
         project_contexts=project_contexts,
         conversation_history=history,
         trace_id=trace_id,
-        workspace_memory=await get_workspace_synthesis(str(session.workspace_id), db),
+        workspace_memory=workspace_memory_text,
     )
     generation_elapsed_ms += (perf_counter() - generation_started_at) * 1000
     verification_started_at = perf_counter()
@@ -1386,13 +1521,14 @@ async def _answer_across_workspace(
         workspace_name=workspace_name,
         project_contexts=project_contexts,
         allow_retry=True,
+        query=query,
     )
     verification_elapsed_ms += (perf_counter() - verification_started_at) * 1000
     if verification.retry_hint:
         retry_requested = True
         logger.info(
             "workspace_answer_verifier_retry_requested",
-            workspace_id=str(session.workspace_id),
+            workspace_id=str(workspace_id),
             issues=verification.issues,
         )
         generation_started_at = perf_counter()
@@ -1403,7 +1539,7 @@ async def _answer_across_workspace(
             conversation_history=history,
             trace_id=trace_id,
             regeneration_hint=verification.retry_hint,
-            workspace_memory=await get_workspace_synthesis(str(session.workspace_id), db),
+            workspace_memory=workspace_memory_text,
         )
         generation_elapsed_ms += (perf_counter() - generation_started_at) * 1000
         verification_started_at = perf_counter()
@@ -1412,10 +1548,40 @@ async def _answer_across_workspace(
             workspace_name=workspace_name,
             project_contexts=project_contexts,
             allow_retry=False,
+            query=query,
         )
         verification_elapsed_ms += (perf_counter() - verification_started_at) * 1000
 
     answer.content = verification.content
+
+    from app.core.config import get_settings as _ws_gate_settings
+    from app.domains.evaluation.quality_gate import apply_workspace_aggregate_quality_gate
+
+    if _ws_gate_settings().chat_quality_gate_enabled and not answer.model.startswith(
+        "deterministic"
+    ):
+        answer, qg_gen_ms, qg_ver_ms = await apply_workspace_aggregate_quality_gate(
+            answer=answer,
+            query=query,
+            merged_chunks=merged_chunks,
+            workspace_name=workspace_name,
+            project_contexts=project_contexts,
+            conversation_history=history,
+            workspace_memory=workspace_memory_text,
+            trace_id=trace_id,
+            workspace_id=workspace_id,
+        )
+        generation_elapsed_ms += qg_gen_ms
+        verification_elapsed_ms += qg_ver_ms
+        verification = verify_workspace_answer(
+            answer=answer.content,
+            workspace_name=workspace_name,
+            project_contexts=project_contexts,
+            allow_retry=False,
+            query=query,
+        )
+        answer.content = verification.content
+
     quality_metrics = build_workspace_quality_metrics(
         answer=answer.content,
         project_contexts=project_contexts,
@@ -1424,7 +1590,7 @@ async def _answer_across_workspace(
     )
     logger.info(
         "workspace_answer_verifier_complete",
-        workspace_id=str(session.workspace_id),
+        workspace_id=str(workspace_id),
         verified=verification.verified,
         rewritten=verification.rewritten,
         issues=verification.issues,
@@ -1432,7 +1598,7 @@ async def _answer_across_workspace(
     )
     logger.info(
         "workspace_answer_quality_metrics",
-        workspace_id=str(session.workspace_id),
+        workspace_id=str(workspace_id),
         **quality_metrics.to_log_dict(),
     )
     latency_report = build_chat_latency_report(
@@ -1444,13 +1610,13 @@ async def _answer_across_workspace(
     )
     logger.info(
         "workspace_chat_latency_metrics",
-        workspace_id=str(session.workspace_id),
+        workspace_id=str(workspace_id),
         **latency_report.to_log_dict(),
     )
     if latency_report.budget_exceeded:
         logger.warning(
             "workspace_chat_latency_budget_exceeded",
-            workspace_id=str(session.workspace_id),
+            workspace_id=str(workspace_id),
             **latency_report.to_log_dict(),
         )
     return answer, merged_chunks, {
@@ -1517,7 +1683,7 @@ def _build_no_grounding_response(
             )
         return (
             f"I can see sources attached to {scope_label} but none are ready yet: "
-            f"{scope_label} are ready: {source_summary}. Once processing finishes, ask again."
+            f"{source_summary}. Once processing finishes, ask again."
         )
 
     if _is_source_query(query):

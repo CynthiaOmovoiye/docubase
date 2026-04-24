@@ -18,7 +18,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connectors.google_drive.connector import _fetch_file_content as drive_fetch_file_content
 from app.connectors.google_drive.connector import _make_client as drive_make_client
-from app.connectors.pdf.connector import PDFConnector
 from app.core.logging import get_logger
 from app.domains.integrations.service import resolve_access_token
 from app.domains.knowledge.evidence import build_segment_id, hash_text
@@ -28,9 +27,13 @@ from app.models.source import Source, SourceIndexMode, SourceType
 
 logger = get_logger(__name__)
 
-_MAX_HYDRATION_DURATION_MS = 300.0
+# Wall-clock budget for the whole hydrate pass (Google Drive round-trips are ~0.5–2s each).
+_MAX_HYDRATION_DURATION_MS = 8000.0
 _MAX_HYDRATED_CHUNKS = 8
 _DRIVE_PATH_ID_RE = re.compile(r"\[([a-zA-Z0-9_\-]{10,100})\]\s*$")
+# Strict re-chunk of a Drive PDF often diverges from indexed segment hashes; DB text is
+# authoritative after correct PDF extraction, and live re-split is a poor reconciliation signal.
+_DRIVE_STRICT_HYDRATE_SKIP_RE = re.compile(r"\.pdf\b", re.IGNORECASE)
 
 
 async def hydrate_retrieved_chunks(
@@ -92,6 +95,14 @@ async def hydrate_retrieved_chunks(
             or chunk_row.lineage
             not in {ChunkLineage.file_backed, ChunkLineage.connector_segment}
             or not chunk_row.source_ref
+        ):
+            hydrated.append(hydrated_chunk)
+            continue
+
+        path = chunk_row.source_ref or ""
+        if (
+            source.source_type == SourceType.google_drive
+            and _DRIVE_STRICT_HYDRATE_SKIP_RE.search(path)
         ):
             hydrated.append(hydrated_chunk)
             continue
@@ -232,16 +243,12 @@ async def _hydrate_pdf_text(source: Source) -> str | None:
     file_path = source.connection_config.get("file_path")
     if not file_path:
         return None
-    connector = PDFConnector()
-    result = await connector.fetch(
-        {
-            "file_path": file_path,
-            "source_id": str(source.id),
-        }
-    )
-    if not result.files:
+    from app.connectors.pdf.text_extract import extract_readable_pdf_text_from_path
+
+    text = extract_readable_pdf_text_from_path(str(file_path))
+    if not text:
         return None
-    return result.files[0].content.replace("\x00", "")
+    return text.replace("\x00", "")
 
 
 async def _hydrate_google_drive_file(

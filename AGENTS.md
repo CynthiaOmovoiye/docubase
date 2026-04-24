@@ -110,6 +110,7 @@ Preserve strong separation between these domains. Do not mix them carelessly.
 | Policy / Safety | Redaction, code exposure rules, secret detection, output constraints |
 | Retrieval / Routing | Source selection, twin selection, workspace-wide routing, intent boost |
 | Answering | Grounded generation from approved context only |
+| Evaluation / quality | Active LLM-as-judge gate with Pydantic (`quality_gate.py`); passive dimensional judge + Langfuse when gate off; evidence verifiers |
 | Memory | LLM-based extraction, brief generation, intent classification, Redis locking |
 | Sharing / Public Surfaces | Public links, twin pages, workspace pages, embed tokens, revocation |
 | Frontend | Owner dashboard, public pages, embed UI, chat interface |
@@ -141,8 +142,14 @@ answers WHY, not just WHERE. The product architecture reflects this.
 ### Memory Brief artifact
 - Stored in `doctwin_configs.memory_brief` (Text column, system-authored)
 - NOT in `custom_context` (that field is owner-editable)
-- Injected into system prompt as `<memory_brief>` XML block — sanitized before injection
+- Injected into the answer system prompt as the knowledge-overview block — sanitized before injection (`generator.py`)
 - Visible to twin owners only — never on public share surfaces (`PublicTwinConfigResponse`)
+
+### Chat quality gate (active orchestration)
+- When `chat_quality_gate_enabled` (see `app/core/config.py`), `send_message` runs a **synchronous** judge after generation + evidence verification. The judge returns JSON validated by **`ResponseQualityGate`** (`pydantic`, `extra="forbid"`): `is_acceptable` and `feedback`. Rejected drafts trigger **bounded** extra `generate_answer` / `generate_workspace_answer` calls with explicit feedback, then re-verification — **before** the assistant message is persisted.
+- Workspace **aggregate** chat runs the gate inside `_answer_across_workspace` after workspace verifier pass.
+- When the gate is **disabled**, the legacy **async** `evaluate_response_async` still runs for dimensional scores and Langfuse — no second judge on the hot path when the gate is on.
+- Workspace verifier skips per-project `##` headers for **conversational** user turns (see `verifier.py` + `_is_workspace_conversational_query`) so natural visitor dialogue is not replaced by internal evidence templates.
 
 ### Intent-aware retrieval
 - `app/domains/retrieval/intent.py` classifies queries via regex before vector search
@@ -274,7 +281,7 @@ Tests live in `backend/tests/unit/` and `backend/tests/integration/`. Unit tests
 Keep docs current as the architecture evolves.
 
 Maintain at minimum:
-- `README.md` — project entry point
+- `README.md` — project entry point (technical reviewers & recruiters: problem, architecture, evaluation, deployment)
 - `docs/architecture.md` — full domain model and data flow
 - `docs/workspace.md` — directory layout guide
 - `docs/adr/` — architecture decision records for significant decisions

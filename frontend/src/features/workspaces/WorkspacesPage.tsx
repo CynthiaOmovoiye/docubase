@@ -2,7 +2,12 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import AppShell from "@/components/AppShell";
-import { useWorkspaceShareSurfacesForWorkspaces } from "@/hooks/useSharing";
+import {
+  useCreateWorkspaceSharePage,
+  useRevokeShareSurface,
+  useWorkspaceShareSurfaces,
+  useWorkspaceShareSurfacesForWorkspaces,
+} from "@/hooks/useSharing";
 import { useTwinsForWorkspaces } from "@/hooks/useTwins";
 import {
   useCreateWorkspace,
@@ -19,6 +24,9 @@ export default function WorkspacesPage() {
   const deleteWorkspace = useDeleteWorkspace();
 
   const [showCreate, setShowCreate] = useState(false);
+  const [shareWorkspace, setShareWorkspace] = useState<{ id: string; name: string } | null>(
+    null,
+  );
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -77,8 +85,9 @@ export default function WorkspacesPage() {
             <p style={s.eyebrow}>Workspaces</p>
             <h1 style={s.title}>Manage your workspaces</h1>
             <p style={s.subtitle}>
-              Create, open, and remove workspaces here. Clicking a workspace opens its routed
-              chat, and each workspace can jump straight into its twins list.
+              Create, open, and remove workspaces here. The Public link button on each row
+              creates a shareable URL for workspace-wide routed chat (like a twin share link,
+              but for the whole workspace).
             </p>
           </div>
           <button style={s.primaryBtn} onClick={() => setShowCreate(true)}>
@@ -144,6 +153,15 @@ export default function WorkspacesPage() {
                     View twins
                   </button>
                   <button
+                    style={s.secondaryBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShareWorkspace({ id: workspace.id, name: workspace.name });
+                    }}
+                  >
+                    Public link
+                  </button>
+                  <button
                     style={s.deleteBtn}
                     disabled={deleteWorkspace.isPending}
                     onClick={(e) => {
@@ -159,6 +177,17 @@ export default function WorkspacesPage() {
           </div>
         )}
       </div>
+
+      {shareWorkspace && (
+        <Modal onClose={() => setShareWorkspace(null)}>
+          <h2 style={s.modalTitle}>Public link — {shareWorkspace.name}</h2>
+          <p style={s.modalSubtitle}>
+            Visitors can chat on this workspace&apos;s routed surface without signing in. They
+            cannot change workspace or twin settings.
+          </p>
+          <WorkspaceShareLinksPanel workspaceId={shareWorkspace.id} />
+        </Modal>
+      )}
 
       {showCreate && (
         <Modal onClose={() => { setShowCreate(false); setError(null); }}>
@@ -208,6 +237,166 @@ export default function WorkspacesPage() {
     </AppShell>
   );
 }
+
+function WorkspaceShareLinksPanel({ workspaceId }: { workspaceId: string }) {
+  const { data: surfaces = [], isLoading } = useWorkspaceShareSurfaces(workspaceId);
+  const createPage = useCreateWorkspaceSharePage();
+  const revoke = useRevokeShareSurface();
+  const [copied, setCopied] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState<string | null>(null);
+
+  const pageLinks = surfaces.filter((surface) => surface.surface_type === "workspace_page");
+
+  function copyUrl(url: string, id: string) {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(id);
+      setTimeout(() => setCopied(null), 2000);
+    });
+  }
+
+  return (
+    <div style={sh.panel}>
+      <div style={sh.header}>
+        <span style={sh.panelTitle}>Share URL</span>
+        {pageLinks.length === 0 && (
+          <button
+            type="button"
+            style={sh.generateBtn}
+            disabled={createPage.isPending || isLoading}
+            onClick={() => createPage.mutate(workspaceId)}
+          >
+            {createPage.isPending ? "Generating…" : "Generate link"}
+          </button>
+        )}
+      </div>
+
+      {createPage.isError && (
+        <p style={sh.error}>Failed to generate link. It may already exist.</p>
+      )}
+
+      {isLoading && <p style={sh.hint}>Loading…</p>}
+
+      {!isLoading && pageLinks.length === 0 && (
+        <p style={sh.hint}>
+          No public link yet. Generate one to share workspace-wide routed chat.
+        </p>
+      )}
+
+      {pageLinks.map((surface) => (
+        <div key={surface.id} style={sh.linkRow}>
+          <span style={sh.url}>{surface.public_url}</span>
+          <div style={sh.actions}>
+            <button
+              type="button"
+              style={sh.copyBtn}
+              onClick={() => copyUrl(surface.public_url, surface.id)}
+            >
+              {copied === surface.id ? "✓ Copied" : "Copy"}
+            </button>
+            <button
+              type="button"
+              style={sh.revokeBtn}
+              disabled={revoking === surface.id}
+              onClick={() => {
+                setRevoking(surface.id);
+                revoke.mutate(
+                  { surfaceId: surface.id, workspaceId },
+                  { onSettled: () => setRevoking(null) },
+                );
+              }}
+            >
+              {revoking === surface.id ? "Revoking…" : "Revoke"}
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const sh: Record<string, React.CSSProperties> = {
+  panel: {
+    marginTop: 4,
+    border: "1px solid var(--color-border)",
+    borderRadius: 12,
+    padding: "14px 16px",
+    background: "var(--color-bg)",
+  },
+  header: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  panelTitle: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: "var(--color-text-primary)",
+  },
+  generateBtn: {
+    fontSize: 12,
+    padding: "6px 14px",
+    borderRadius: 8,
+    border: "1px solid var(--color-iris)",
+    background: "var(--color-iris)",
+    color: "#fff",
+    cursor: "pointer",
+  },
+  hint: {
+    fontSize: 13,
+    color: "var(--color-text-secondary)",
+    margin: 0,
+    lineHeight: 1.5,
+  },
+  error: {
+    fontSize: 13,
+    color: "var(--color-rose)",
+    margin: "0 0 8px",
+  },
+  linkRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    padding: "10px 0 0",
+    marginTop: 8,
+    borderTop: "1px solid var(--color-border)",
+    flexWrap: "wrap",
+  },
+  url: {
+    fontFamily: "var(--font-mono)",
+    fontSize: 12,
+    color: "var(--color-text-primary)",
+    wordBreak: "break-all",
+    flex: 1,
+    minWidth: 0,
+  },
+  actions: {
+    display: "flex",
+    gap: 8,
+    flexShrink: 0,
+  },
+  copyBtn: {
+    fontSize: 12,
+    padding: "5px 12px",
+    borderRadius: 8,
+    border: "1px solid var(--color-border)",
+    background: "var(--color-surface)",
+    color: "var(--color-text-secondary)",
+    cursor: "pointer",
+  },
+  revokeBtn: {
+    fontSize: 12,
+    padding: "5px 12px",
+    borderRadius: 8,
+    border: "1px solid rgba(239,68,68,0.35)",
+    background: "transparent",
+    color: "var(--color-rose)",
+    cursor: "pointer",
+  },
+};
 
 function Modal({
   children,

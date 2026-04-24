@@ -2,15 +2,12 @@
  * Public workspace share page.
  *
  * Accessible at /w/:slug — no auth required.
- * Renders a single workspace-wide chat surface. The backend routes each message
- * to the most relevant twin within the workspace.
  */
 
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-
-import { ChatInterface } from "@/features/chat/components/ChatInterface";
 import { api } from "@/lib/api";
+import { PublicChatShell } from "@/features/sharing/PublicChatShell";
 
 interface PublicSurfaceInfo {
   surface_type: string;
@@ -46,7 +43,7 @@ export default function PublicWorkspacePage() {
     );
   }
 
-  if (error || !info) {
+  if (error || !info || !slug) {
     return (
       <div style={s.center}>
         <p style={s.errorText}>{error || "Workspace not found."}</p>
@@ -58,28 +55,27 @@ export default function PublicWorkspacePage() {
   const accentColor = info.accent_color || "#6366F1";
 
   return (
-    <div style={{ ...s.page, "--accent": accentColor } as React.CSSProperties}>
-      <header style={s.hero}>
-        <div style={s.heroInner}>
-          <p style={s.eyebrow}>Public workspace chat</p>
-          <h1 style={s.title}>{workspaceName}</h1>
-          <p style={s.subtitle}>
-            Ask across the projects in this workspace. docbase routes each question to the
-            most relevant twin and answers from approved project knowledge only.
-          </p>
-        </div>
-      </header>
-
-      <main style={s.main}>
-        <div style={s.chatWrap}>
-          <ChatInterface
-            publicSlug={slug}
-            twinName={workspaceName}
-            accentColor={accentColor}
-            placeholder="Ask anything across this workspace..."
-          />
-        </div>
-      </main>
+    <div style={s.page}>
+      <PublicChatShell
+        publicSlug={slug}
+        displayName={workspaceName}
+        accentColor={accentColor}
+        placeholder="Ask anything across this workspace…"
+        eyebrow="Public workspace"
+        subtitle="Questions are routed to the most relevant twin; answers use approved knowledge only."
+        emptyState={
+          <div style={s.promptCard}>
+            <div style={{ ...s.promptOrb, color: accentColor, borderColor: `${accentColor}44` }}>
+              ◎
+            </div>
+            <h2 style={s.promptTitle}>Ask across {workspaceName}</h2>
+            <p style={s.promptBody}>
+              Workspace chat routes each message to the best twin while staying grounded. Save a
+              visitor ID if you want to resume this thread later from History.
+            </p>
+          </div>
+        }
+      />
 
       <footer style={s.footer}>
         <p style={s.footerText}>Powered by docbase</p>
@@ -93,8 +89,8 @@ const s: Record<string, React.CSSProperties> = {
     minHeight: "100vh",
     display: "flex",
     flexDirection: "column",
-    background:
-      "radial-gradient(circle at top left, rgba(99,102,241,0.12), transparent 30%), var(--color-bg)",
+    background: "var(--color-bg)",
+    color: "var(--color-text-primary)",
   },
   center: {
     minHeight: "100vh",
@@ -107,63 +103,58 @@ const s: Record<string, React.CSSProperties> = {
     height: 28,
     borderRadius: "50%",
     border: "3px solid var(--color-border)",
-    borderTopColor: "var(--color-iris)",
+    borderTopColor: "var(--color-teal)",
     animation: "spin 0.7s linear infinite",
   },
   errorText: {
     color: "var(--color-text-secondary)",
     fontSize: 15,
   },
-  hero: {
-    padding: "40px 24px 20px",
-  },
-  heroInner: {
-    maxWidth: 980,
-    margin: "0 auto",
-  },
-  eyebrow: {
-    margin: 0,
-    fontSize: 12,
-    fontWeight: 700,
-    letterSpacing: "0.08em",
-    textTransform: "uppercase",
-    color: "var(--accent)",
-  },
-  title: {
-    margin: "10px 0 0",
-    fontFamily: "var(--font-display)",
-    fontSize: 34,
-    letterSpacing: "-0.03em",
-    color: "var(--color-text-primary)",
-  },
-  subtitle: {
-    margin: "12px 0 0",
-    maxWidth: 720,
-    lineHeight: 1.7,
-    color: "var(--color-text-secondary)",
-    fontSize: 15,
-  },
-  main: {
-    flex: 1,
-    padding: "0 24px 32px",
-  },
-  chatWrap: {
-    maxWidth: 980,
-    margin: "0 auto",
-    minHeight: 640,
+  promptCard: {
+    maxWidth: 520,
+    padding: "28px 26px",
+    borderRadius: 20,
     background: "var(--color-surface)",
     border: "1px solid var(--color-border)",
-    borderRadius: 20,
-    overflow: "hidden",
     boxShadow: "var(--shadow-sm)",
-  },
-  footer: {
-    padding: "12px 24px 24px",
     textAlign: "center",
   },
-  footerText: {
+  promptOrb: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    margin: "0 auto 18px",
+    border: "1px solid var(--color-border)",
+    background: "var(--color-bg)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 22,
+    fontWeight: 700,
+  },
+  promptTitle: {
     margin: 0,
+    fontFamily: "var(--font-display)",
+    fontSize: 24,
+    letterSpacing: "-0.02em",
+    color: "var(--color-text-primary)",
+  },
+  promptBody: {
+    margin: "12px 0 0",
+    fontSize: 14,
+    lineHeight: 1.7,
     color: "var(--color-text-secondary)",
+  },
+  footer: {
+    padding: "10px 20px",
+    borderTop: "1px solid var(--color-border)",
+    textAlign: "center",
+    flexShrink: 0,
+    background: "var(--color-surface)",
+  },
+  footerText: {
     fontSize: 12,
+    color: "var(--color-text-secondary)",
+    margin: 0,
   },
 };

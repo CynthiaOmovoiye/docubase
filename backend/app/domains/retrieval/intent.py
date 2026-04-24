@@ -189,8 +189,9 @@ class QueryAnalysis(BaseModel):
 
 
 _ANALYSE_SYSTEM = """\
-You are a query analyser for a software engineering knowledge base (codebase documentation, \
-architecture notes, change history, risk assessments, onboarding guides).
+You are a query analyser for Docbase: a document-grounded assistant. Attached materials may be \
+resumes, policies, product docs, personal notes, or software repositories (code, architecture \
+notes, change history, risk assessments, onboarding guides).
 
 Given a user query, return ONLY a JSON object — no markdown fences, no prose.
 
@@ -219,8 +220,22 @@ expanded_query rules:
   - Rewrite the query to be more specific and descriptive for semantic search
   - Keep it short: 1-2 sentences, no bullet points
   - Do not add information that isn't implied by the original query
+  - For identity or biographical questions (name, role, education, resume, "who are you"), \
+set expanded_query to "" (empty string). Do not reframe such questions as about a software product.
 
 Return ONLY the JSON. Nothing else."""
+
+# Fast path: skip LLM expansion that previously steered embeddings toward "software system" wording.
+_PROFILE_OR_IDENTITY_RE = re.compile(
+    r"\b("
+    r"your\s+name|who\s+are\s+you|what(?:'s|\s+is)\s+your\s+name|"
+    r"tell\s+me\s+about\s+yourself|your\s+(?:full\s+)?name|"
+    r"how\s+(?:do\s+you|should\s+i)\s+call\s+you|"
+    r"what(?:'s|\s+is)\s+your\s+(?:current\s+)?role|your\s+background|"
+    r"your\s+education|(?:where\s+did\s+you|which\s+university)|\bresume\b|\bcv\b"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 async def analyse_query(query: str) -> QueryAnalysis:
@@ -234,6 +249,15 @@ async def analyse_query(query: str) -> QueryAnalysis:
     The call is lightweight (~100ms) and intended to run concurrently with the
     query embedding to avoid adding net latency to the retrieval pipeline.
     """
+    stripped = query.strip()
+    if _PROFILE_OR_IDENTITY_RE.search(stripped):
+        rh = extract_path_hint(stripped)
+        return QueryAnalysis(
+            intent=QueryIntent.general,
+            path_hints=[rh] if rh else [],
+            expanded_query="",
+        )
+
     from app.domains.answering.llm_provider import get_llm_provider
 
     try:

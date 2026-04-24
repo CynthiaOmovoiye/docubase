@@ -43,7 +43,33 @@ def build_answer_authority_diagnosis(
     sources: list[dict[str, Any]] | None,
     source_models: list[Any] | None,
 ) -> AnswerAuthorityDiagnosis:
-    del retrieval_packet, sources, source_models
+    del sources, source_models
+    retrieval_signal: dict[str, Any] = {}
+    if retrieval_packet is not None:
+        mode_val = (
+            retrieval_packet.mode.value
+            if hasattr(retrieval_packet.mode, "value")
+            else str(retrieval_packet.mode)
+        )
+        retrieval_signal = {
+            "chunks_returned": len(retrieval_packet.chunks),
+            "missing_evidence": list(retrieval_packet.missing_evidence),
+            "searched_layers": list(retrieval_packet.searched_layers),
+            "search_query_preview": (retrieval_packet.search_query or "")[:240],
+            "lexical_query_preview": (retrieval_packet.lexical_query or "")[:240],
+            "mode": mode_val,
+            "hits": [
+                {
+                    "chunk_id": str(ch.get("chunk_id") or ""),
+                    "score": round(float(ch.get("score") or 0.0), 5),
+                    "chunk_type": str(ch.get("chunk_type") or ""),
+                    "source_ref": (ch.get("source_ref") or "")[:160],
+                    "match_reasons": list(ch.get("match_reasons") or []),
+                    "content_preview": (ch.get("content") or "")[:220],
+                }
+                for ch in retrieval_packet.chunks[:16]
+            ],
+        }
     reasons: list[str] = []
     if used_deterministic_fallback:
         reasons.append("deterministic_fallback")
@@ -75,7 +101,7 @@ def build_answer_authority_diagnosis(
         authority_level=level,
         degraded_reasons=reasons,
         stage_signals={
-            "retrieval": {},
+            "retrieval": retrieval_signal,
             "generation": {},
             "verification": {},
         },

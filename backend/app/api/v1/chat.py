@@ -11,7 +11,7 @@ Auth rules:
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -20,6 +20,7 @@ from app.domains.chat import service as chat_svc
 from app.models.user import User
 from app.schemas.chat import (
     ChatSessionSummary,
+    CreatePublicSessionRequest,
     CreateSessionResponse,
     HistoryResponse,
     MessageResponse,
@@ -27,6 +28,14 @@ from app.schemas.chat import (
 )
 
 router = APIRouter()
+
+_VISITOR_ID_QUERY = Query(
+    ...,
+    min_length=8,
+    max_length=64,
+    pattern=r"^[a-zA-Z0-9_-]+$",
+    description="Opaque visitor key; must match the id used when sessions were created.",
+)
 
 
 # ─── Authenticated routes ─────────────────────────────────────────────────────
@@ -193,6 +202,7 @@ async def list_workspace_sessions(
 )
 async def create_public_session(
     public_slug: str,
+    body: CreatePublicSessionRequest = CreatePublicSessionRequest(),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -200,13 +210,59 @@ async def create_public_session(
     No auth required. The share surface must be active.
     """
     try:
-        session = await chat_svc.create_public_session(public_slug, db)
+        session = await chat_svc.create_public_session(
+            public_slug,
+            db,
+            visitor_id=body.visitor_id,
+        )
     except chat_svc.NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
 
     await db.commit()
     await db.refresh(session)
     return CreateSessionResponse.from_session(session)
+
+
+@router.get(
+    "/public/{public_slug}/sessions",
+    response_model=list[ChatSessionSummary],
+)
+async def list_public_chat_sessions(
+    public_slug: str,
+    visitor_id: str = _VISITOR_ID_QUERY,
+    db: AsyncSession = Depends(get_db),
+):
+    """List sessions for this share link that belong to the given visitor id."""
+    try:
+        summaries = await chat_svc.list_public_sessions(public_slug, visitor_id, db)
+    except chat_svc.NotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    return [ChatSessionSummary(**s) for s in summaries]
+
+
+@router.get(
+    "/public/{public_slug}/session/{session_id}/history",
+    response_model=HistoryResponse,
+)
+async def get_public_chat_history(
+    public_slug: str,
+    session_id: uuid.UUID,
+    visitor_id: str = _VISITOR_ID_QUERY,
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch message history for a visitor-bound public session."""
+    try:
+        messages = await chat_svc.get_public_history(public_slug, session_id, visitor_id, db)
+    except chat_svc.NotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except chat_svc.ForbiddenError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+
+    return HistoryResponse(
+        session_id=session_id,
+        messages=[MessageResponse.from_message(m) for m in messages],
+    )
 
 
 @router.post(
@@ -217,6 +273,11 @@ async def send_public_message(
     public_slug: str,
     session_id: uuid.UUID,
     body: SendMessageRequest,
+    visitor_id: str | None = Query(
+        default=None,
+        max_length=64,
+        description="Required when the session was created with a visitor_id.",
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -229,6 +290,7 @@ async def send_public_message(
             session_id=session_id,
             content=body.content,
             db=db,
+            visitor_id=visitor_id,
         )
     except chat_svc.NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))

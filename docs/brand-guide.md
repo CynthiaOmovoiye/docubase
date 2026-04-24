@@ -1,76 +1,65 @@
 # Brand Guide — docbase
 
-Version 1.1 | April 2026
+Version 1.2 | April 2026
 
 ---
 
-## 1. Product Name
+## 1. Product name
 
 ### **docbase**
 
-Pronounced: *oh-pus EK-oh*
+**Pronunciation:** *DOCK-base* (like “document” + “base”).
 
-**Name etymology:**
-- *Opus* — Latin for "the work." The thing you've made. Your repositories, projects, portfolios, career history — all of it.
-- *Echo* — Greek, the voice that answers back. The conversational layer. Visitors ask; your work responds.
-- Together: **your work, speaking back** — an intelligent twin that holds a conversation on your behalf.
+**What the name communicates**
+- A **base** you trust for your **documents** and sources — resumes, Drive folders, product docs, portfolios.
+- One word, easy to spell, works in UI chrome (“Powered by docbase”), email, and legal copy.
 
-**Why docbase:**
-- Encodes all three core product aspects in two words: work, twin, conversation
-- Not boxed into developer or repo territory — covers career twins, portfolio twins, project twins equally
-- No real brand footprint in the SaaS or AI space — fully ownable
-- Internationally readable — both roots are recognisable across languages
-- Works as a domain: `docbase.app`, `docbase.io`, `docbase.dev`
-- Scales to every use case: an docbase for your project, your career, your portfolio, your knowledge
+**Positioning (one line)**  
+Grounded AI **twins** over **approved knowledge** — visitors chat; answers stay tied to what you indexed, not the open internet.
 
-**Tagline:** *Your work, in conversation.*
+**Primary tagline**  
+*Grounded answers from your real work.*
 
-**Secondary tagline options:**
-- *The AI that speaks for your work*
-- *Share what you've built. Without the exposure.*
-- *An intelligent twin for every project, profile, and portfolio*
-- *Let people talk to your work*
+**Secondary taglines** (context-specific)
+- *Your knowledge — in conversation.*
+- *Share a link. Keep control of what the AI can say.*
+- *One twin per project, profile, or portfolio.*
 
 ---
 
-### Alternative name candidates (reserved)
+## 2. Brand personality
 
-| Name | Rationale |
-|------|-----------|
-| **ImagoVox** | *imago* (likeness) + *vox* (voice) — "your likeness, speaking" |
-| **TwinFolio** | Descriptive fallback — twin + portfolio |
-| **AnimaVox** | *anima* (soul, essence) + *vox* — more poetic, career-facing |
-| **OpusVox** | *opus* + *vox* — "the work, given voice" — close second |
+docbase should feel like a **sharp colleague** explaining *their* work to a visitor: competent, clear, never condescending.
 
-**Decision:** docbase is the name. The tagline "Your work, in conversation" is a direct English translation of the name itself.
+| Trait | In practice |
+|-------|-------------|
+| **Trustworthy** | Visitors know answers come from **your** sources; nothing feels leaked, scraped, or accidental. |
+| **Intelligent** | Replies are specific and grounded — not generic “as an AI model” filler. |
+| **Minimal** | UI stays quiet; **the conversation** is the hero. |
+| **Warm** | Professional without frost — especially on **public** career or portfolio pages. |
 
----
-
-## 2. Brand Personality
-
-docbase should feel like the smartest person in the room who never makes you feel small.
-
-Four personality traits that must coexist in every design and copy decision:
-
-| Trait | What it means in practice |
-|-------|--------------------------|
-| **Trustworthy** | Visitors feel safe — they know what the twin can and cannot say. Nothing feels leaked or accidental. |
-| **Intelligent** | Answers feel precise and grounded, not generic. The product clearly knows something. |
-| **Minimal** | The UI gets out of the way. The conversation is the product. No clutter. |
-| **Warm** | Despite being technical, it never feels cold. A recruiter landing on a career twin should feel welcomed, not interrogated. |
-
-**Brand voice — written copy:**
+**Brand voice (marketing & product copy)**
 - Short sentences. Direct. No filler.
-- Technical accuracy without jargon walls
-- Never oversell. Never hedge too much.
-- Confident, not arrogant
-- Human, not robotic
+- Technical accuracy without jargon walls on **public** pages.
+- Confident, not arrogant; human, not robotic.
 
-**What docbase is NOT:**
-- Not a chatbot service
-- Not a thin wrapper around a single vendor's hosting product
-- Not a documentation tool
-- Not a portfolio template
+**What docbase is NOT**
+- Not a generic “chat with the internet” widget
+- Not a thin wrapper around a single vendor demo
+- Not a static portfolio template with AI bolted on
+- Not internal admin jargon on **visitor-facing** surfaces (avoid “workspace chat”, twin counts, “routing”, raw filenames, or evidence-debug language in user-visible copy)
+
+---
+
+## 2a. Product copy — public vs owner surfaces
+
+| Surface | Voice | Avoid on the page |
+|---------|--------|-------------------|
+| **Public twin** (`/t/:slug`) | First person or natural third person for the **represented person/team**; greet visitors by name if they shared it in-thread. | “I am the workspace assistant”, raw Drive IDs, “Negative-evidence scope”, bullet lists of internal file paths unless the visitor asked for sources |
+| **Public workspace** (`/w/:slug`) | Same — you are speaking **for** the people/projects behind the workspace, not narrating the product’s plumbing. | Meta intros like “this workspace has N twins with M ready sources” unless the visitor explicitly asks for coverage |
+| **Owner dashboard** | May use **twin**, **source**, **ingest**, **share link** — users are builders. | — |
+
+**Alignment with engineering:** Backend prompts and the **active quality gate** discourage internal-looking replies; this section is the **UX/content** mirror of that behavior.
 
 ---
 
@@ -588,3 +577,11 @@ This keeps the visual language consistent, scalable, and impossible to accidenta
 7. Public twin page shell
 8. Embed widget shell
 9. Landing page (last — dependent on all components being stable)
+
+---
+
+## 14. Related documentation
+
+- [`README.md`](../README.md) — product summary for reviewers and recruiters  
+- [`architecture.md`](architecture.md) — domains, chat flow, quality gate  
+- [`DEPLOY_SETUP_GUIDE.md`](DEPLOY_SETUP_GUIDE.md) — deployment reference

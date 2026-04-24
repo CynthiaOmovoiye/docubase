@@ -50,7 +50,7 @@ class TestNoGroundingFallback:
         )
 
         assert response is not None
-        assert "none of the attached sources" in response
+        assert "none are ready yet" in response
         assert "production (processing)" in response
         assert "resume (failed)" in response
 
@@ -67,8 +67,8 @@ class TestNoGroundingFallback:
         )
 
         assert response is not None
-        assert "won't guess" in response
-        assert "grounded project context" in response
+        assert "indexed content" in response.lower()
+        assert "This Project" in response
 
     def test_greeting_with_ready_sources_does_not_short_circuit(self):
         response = _build_no_grounding_response(
@@ -86,6 +86,32 @@ class TestNoGroundingFallback:
 
 
 class TestWorkspaceScopeResponse:
+    def test_greeting_and_self_intro_do_not_short_circuit(self):
+        """Regressions: "Hi, my name is …" must reach the LLM, not deterministic workspace copy."""
+        assert _build_workspace_scope_response("Hi!", {}) is None
+        assert (
+            _build_workspace_scope_response(
+                "Hi, my name is Alex",
+                {
+                    "workspace_name": "W",
+                    "total_twins": 1,
+                    "ready_twins": 1,
+                    "active_twins": 1,
+                    "twins": [
+                        {
+                            "name": "Twin A",
+                            "description": None,
+                            "is_active": True,
+                            "source_count": 1,
+                            "ready_source_count": 1,
+                            "ready_source_names": ["x"],
+                        }
+                    ],
+                },
+            )
+            is None
+        )
+
     def test_workspace_coverage_query_lists_all_twins(self):
         response = _build_workspace_scope_response(
             "what projects can you help with?",

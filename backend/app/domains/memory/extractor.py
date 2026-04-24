@@ -519,7 +519,6 @@ async def generate_memory_brief(
     if topic_artifact_digest and topic_artifact_digest.strip():
         sections.append(topic_artifact_digest.strip())
 
-    logger.info("Architecture text: in generate_memory_brief in extractor.py", architecture_text=architecture_text)
     if architecture_text:
         sections.append(f"## Architecture Facts\n\n{architecture_text}")
 
@@ -562,6 +561,8 @@ async def generate_memory_brief(
         if not str(c.get("source_ref", "")).startswith("__memory__/")
         and c.get("content")
     ]
+    full_doc_chunk_count = 0
+    full_doc_chars = 0
     if content_chunks:
         content_budget = 60_000  # ~15k tokens — enough for a full resume or several docs
         content_parts: list[str] = []
@@ -576,8 +577,13 @@ async def generate_memory_brief(
                 break
             content_parts.append(entry)
             total += len(entry)
+            full_doc_chunk_count += 1
+        full_doc_chars = total
         if content_parts:
-            sections.append("## Full Document Content (extract all facts from this)\n\n" + "\n\n---\n\n".join(content_parts))
+            joined = "\n\n---\n\n".join(content_parts)
+            sections.append(
+                "## Full Document Content (extract all facts from this)\n\n" + joined
+            )
 
     if graph_context:
         sections.append(f"## Entity Relationship Graph\n\n{graph_context}")
@@ -587,6 +593,49 @@ async def generate_memory_brief(
         return ""
 
     context = "\n\n---\n\n".join(sections)
+
+    # Diagnostic: log what's being assembled for the brief (section sizes + source coverage)
+    section_labels = []
+    for s in sections:
+        first_line = s.split("\n")[0][:80]
+        section_labels.append(f"{first_line} ({len(s)} chars)")
+    non_memory = [
+        c for c in existing_chunks
+        if not str(c.get("source_ref", "")).startswith("__memory__/")
+    ]
+    ref_roots: dict[str, int] = {}
+    for c in non_memory:
+        ref = str(c.get("source_ref") or "") or "(empty_ref)"
+        root = ref.split("/")[0] if "/" in ref else ref
+        ref_roots[root] = ref_roots.get(root, 0) + 1
+    arch_preview = (architecture_text or "")[:400]
+    logger.info(
+        "memory_brief_context_assembled",
+        doctwin_id=doctwin_id,
+        total_chars=len(context),
+        section_count=len(sections),
+        sections=section_labels,
+        content_chunks_total=len(non_memory),
+        full_document_section_chunks=full_doc_chunk_count,
+        full_document_section_chars=full_doc_chars,
+        source_ref_root_counts=ref_roots,
+        architecture_text_len=len(architecture_text or ""),
+        architecture_text_preview=arch_preview,
+    )
+    if content_chunks:
+        first = next(
+            (c for c in content_chunks if not str(c.get("source_ref", "")).startswith("__memory__/")),
+            content_chunks[0],
+        )
+        logger.info(
+            "memory_brief_first_content_chunk",
+            doctwin_id=doctwin_id,
+            source_ref=first.get("source_ref", ""),
+            chunk_type=first.get("chunk_type", ""),
+            content_len=len(first.get("content", "")),
+            content_preview=(first.get("content") or "")[:300],
+        )
+
     provider = get_llm_provider()
 
     try:

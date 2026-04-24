@@ -72,6 +72,121 @@ _COMMON_TECH_TERMS = {
     "sso",
 }
 
+# Workspace verifier: require a ## heading per project for technical RAG answers.
+# Casual intros/greetings are answered in natural prose (no per-project headers);
+# if we require headings there, the rewrite path replaces the reply with
+# _build_workspace_grounded_fallback — internal-looking file/scope dumps.
+_WORKSPACE_CONVO_TECH_TOKENS = (
+    "auth",
+    "authentication",
+    "authorization",
+    "architecture",
+    "implement",
+    "implementation",
+    "codebase",
+    "code",
+    "function",
+    "class ",
+    "def ",
+    "scaffold",
+    "database",
+    "deploy",
+    "docker",
+    "kubernetes",
+    "route",
+    "router",
+    "middleware",
+    "api ",
+    "rest",
+    "graphql",
+    "how does",
+    "how is",
+    "where is",
+    "walk me",
+    "describe the",
+    "explain the",
+    "tell me about the",
+    "file",
+    "module",
+    "package",
+    "source",
+    "commit",
+    "pr ",
+    "pull request",
+    "bug",
+    "error",
+    "test",
+    "twin",  # meta questions about the workspace product
+    "sources",
+    "project",
+    "document",
+    "pdf",
+    "ingest",
+    "chunk",
+    "index",
+    "retrieval",
+)
+
+# Short questions about the assistant/twin's identity (not RAG evidence layout).
+_WORKSPACE_IDENTITY_NAME_Q = re.compile(
+    r"^\s*("
+    r"what\s+is\s+(your|you)\s+name|"  # "your name" or common typo "you name"
+    r"what'?s\s+your\s+name|"
+    r"whats\s+your\s+name|"
+    r"who\s+are\s+you|"
+    r"what\s+do\s+you\s+go\s+by|"
+    r"what\s+should\s+i\s+call\s+you"
+    r")\s*[?.!]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _is_workspace_conversational_query(query: str) -> bool:
+    """
+    True when the user turn is small-talk / self-intro, not a technical RAG question.
+
+    Used to avoid replacing natural replies (no per-project ``##`` headings) with
+    the deterministic grounded-evidence fallback.
+    """
+    text = (query or "").strip()
+    if not text:
+        return True
+    if len(text) > 360:
+        return False
+    lowered = text.lower()
+    # Identity / small-talk: whole message is basically "what's your name?" etc.
+    if len(text) <= 80 and _WORKSPACE_IDENTITY_NAME_Q.match(text):
+        return True
+    if any(t in lowered for t in _WORKSPACE_CONVO_TECH_TOKENS):
+        return False
+    if any(
+        p in lowered
+        for p in (
+            "my name is",
+            "i'm ",
+            "i am ",
+            "im ",
+            "call me",
+            "what is my name",
+            "what's my name",
+            "whats my name",
+            "who am i",
+        )
+    ):
+        return True
+    if re.match(
+        r"^(hi|hello|hey|hiya|yo|good (morning|afternoon|evening))\b",
+        lowered,
+    ):
+        return True
+    if re.match(r"^(thanks|thank you|thx|cheers|bye|goodbye)\b", lowered):
+        return True
+    if len(text) < 64 and re.match(
+        r"^(ok|okay|yes|no|sure|sounds good|nice to meet you)\b", lowered
+    ):
+        return True
+    return False
+
 
 @dataclass(slots=True)
 class AnswerVerificationResult:
@@ -160,6 +275,7 @@ def verify_workspace_answer(
     workspace_name: str,
     project_contexts: list[dict],
     allow_retry: bool,
+    query: str | None = None,
 ) -> AnswerVerificationResult:
     """Verify a workspace answer for labeling, namespace safety, and bounds."""
     expected_names = [str(project.get("name") or "Unnamed project") for project in project_contexts]
@@ -167,7 +283,7 @@ def verify_workspace_answer(
     issues: list[str] = []
 
     missing_sections = [name for name in expected_names if name not in sections]
-    if missing_sections:
+    if missing_sections and not (query and _is_workspace_conversational_query(query)):
         issues.append("missing_project_labels")
 
     for name, section_body in sections.items():

@@ -2,7 +2,7 @@ import enum
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Enum, ForeignKey, Text
+from sqlalchemy import Enum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -41,6 +41,10 @@ class ChatSession(Base, UUIDMixin, TimestampMixin):
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+
+    # Opaque public visitor key (no PII). When set, the visitor can list/resume sessions
+    # by presenting the same id; ephemeral public chats leave this null.
+    visitor_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # Relationships
     twin: Mapped["Twin | None"] = relationship("Twin", back_populates="chat_sessions")

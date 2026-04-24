@@ -106,6 +106,7 @@ async def fetch_lexical_chunk_candidates(
         CROSS JOIN lexical_query
         WHERE s.doctwin_id = :doctwin_id
           AND s.status = 'ready'
+          AND c.chunk_type != 'memory_brief'
           AND lexical_query.q <> ''::tsquery
           AND (
             setweight(to_tsvector('simple', COALESCE(c.source_ref, '')), 'A') ||
@@ -508,6 +509,7 @@ async def _fetch_chunk_candidates_by_substring(
         JOIN sources s ON s.id = c.source_id
         WHERE s.doctwin_id = :doctwin_id
           AND s.status = 'ready'
+          AND c.chunk_type != 'memory_brief'
           AND coalesce(c.source_ref, '') NOT LIKE '__memory__/%'
           {code_filter}
           AND ({' OR '.join(clauses)})

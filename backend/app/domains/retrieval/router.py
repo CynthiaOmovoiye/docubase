@@ -56,6 +56,49 @@ from app.models.twin import Twin, TwinConfig
 
 logger = get_logger(__name__)
 
+
+def _summarize_chunks_for_pipeline(chunks: list[dict[str, Any]], limit: int = 20) -> list[dict[str, Any]]:
+    """Compact rows for structured logs (ingestion vs retrieval vs generation)."""
+    out: list[dict[str, Any]] = []
+    for i, c in enumerate(chunks[:limit]):
+        out.append(
+            {
+                "rank": i,
+                "chunk_id": str(c.get("chunk_id") or ""),
+                "score": round(float(c.get("score") or 0.0), 4),
+                "chunk_type": str(c.get("chunk_type") or ""),
+                "source_ref": (c.get("source_ref") or "")[:140],
+                "chars": len(c.get("content") or ""),
+                "reasons": list(c.get("match_reasons") or [])[:6],
+            }
+        )
+    return out
+
+
+def _log_chat_rag_pipeline(
+    *,
+    stage: str,
+    pipeline_trace_id: str | None,
+    doctwin_id: str,
+    query_preview: str,
+    chunks: list[dict[str, Any]],
+    extra: dict[str, Any] | None = None,
+) -> None:
+    if not pipeline_trace_id:
+        return
+    payload: dict[str, Any] = {
+        "pipeline_trace_id": pipeline_trace_id,
+        "stage": stage,
+        "doctwin_id": doctwin_id,
+        "query_preview": query_preview[:200],
+        "n_chunks": len(chunks),
+        "chunks": _summarize_chunks_for_pipeline(chunks, limit=20),
+    }
+    if extra:
+        payload.update(extra)
+    logger.info("chat_rag_pipeline", **payload)
+
+
 # When a reranker is configured, over-fetch this many candidates from pgvector
 # so the reranker has a larger pool to choose from.
 _RERANK_OVERFETCH_MULTIPLIER = 3
@@ -254,6 +297,7 @@ async def retrieve_packet_for_twin(
     path_hints: list[str] | None = None,
     guaranteed_refs: list[str] | None = None,
     expanded_query: str = "",
+    pipeline_trace_id: str | None = None,
 ) -> RetrievalEvidencePacket:
     """
     Retrieve a hybrid evidence packet for a single twin.
@@ -353,7 +397,12 @@ async def retrieve_packet_for_twin(
                 )
     else:
         missing_evidence.append("no_embedding_profiles")
-        logger.info("retrieval_no_embedding_profiles", doctwin_id=doctwin_id)
+        logger.warning(
+            "retrieval_no_embedding_profiles",
+            doctwin_id=doctwin_id,
+            note="No sources with non-null embeddings found — vector search skipped entirely. "
+                 "Check that ingestion completed and chunks have embeddings.",
+        )
 
     if "lexical" in plan.searched_layers:
         lexical_chunks = await fetch_lexical_chunk_candidates(
@@ -502,19 +551,61 @@ async def retrieve_packet_for_twin(
         )
 
     candidate_list = list(candidates_by_id.values())
+    pool_sorted = sorted(
+        candidate_list,
+        key=lambda x: float(x.get("score") or 0.0),
+        reverse=True,
+    )
+    _log_chat_rag_pipeline(
+        stage="1_merged_candidate_pool",
+        pipeline_trace_id=pipeline_trace_id,
+        doctwin_id=doctwin_id,
+        query_preview=query,
+        chunks=pool_sorted,
+        extra={"total_candidates": len(candidate_list)},
+    )
 
     candidates = _score_and_prune_candidates(candidate_list, plan)
+    pruned_sorted = sorted(
+        candidates,
+        key=lambda x: float(x.get("score") or 0.0),
+        reverse=True,
+    )
+    _log_chat_rag_pipeline(
+        stage="2_after_prune",
+        pipeline_trace_id=pipeline_trace_id,
+        doctwin_id=doctwin_id,
+        query_preview=query,
+        chunks=pruned_sorted,
+        extra={"n_after_prune": len(candidates)},
+    )
     if use_reranker and candidates:
-        chunks = await rerank_chunks(plan.search_query, candidates[:rerank_budget], top_k)
+        rerank_query = plan.query.strip() or plan.search_query.strip()
+        chunks = await rerank_chunks(rerank_query, candidates[:rerank_budget], top_k)
     else:
         chunks = candidates[:top_k]
     chunks = _pin_feature_chunks(chunks, feature_chunks, top_k)
+
+    _log_chat_rag_pipeline(
+        stage="3_after_rerank_topk",
+        pipeline_trace_id=pipeline_trace_id,
+        doctwin_id=doctwin_id,
+        query_preview=query,
+        chunks=chunks,
+        extra={
+            "reranked": use_reranker,
+            "top_k": top_k,
+            "rerank_budget": rerank_budget if use_reranker else None,
+        },
+    )
 
     logger.info(
         "retrieval_complete",
         doctwin_id=doctwin_id,
         query_length=len(query),
+        query_preview=query[:120],
         chunks_returned=len(chunks),
+        candidates_before_prune=len(candidate_list),
         intent=plan.intent.value if plan.intent else None,
         mode=plan.mode.value,
         reranked=use_reranker,
@@ -522,8 +613,18 @@ async def retrieve_packet_for_twin(
         guaranteed_refs=len(guaranteed_refs or []),
         lexical_hits=sum(1 for chunk in chunks if "lexical" in (chunk.get("match_reasons") or [])),
         symbol_hits=len(symbol_matches),
+        embedding_profiles=len(profiles),
+        missing_evidence=missing_evidence,
     )
     hydrated_chunks = await hydrate_retrieved_chunks(chunks, db)
+    _log_chat_rag_pipeline(
+        stage="4_after_hydration",
+        pipeline_trace_id=pipeline_trace_id,
+        doctwin_id=doctwin_id,
+        query_preview=query,
+        chunks=hydrated_chunks,
+        extra={"missing_evidence": missing_evidence},
+    )
     return build_evidence_packet(
         plan=plan,
         chunks=hydrated_chunks,
@@ -1280,8 +1381,9 @@ async def route_and_retrieve_packet_for_workspace(
         reverse=True,
     )
     if use_reranker:
+        rerank_query = plan.query.strip() or plan.search_query.strip()
         ranked_candidates = await rerank_chunks(
-            plan.search_query,
+            rerank_query,
             combined_candidates[:fetch_k],
             min(len(combined_candidates), fetch_k),
         )
@@ -1461,6 +1563,7 @@ async def _fetch_doctwin_candidates_for_profile(
         WHERE s.doctwin_id = :doctwin_id
           AND s.status = 'ready'
           AND c.embedding IS NOT NULL
+          AND c.chunk_type != 'memory_brief'
           AND COALESCE(s.embedding_provider, :legacy_provider) = :profile_provider
           AND COALESCE(s.embedding_model, :legacy_model) = :profile_model
           AND COALESCE(s.embedding_dimensions, :legacy_dimensions) = :profile_dimensions

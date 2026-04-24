@@ -42,15 +42,18 @@ dependencies = [
     "cohere>=5.0.0",
     # HTTP client (for connectors)
     "httpx>=0.27.0",
-    # PDF processing
+    # PDF processing — pypdf (PyPDF2 API); pymupdf fallback when extract_text surfaces xref/tailer
     "pypdf>=4.0.0",
+    "pymupdf>=1.24.0",
     # Markdown
     "markdown-it-py>=3.0.0",
     # Text chunking
     "tiktoken>=0.6.0",
     # Observability
     "structlog>=24.1.0",
-    "langfuse>=2.0.0",
+    # Stay on Langfuse 2.x: our chat/LLM paths use the legacy trace()/generation()/span()
+    # API removed in Langfuse Python SDK 3+ (uv previously resolved 4.x).
+    "langfuse>=2.57.0,<3",
     # Token encryption for stored OAuth credentials
     "cryptography>=42.0.0",
     # Google Drive API client

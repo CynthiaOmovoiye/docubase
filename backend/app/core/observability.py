@@ -4,7 +4,8 @@ Langfuse observability client.
 Provides a lazily-initialised Langfuse singleton.  Returns None when
 Langfuse is not configured so callers can guard with a simple `if lf:`.
 
-Usage:
+Usage (Langfuse Python SDK 2.x — see ``pyproject.toml`` pin; v3+ removed ``trace()``/``generation()``):
+
     from app.core.observability import get_langfuse
 
     lf = get_langfuse()

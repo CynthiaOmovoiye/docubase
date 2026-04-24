@@ -17,6 +17,8 @@ interface UseChatOptions {
   twinId?: string;
   workspaceId?: string;
   publicSlug?: string;
+  /** Opaque id for resumable public chats; omit for ephemeral sessions. */
+  visitorId?: string | null;
   resumeSessionId?: string | null;
 }
 
@@ -30,7 +32,13 @@ interface UseChatReturn {
   startNewSession: () => void;
 }
 
-export function useChat({ twinId, workspaceId, publicSlug, resumeSessionId }: UseChatOptions): UseChatReturn {
+export function useChat({
+  twinId,
+  workspaceId,
+  publicSlug,
+  visitorId,
+  resumeSessionId,
+}: UseChatOptions): UseChatReturn {
   const [session, setSession] = useState<ChatSession | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -41,22 +49,54 @@ export function useChat({ twinId, workspaceId, publicSlug, resumeSessionId }: Us
     if (!resumeSessionId) return;
     setError(null);
     setIsLoading(true);
+
+    if (publicSlug) {
+      if (!visitorId) {
+        setError("Add a visitor ID in settings to resume past public chats.");
+        setIsLoading(false);
+        return;
+      }
+      api
+        .get<{ session_id: string; messages: Message[] }>(
+          `/chat/public/${publicSlug}/session/${resumeSessionId}/history`,
+          { params: { visitor_id: visitorId } },
+        )
+        .then((res) => {
+          setSession({
+            session_id: resumeSessionId,
+            workspace_id: "",
+            doctwin_id: null,
+            created_at: "",
+          });
+          setMessages(res.data.messages);
+        })
+        .catch(() => setError("Failed to load session history"))
+        .finally(() => setIsLoading(false));
+      return;
+    }
+
     api
       .get<{ session_id: string; messages: Message[] }>(`/chat/session/${resumeSessionId}/history`)
       .then((res) => {
-        setSession({ session_id: resumeSessionId, workspace_id: "", doctwin_id: twinId ?? null, created_at: "" });
+        setSession({
+          session_id: resumeSessionId,
+          workspace_id: "",
+          doctwin_id: twinId ?? null,
+          created_at: "",
+        });
         setMessages(res.data.messages);
       })
       .catch(() => setError("Failed to load session history"))
       .finally(() => setIsLoading(false));
-  }, [resumeSessionId, twinId]);
+  }, [resumeSessionId, twinId, publicSlug, visitorId]);
 
   const startSession = useCallback(async () => {
     setError(null);
     try {
       let response;
       if (publicSlug) {
-        response = await api.post(`/chat/public/${publicSlug}/session`);
+        const body = visitorId ? { visitor_id: visitorId } : {};
+        response = await api.post(`/chat/public/${publicSlug}/session`, body);
       } else if (twinId) {
         response = await api.post(`/chat/twin/${twinId}/session`);
       } else if (workspaceId) {
@@ -69,7 +109,7 @@ export function useChat({ twinId, workspaceId, publicSlug, resumeSessionId }: Us
     } catch {
       setError("Failed to start session");
     }
-  }, [twinId, workspaceId, publicSlug]);
+  }, [twinId, workspaceId, publicSlug, visitorId]);
 
   const startNewSession = useCallback(() => {
     setSession(null);
@@ -85,7 +125,8 @@ export function useChat({ twinId, workspaceId, publicSlug, resumeSessionId }: Us
         try {
           let response;
           if (publicSlug) {
-            response = await api.post(`/chat/public/${publicSlug}/session`);
+            const body = visitorId ? { visitor_id: visitorId } : {};
+            response = await api.post(`/chat/public/${publicSlug}/session`, body);
           } else if (twinId) {
             response = await api.post(`/chat/twin/${twinId}/session`);
           } else if (workspaceId) {
@@ -120,7 +161,12 @@ export function useChat({ twinId, workspaceId, publicSlug, resumeSessionId }: Us
           response = await api.post(
             `/chat/public/${publicSlug}/message`,
             { content },
-            { params: { session_id: currentSession.session_id } },
+            {
+              params: {
+                session_id: currentSession.session_id,
+                ...(visitorId ? { visitor_id: visitorId } : {}),
+              },
+            },
           );
         } else {
           response = await api.post(
@@ -137,7 +183,7 @@ export function useChat({ twinId, workspaceId, publicSlug, resumeSessionId }: Us
         setIsLoading(false);
       }
     },
-    [session, publicSlug, twinId, workspaceId],
+    [session, publicSlug, twinId, workspaceId, visitorId],
   );
 
   return { session, messages, isLoading, error, sendMessage, startSession, startNewSession };
@@ -166,5 +212,19 @@ export function useWorkspaceSessions(workspaceId: string | undefined) {
     },
     enabled: !!workspaceId,
     staleTime: 1000 * 15,
+  });
+}
+
+export function usePublicChatSessions(publicSlug: string | undefined, visitorId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["chat", "public-sessions", publicSlug, visitorId],
+    queryFn: async () => {
+      const res = await api.get<ChatSessionSummary[]>(`/chat/public/${publicSlug}/sessions`, {
+        params: { visitor_id: visitorId },
+      });
+      return res.data;
+    },
+    enabled: !!publicSlug && !!visitorId,
+    staleTime: 1000 * 10,
   });
 }

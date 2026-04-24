@@ -2,16 +2,13 @@
  * Public twin share page.
  *
  * Accessible at /t/:slug — no auth required.
- * Fetches twin display info and renders a chat interface.
- * This is what visitors see when someone shares a twin link.
  */
 
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "@/lib/api";
-import { ChatInterface } from "@/features/chat/components/ChatInterface";
+import { PublicChatShell } from "@/features/sharing/PublicChatShell";
 
-// PublicSurfaceInfoResponse shape — mirrors backend schema
 interface PublicSurfaceInfo {
   surface_type: string;
   public_slug: string;
@@ -46,7 +43,7 @@ export default function PublicTwinPage() {
     );
   }
 
-  if (error || !info) {
+  if (error || !info || !slug) {
     return (
       <div style={s.center}>
         <p style={{ color: "var(--color-text-secondary)", fontSize: 15 }}>
@@ -60,26 +57,28 @@ export default function PublicTwinPage() {
   const accentColor = info.accent_color || "#6366F1";
 
   return (
-    <div style={{ ...s.page, "--accent": accentColor } as React.CSSProperties}>
-      {/* Header */}
-      <header style={s.header}>
-        <h1 style={s.title}>{displayName}</h1>
-        {info.doctwin_description && (
-          <p style={s.subtitle}>{info.doctwin_description}</p>
-        )}
-      </header>
+    <div style={s.page}>
+      <PublicChatShell
+        publicSlug={slug}
+        displayName={displayName}
+        accentColor={accentColor}
+        placeholder={`Ask me about ${displayName}…`}
+        eyebrow="Public twin"
+        subtitle={info.doctwin_description || null}
+        emptyState={
+          <div style={s.promptCard}>
+            <div style={{ ...s.promptOrb, color: accentColor, borderColor: `${accentColor}44` }}>
+              {displayName.charAt(0).toUpperCase()}
+            </div>
+            <h2 style={s.promptTitle}>Ask {displayName}</h2>
+            <p style={s.promptBody}>
+              Answers are grounded in the sources the owner approved for this twin. Use Visitor ID
+              if you want to keep or resume this conversation later.
+            </p>
+          </div>
+        }
+      />
 
-      {/* Chat */}
-      <main style={s.main}>
-        <ChatInterface
-          publicSlug={slug}
-          twinName={displayName}
-          accentColor={accentColor}
-          placeholder={`Ask me about ${displayName}...`}
-        />
-      </main>
-
-      {/* Footer */}
       <footer style={s.footer}>
         <p style={s.footerText}>Powered by docbase</p>
       </footer>
@@ -109,30 +108,47 @@ const s: Record<string, React.CSSProperties> = {
     borderTopColor: "var(--color-iris)",
     animation: "spin 0.7s linear infinite",
   },
-  header: {
-    borderBottom: "1px solid var(--color-border)",
-    padding: "20px 28px",
+  promptCard: {
+    maxWidth: 520,
+    padding: "28px 26px",
+    borderRadius: 20,
+    background: "var(--color-surface)",
+    border: "1px solid var(--color-border)",
+    boxShadow: "var(--shadow-sm)",
+    textAlign: "center",
   },
-  title: {
-    fontSize: 20,
-    fontWeight: 600,
-    margin: 0,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: "var(--color-text-secondary)",
-    margin: "4px 0 0",
-  },
-  main: {
-    flex: 1,
-    overflow: "hidden",
+  promptOrb: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    margin: "0 auto 18px",
+    border: "1px solid var(--color-border)",
+    background: "var(--color-bg)",
     display: "flex",
-    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 22,
+    fontWeight: 700,
+  },
+  promptTitle: {
+    margin: 0,
+    fontFamily: "var(--font-display)",
+    fontSize: 24,
+    letterSpacing: "-0.02em",
+    color: "var(--color-text-primary)",
+  },
+  promptBody: {
+    margin: "12px 0 0",
+    fontSize: 14,
+    lineHeight: 1.7,
+    color: "var(--color-text-secondary)",
   },
   footer: {
-    padding: "12px 28px",
+    padding: "10px 20px",
     borderTop: "1px solid var(--color-border)",
     textAlign: "center",
+    flexShrink: 0,
+    background: "var(--color-surface)",
   },
   footerText: {
     fontSize: 12,

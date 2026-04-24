@@ -1,15 +1,16 @@
 """
-LLM-as-judge response evaluator.
+LLM-as-judge response evaluator (passive / dimensional scores).
 
 Runs ASYNCHRONOUSLY after the assistant response has already been sent to
 the user — it never adds latency to the chat path.
 
-Evaluation dimensions:
-  - completeness   (1-5): Does the answer fully address what was asked?
-  - groundedness   (1-5): Every claim is supported by the retrieved context.
-  - technical_depth (1-5): Appropriate depth for a developer/recruiter audience.
-  - format_quality  (1-5): Well-structured, readable, uses markdown appropriately.
-  - usefulness      (1-5): Actionable and genuinely helpful for the stated user/task.
+When ``chat_quality_gate_enabled`` is true in settings, ``send_message`` uses
+``quality_gate`` instead for an active accept/reject + regeneration path and
+this module's async task is skipped for that request.
+
+Evaluation dimensions (1–5 each):
+  - completeness, groundedness, technical_depth, format_quality, context_precision,
+    faithfulness, usefulness — see system rubric in ``_EVAL_SYSTEM_PROMPT``.
 
 Scores are logged to Langfuse (if configured) and to the application log.
 When Langfuse is unavailable, evaluation still runs and scores are logged
@@ -34,33 +35,38 @@ from app.domains.answering.llm_provider import get_llm_provider
 logger = get_logger(__name__)
 
 _EVAL_SYSTEM_PROMPT = """\
-You are a quality evaluator for an AI assistant that answers technical questions
-about software projects. Your job is to score a given response on six dimensions.
+You are a quality evaluator for Docbase: a document-grounded assistant (DocTwin). Users \
+attach files and sources (resumes, policies, product docs, meeting notes, repositories, \
+Google Drive folders, etc.). The assistant must answer from retrieved context chunks and \
+optional system-level summaries — not invent facts.
 
-Scoring rubric (1 = very poor, 5 = excellent):
+Score the assistant response on seven dimensions (1 = very poor, 5 = excellent).
 
-completeness    — Does the response fully address the question? 5 means nothing
-  important was left out; 1 means the response barely touches the question.
+completeness — Does the answer fully address what the user asked? 5 = nothing important \
+omitted; 1 = barely engages the question.
 
-groundedness    — Is every factual claim supported by the provided context chunks?
-  5 means every statement is directly traceable to the context (no hallucination);
-  1 means significant speculation or invention is present.
+groundedness — Are factual claims supported by the provided context chunks? 5 = claims \
+traceable to chunks; 1 = clear hallucination or speculation beyond the evidence.
 
-technical_depth — Is the level of technical detail appropriate for developers and
-  technical recruiters? 5 means specific, precise, and insightful; 1 means vague or generic.
+technical_depth — Is the level of detail right for the question? Judge against the *query*, \
+not only "engineering": a resume or policy question may warrant concrete names, dates, or \
+obligations rather than deep stack traces. 5 = appropriately specific; 1 = vague or \
+off-topic depth (e.g. generic product talk when the user asked a personal factual question).
 
-format_quality  — Is the response well-structured and easy to read? 5 means it uses
-  appropriate markdown (headers, tables, code blocks) and is clearly organised;
-  1 means it is a wall of unformatted text.
+format_quality — Readable and well structured? 5 = clear paragraphs or markdown where \
+helpful; 1 = unreadable wall of text.
 
-context_precision — Of the retrieved context chunks provided, how many were actually
-  relevant and useful to answering this question? 5 means every chunk was on-topic;
-  1 means nearly all chunks were irrelevant noise.
+context_precision — Of the retrieved chunks shown, how many were relevant to answering \
+this question? 5 = on-topic; 1 = mostly noise.
 
-faithfulness    — Are all factual claims in the response directly supported by the
-  retrieved context (not general knowledge or invention)? 5 means every claim can be
-  traced to a specific chunk; 1 means the response relies heavily on information not
-  present in the context.
+faithfulness — Same axis as groundedness: no facts drawn from outside the supplied \
+context unless the user asked for general advice and the answer stays clearly separated \
+from document claims.
+
+usefulness — Would this answer help the user accomplish their goal (find a fact, decide, \
+or understand) given the evidence available?
+
+In "reasoning", name the lowest-scoring dimension and why (one sentence).
 
 Respond ONLY with a valid JSON object, no commentary:
 {
@@ -76,13 +82,13 @@ Respond ONLY with a valid JSON object, no commentary:
 """
 
 _EVAL_USER_TEMPLATE = """\
-QUESTION:
+USER QUESTION:
 {query}
 
-CONTEXT PROVIDED TO THE ASSISTANT (retrieved chunks):
+RETRIEVED CONTEXT (chunks the assistant was given):
 {context}
 
-ASSISTANT RESPONSE TO EVALUATE:
+ASSISTANT RESPONSE TO SCORE:
 {response}
 """
 
