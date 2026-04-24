@@ -554,14 +554,30 @@ async def generate_memory_brief(
         change_lines = [c["content"] for c in change_chunks]
         sections.append("## Recent Changes\n\n" + "\n\n".join(change_lines))
 
-    # Add a sample of module descriptions for the "Where to Start" section
-    module_chunks = _select_module_samples_by_group(existing_chunks)
-    if module_chunks:
-        module_lines = [
-            f"`{c.get('source_ref', '')}` — {c.get('content', '')[:200]}"
-            for c in module_chunks
-        ]
-        sections.append("## Module Inventory\n\n" + "\n".join(module_lines))
+    # Add actual document content — full text, not truncated summaries.
+    # This is the primary input for person/document briefs (resumes, profiles, etc.)
+    # Include all non-memory chunks up to a reasonable char budget.
+    content_chunks = [
+        c for c in existing_chunks
+        if not str(c.get("source_ref", "")).startswith("__memory__/")
+        and c.get("content")
+    ]
+    if content_chunks:
+        content_budget = 60_000  # ~15k tokens — enough for a full resume or several docs
+        content_parts: list[str] = []
+        total = 0
+        for c in content_chunks:
+            text = c.get("content", "")
+            ref = c.get("source_ref", "")
+            ctype = c.get("chunk_type", "")
+            label = f"[{ref}]" if ref else f"[{ctype}]"
+            entry = f"{label}\n{text}"
+            if total + len(entry) > content_budget:
+                break
+            content_parts.append(entry)
+            total += len(entry)
+        if content_parts:
+            sections.append("## Full Document Content (extract all facts from this)\n\n" + "\n\n---\n\n".join(content_parts))
 
     if graph_context:
         sections.append(f"## Entity Relationship Graph\n\n{graph_context}")
@@ -577,8 +593,8 @@ async def generate_memory_brief(
         response = await provider.complete(
             system_prompt=MEMORY_BRIEF_SYSTEM,
             messages=[{"role": "user", "content": context}],
-            max_tokens=4000,
-            temperature=0.2,
+            max_tokens=6000,
+            temperature=0.15,
             trace_id=trace_id,
             generation_name="memory_brief_generation",
         )

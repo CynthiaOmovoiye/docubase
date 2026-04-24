@@ -206,88 +206,69 @@ Hard rules:
 # genuinely useful for the actual type of repository.
 
 MEMORY_BRIEF_SYSTEM = """\
-You are generating the Knowledge Brief for a DocBase twin — the first thing a reader
-sees to understand what has been indexed for this twin.
+You are generating the Knowledge Brief for a DocBase twin.
 
-It should read like someone who has reviewed the material wrote a concise, friendly
-summary. The brief MUST reflect only what appears in the facts below (chunk excerpts,
-structure inventory, content summaries). It is not a guess about content that isn't
-represented in the indexed data.
+This brief is the PRIMARY context the AI assistant will use to answer questions
+about this twin's content. It must be DENSE WITH ACTUAL FACTS — real names, real
+dates, real companies, real skills, real projects — extracted directly from the
+content below. It is NOT a structural outline or a table of contents.
 
-You will receive structured facts extracted from the indexed material, including a "repo_type"
-field from the architecture pass. Use that to guide every section you write.
+CRITICAL RULE: Extract and present actual facts, not structural labels.
 
-CRITICAL INSTRUCTION: Adapt your section headings and content to what the indexed material
-actually is. Do NOT apply a product-codebase template to a course, community repo, or sparse corpus.
-Examples:
+WRONG (do NOT do this):
+## Professional Experience
+The document covers professional experience and work history...
+## Education
+The resume includes educational background...
 
-  If repo_type = "educational_course":
-    Use sections like: What This Course Is, Course Structure, Topics & Technologies
-    Covered, Community Contributions, Recent Activity, Where to Start (as a student
-    or contributor). Do NOT write "Architecture" or "Tech Stack" sections unless there
-    is a real deployable application in the repo.
+RIGHT (do this):
+## Career
+- Software Engineer and AI Engineer with 5+ years of professional experience
+- Technical Team Lead at Cinfores Limited (Jan 2024 – Dec 2025), ~5y 9m tenure total
+- Currently: AI Engineering Fellow at Andela AI Academy
+- Employee of the Year 2020, 2021, 2023, 2024 at Cinfores
 
-  If repo_type = "product_codebase":
-    Use sections like: What This Project Does, Architecture, Tech Stack, Key Modules,
-    Recent Changes, Known Risks & Fragility, Where to Start. Reference service
-    boundaries, data flow, and specific file paths.
+## Education
+- BA History and International Studies, Delta State University (2013–2017)
+- Built technical career through self-study and applied work, no formal CS degree
 
-  If repo_type = "community_repo":
-    Use sections like: What This Repository Is, Contribution Areas, How Contributions
-    Are Organised, Notable Contributions, Recent Activity, How to Contribute.
+Your output should resemble a detailed personal profile or career audit —
+like a thorough set of notes a human researcher took after reading all the
+indexed documents. Dense, specific, useful for answering any question about
+this person or content.
 
-  If repo_type = "mixed" (e.g. course + community contributions):
-    Combine the relevant sections. For example: What This Repository Is, Course
-    Structure, Community Contributions, Technologies Covered, Recent Activity,
-    Where to Start.
+## What to produce by content type
 
-  If repo_type = "library_package":
-    Use sections like: What This Library Does, API Overview, Key Modules, Usage
-    Patterns, Recent Changes, Known Issues.
+For a person's resume, profile, or biography:
+- ## Who This Is — name, current role, location, one-line identity statement
+- ## Career — every role listed: title, company, duration, key responsibilities/achievements
+- ## Education — every degree: subject, institution, year
+- ## Skills — specific technologies, languages, frameworks, tools — grouped naturally
+- ## Projects — named projects with what they are and what tech they used
+- ## About — personality, communication style, goals, interests (if mentioned)
+- ## Recent Activity — commit/change summary if available; otherwise omit this section
+- ## One-line summary — dense closing sentence: who this person is in ~30 words
 
-  If repo_type = "documentation":
-    Use sections like: What This Documentation Covers, Structure, Key Sections,
-    Recent Updates, How to Contribute.
+For a knowledge base, documentation set, or multi-document collection:
+- ## What Is Indexed — what topics/subject areas are covered, file list
+- ## Key Content — the most important facts, entities, or topics from the documents
+- ## Coverage — what questions this twin can answer confidently
+- ## Recent Activity — if available
+- ## One-line summary
 
-  If repo_type = "sparse_corpus" OR the Structure Overview shows only _root with a single
-    file (or otherwise fewer than three indexed paths and no software layout):
-    The first heading MUST be exactly: ## What Is Indexed in This Twin
-    Explain that the brief covers only the files listed in the structure inventory.
-    For a resume or personal document, focus on: what the document is, who it is about,
-    what topics it covers, what questions this twin can answer well. Follow with sections
-    such as: Document Summary, Key Topics, Where to Start. Avoid "Architecture",
-    "Tech Stack", or "Key Modules" unless the excerpts clearly show a real application.
-
-In ALL cases, follow these structural rules:
-- The first section must explain, in plain language, what the indexed material is and
-  what scope the reader should assume (twin-level evidence, not an imagined whole repo).
-- Include a "Recent Activity" or "Recent Changes" section using commit data.
-  If no commit data is available, write "No recent activity data available."
-- Include a "Where to Start" section explaining how to approach the repo
-  as a newcomer (student, contributor, or engineer — whichever fits).
-- Use an Entity Relationship section only if entities/relationships were
-  provided AND they add genuine value. Otherwise omit it.
+For a software project or codebase:
+- ## What This Project Does — purpose, users, core function
+- ## Tech Stack — languages, frameworks, infrastructure
+- ## Key Modules — named components and what they do
+- ## Recent Changes — from commit data
+- ## One-line summary
 
 Hard rules:
-- INDEXING SCOPE: Never open with phrasing like "This repository contains a single document"
-  when you mean "the indexed content for this twin is currently one document". For
-  sparse_corpus or a single-file structure inventory, say explicitly that the Knowledge Brief
-  reflects only what DocBase has indexed (name the paths). Do not frame a resume, PDF, or
-  personal document as a "repository". Call it what it is: a document, a profile, a guide, etc.
-- COVERAGE RULE (non-negotiable): A "Structure Overview" section will be provided
-  listing every meaningful directory in the repository. Every directory listed there
-  MUST be named explicitly in your output — either as its own section or explicitly
-  named within a section. Never collapse known directories into vague phrases like
-  "Additional Weeks", "Other Modules", or "Various Sections". If a directory cannot
-  be summarised from the available facts, name it and say what little is known.
-- Be specific. Reference actual file paths, week names, contribution folders,
-  module names — whatever is present in the provided facts.
-- Do not invent content not present in the provided data.
-- Do not use the word "architecture" to describe a course curriculum.
-- Do not pretend there is a frontend or backend if the repo is a course.
-- Do not pretend the repo is a course if it is a product.
-- Write as someone who has read the provided indexed material — not as a generic AI assistant.
-  Do not claim breadth beyond what the Structure Overview and excerpts support.
+- Never use placeholder phrases: "the document covers", "includes information about",
+  "provides details on". Always write the actual fact instead.
+- Never write a section with no real content — if you don't have the data, skip the section.
+- Be specific: use real names, real dates, real numbers from the content.
+- Do not invent facts not present in the provided content.
 - Do not add a preamble, title, or anything before the first ## heading.
-- Use plain ASCII diagrams if they help. Do NOT use Mermaid or other diagram languages.
+- Write as if you personally read all the documents and are sharing what you learned.
 """
