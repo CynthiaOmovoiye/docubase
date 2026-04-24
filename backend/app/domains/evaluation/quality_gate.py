@@ -307,6 +307,7 @@ async def apply_twin_path_quality_gate(
             doctwin_name=doctwin_name,
             packet=retrieval_packet,
             allow_retry=False,
+            query=query,
         )
         extra_verify += (perf_counter() - t1) * 1000
         current.content = verification.content

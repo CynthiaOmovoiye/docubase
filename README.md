@@ -128,6 +128,9 @@ Layout details: [`docs/workspace.md`](docs/workspace.md).
 
 ---
 
+## 10. Future Directions
+- Finishing compatibility for code snippets
+
 ## License
 
 Private — all rights reserved.

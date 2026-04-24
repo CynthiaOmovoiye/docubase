@@ -199,6 +199,8 @@ From the workflow log or after a local apply, Terraform prints outputs. You care
 
 Point your **API** CORS and any auth settings at the CloudFront URL if the browser will call the API cross-origin.
 
+**Fastest way to attach an API** (tunnel to local Docker, then set `DOCBASE_VITE_API_URL` + CORS): see [`BACKEND_QUICK_CONNECT.md`](./BACKEND_QUICK_CONNECT.md).
+
 ---
 
 ## Quick troubleshooting
@@ -224,6 +226,8 @@ Point your **API** CORS and any auth settings at the CloudFront URL if the brows
 ## Related files in this repo
 
 - `scripts/deploy.sh` — Terraform apply + `npm ci` / `npm run build` + `aws s3 sync` + CloudFront invalidation.
+- `scripts/public-api-tunnel.sh` — optional HTTPS tunnel to local `:8000` for quick API + CloudFront wiring.
+- `docs/BACKEND_QUICK_CONNECT.md` — tunnel + minimal AWS server notes for the API.
 - `terraform/` — S3 website + CloudFront (static frontend only).
 - `.github/workflows/deploy.yml` — Manual deploy workflow.
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from app.domains.chat.routing_heuristics import query_prefers_workspace_aggregate_over_single_twin
 from app.domains.retrieval.packets import RetrievalEvidencePacket
 from app.domains.retrieval.planner import RetrievalMode
 
@@ -213,10 +214,15 @@ def verify_single_project_answer(
     doctwin_name: str,
     packet: RetrievalEvidencePacket | None,
     allow_retry: bool,
+    query: str | None = None,
 ) -> AnswerVerificationResult:
     """Verify a single-project answer against its evidence packet."""
     if packet is None:
         return AnswerVerificationResult(content=answer, verified=True)
+
+    relax_anchor_for_portfolio = bool(
+        query and query_prefers_workspace_aggregate_over_single_twin(query)
+    )
 
     issues: list[str] = []
     allowed_files, allowed_symbols = _build_allowed_refs(packet)
@@ -242,7 +248,11 @@ def verify_single_project_answer(
     if _engine_answer_needs_rewrite(answer, packet):
         issues.append("weak_engine_answer")
 
-    if _requires_anchor(packet.mode, packet) and not _contains_grounded_anchor(answer, packet):
+    if (
+        _requires_anchor(packet.mode, packet)
+        and not relax_anchor_for_portfolio
+        and not _contains_grounded_anchor(answer, packet)
+    ):
         issues.append("missing_grounded_anchor")
 
     if issues and allow_retry:
@@ -264,7 +274,7 @@ def verify_single_project_answer(
             if "contradicted_absence_claim" in issues:
                 content = _drop_contradicted_absence_lines(content, packet)
         rewritten = True
-        if not _contains_grounded_anchor(content, packet):
+        if not _contains_grounded_anchor(content, packet) and not relax_anchor_for_portfolio:
             content = _build_single_grounded_fallback(doctwin_name=doctwin_name, packet=packet)
 
     if _STRONG_NEGATIVE_RE.search(content) and not _BOUNDED_NEGATIVE_RE.search(content):

@@ -1,3 +1,4 @@
+from app.domains.chat.routing_heuristics import query_prefers_workspace_aggregate_over_single_twin
 from app.domains.chat.service import (
     _build_no_grounding_response,
     _build_workspace_scope_response,
@@ -254,6 +255,39 @@ class TestWorkspaceRoutingModes:
     def test_detects_any_project_query(self):
         assert _is_any_project_query("walk me through any of the authentications implemented")
         assert not _is_any_project_query("walk me through the authentication implementations")
+
+    def test_portfolio_queries_prefer_workspace_aggregate(self):
+        assert query_prefers_workspace_aggregate_over_single_twin(
+            "walk me through any projects you have"
+        )
+        assert query_prefers_workspace_aggregate_over_single_twin("What projects do you cover?")
+        assert query_prefers_workspace_aggregate_over_single_twin("list your projects")
+        assert not query_prefers_workspace_aggregate_over_single_twin(
+            "walk me through the authentication on Alpha API project"
+        )
+
+    def test_resolve_workspace_twin_ignores_stopword_substrings(self):
+        """English words in the question must not route to a coincidentally named twin."""
+        match = _resolve_workspace_doctwin_from_query(
+            "walk me through any projects you have",
+            {
+                "workspace_name": "Demo",
+                "twins": [
+                    {
+                        "id": "11111111-1111-1111-1111-111111111111",
+                        "slug": "through",
+                        "canonical_name": "through",
+                        "name": "through",
+                        "description": "",
+                        "is_active": True,
+                        "source_count": 1,
+                        "ready_source_count": 1,
+                        "ready_source_names": ["x"],
+                    },
+                ],
+            },
+        )
+        assert match is None
 
     def test_workspace_topic_gap_response_labels_each_project(self):
         response = _build_workspace_topic_gap_response(

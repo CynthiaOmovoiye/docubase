@@ -61,6 +61,23 @@ def test_single_project_verifier_requests_retry_when_answer_has_no_grounded_anch
     assert "missing_grounded_anchor" in result.issues
 
 
+def test_single_project_verifier_skips_code_anchor_for_portfolio_projects_query():
+    """Twin-anchored chat: resume/overview questions are not code-walkthroughs."""
+    packet = _make_packet()
+    packet.query = "walk me through any projects you have"
+    result = verify_single_project_answer(
+        answer="I have led work on Brilla, Scaffold, and other production systems.",
+        doctwin_name="Resume",
+        packet=packet,
+        allow_retry=False,
+        query="walk me through any projects you have",
+    )
+
+    assert not result.rewritten
+    assert "I have led work on Brilla" in result.content
+    assert "grounded anchors" not in result.content.lower()
+
+
 def test_single_project_verifier_rewrites_after_retry_budget_is_spent():
     packet = _make_packet()
     packet.query = "how is billing implemented?"

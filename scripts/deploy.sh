@@ -51,9 +51,10 @@ cd ../frontend
 echo "Building Vite app..."
 if [ -n "${DOCBASE_VITE_API_URL:-}" ]; then
   echo "VITE_API_URL=$DOCBASE_VITE_API_URL" > .env.production
+  echo "DOCBASE_VITE_API_URL is set — Vite will bake VITE_API_URL into the client (check Network tab: API host should not be CloudFront)."
 else
   rm -f .env.production
-  echo "DOCBASE_VITE_API_URL not set — build uses same-origin /api/v1 (set it for static hosting against a remote API)."
+  echo "DOCBASE_VITE_API_URL not set — build uses same-origin /api/v1 (set GitHub Actions Variable DOCBASE_VITE_API_URL, then re-run deploy)."
 fi
 
 npm ci

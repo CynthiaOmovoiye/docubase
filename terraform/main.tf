@@ -1,4 +1,5 @@
-# Static frontend: S3 website + CloudFront. API runs separately (e.g. Docker / ECS).
+# Static frontend: S3 website + CloudFront.
+# API: set backend_origin_url to your backend server hostname; CloudFront routes /api/* there.
 
 data "aws_caller_identity" "current" {}
 
@@ -8,7 +9,8 @@ locals {
     "www.${var.root_domain}"
   ] : []
 
-  name_prefix = "${var.project_name}-${var.environment}"
+  name_prefix       = "${var.project_name}-${var.environment}"
+  has_backend       = var.backend_origin_url != ""
 
   common_tags = {
     Project     = var.project_name
@@ -73,6 +75,7 @@ resource "aws_cloudfront_distribution" "main" {
     minimum_protocol_version       = "TLSv1.2_2021"
   }
 
+  # Frontend origin — S3 static website
   origin {
     domain_name = aws_s3_bucket_website_configuration.frontend.website_endpoint
     origin_id   = "S3-${aws_s3_bucket.frontend.id}"
@@ -85,13 +88,59 @@ resource "aws_cloudfront_distribution" "main" {
     }
   }
 
+  # Backend API origin — only created when backend_origin_url is set
+  dynamic "origin" {
+    for_each = local.has_backend ? [1] : []
+    content {
+      domain_name = var.backend_origin_url
+      origin_id   = "Backend-API"
+
+      custom_origin_config {
+        http_port              = 8000
+        https_port             = 443
+        # Use HTTP to backend (EC2 without HTTPS cert). Switch to https-only once you add a cert.
+        origin_protocol_policy = "http-only"
+        origin_ssl_protocols   = ["TLSv1.2"]
+      }
+    }
+  }
+
   enabled             = true
   is_ipv6_enabled     = true
   default_root_object = "index.html"
   tags                = local.common_tags
 
+  # /api/* → backend. Must come before the default_cache_behavior.
+  dynamic "ordered_cache_behavior" {
+    for_each = local.has_backend ? [1] : []
+    content {
+      path_pattern     = "/api/*"
+      allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+      cached_methods   = ["GET", "HEAD", "OPTIONS"]
+      target_origin_id = "Backend-API"
+
+      forwarded_values {
+        # Forward the query string so pagination and filters reach the API.
+        query_string = true
+        # Forward all headers the API needs — Authorization, Content-Type, Origin.
+        headers = ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"]
+        cookies {
+          forward = "all"
+        }
+      }
+
+      viewer_protocol_policy = "redirect-to-https"
+      # Never cache API responses at CloudFront — let the API control caching.
+      min_ttl     = 0
+      default_ttl = 0
+      max_ttl     = 0
+      compress    = true
+    }
+  }
+
+  # Default behaviour: frontend SPA from S3
   default_cache_behavior {
-    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
     cached_methods   = ["GET", "HEAD"]
     target_origin_id = "S3-${aws_s3_bucket.frontend.id}"
 

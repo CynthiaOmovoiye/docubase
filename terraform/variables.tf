@@ -27,3 +27,9 @@ variable "root_domain" {
   type        = string
   default     = ""
 }
+
+variable "backend_origin_url" {
+  description = "Public hostname of the backend API server, e.g. ec2-1-2-3-4.compute-1.amazonaws.com or api.mydomain.com. No scheme, no trailing slash."
+  type        = string
+  default     = ""
+}

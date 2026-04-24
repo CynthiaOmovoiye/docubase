@@ -37,6 +37,10 @@ from sqlalchemy.orm import selectinload
 
 from app.core.logging import get_logger
 from app.core.observability import get_langfuse
+from app.domains.chat.routing_heuristics import (
+    WORKSPACE_ROUTE_ALIAS_STOPWORDS as _WORKSPACE_ROUTE_ALIAS_STOPWORDS,
+    query_prefers_workspace_aggregate_over_single_twin as _workspace_query_prefers_aggregate_over_single_twin,
+)
 from app.domains.answering.generator import generate_answer, generate_workspace_answer
 from app.domains.answering.llm_provider import LLMResponse
 from app.domains.answering.verifier import (
@@ -129,6 +133,7 @@ _ANY_PROJECT_RE = re.compile(
     r"\b(any of|any one|one of|pick any|pick one|either one|whichever)\b",
     re.IGNORECASE,
 )
+
 _AUTH_TOPIC_RE = re.compile(
     r"\b(auth|authentication|login|sign.?in|sign.?up|jwt|oauth|sso|session)\b",
     re.IGNORECASE,
@@ -434,7 +439,11 @@ async def send_message(
             chunks = retrieval_packet.chunks
         else:
             targeted_workspace_twin = _resolve_workspace_doctwin_from_query(content, workspace_summary or {})
-            if targeted_workspace_twin is None and not _is_any_project_query(content):
+            prefer_workspace_aggregate = _workspace_query_prefers_aggregate_over_single_twin(content)
+            if (
+                (targeted_workspace_twin is None or prefer_workspace_aggregate)
+                and not _is_any_project_query(content)
+            ):
                 assert workspace_scope_id is not None
                 answer, chunks, workspace_metrics = await _answer_across_workspace(
                     session=session,
@@ -614,6 +623,7 @@ async def send_message(
                         doctwin_name=doctwin_name,
                         packet=retrieval_packet,
                         allow_retry=True,
+                        query=content,
                     )
                     verification_elapsed_ms += (perf_counter() - verification_started_at) * 1000
                     if verification.retry_hint:
@@ -650,6 +660,7 @@ async def send_message(
                         doctwin_name=doctwin_name,
                         packet=retrieval_packet,
                         allow_retry=False,
+                        query=content,
                     )
                     verification_elapsed_ms += (perf_counter() - verification_started_at) * 1000
                     answer.content = verification.content
@@ -711,6 +722,7 @@ async def send_message(
                 doctwin_name=doctwin_name,
                 packet=retrieval_packet,
                 allow_retry=False,
+                query=content,
             )
             answer.content = verification.content
             quality_metrics = build_single_project_quality_metrics(
@@ -1306,6 +1318,8 @@ def _resolve_workspace_doctwin_from_query(query: str, workspace_summary: dict) -
         for alias in _workspace_doctwin_aliases(twin):
             normalised_alias = _normalise_workspace_match(alias)
             if len(normalised_alias) < 3:
+                continue
+            if normalised_alias in _WORKSPACE_ROUTE_ALIAS_STOPWORDS:
                 continue
             if f" {normalised_alias} " not in normalised_query:
                 continue
