@@ -51,3 +51,9 @@ Thumbs.db
 # ─── Uploads / local storage ──────────────────────────────────────────────────
 /tmp/
 uploads/
+
+# Terraform — provider cache & local state (never commit)
+**/.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
