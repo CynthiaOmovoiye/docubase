@@ -10,9 +10,9 @@ from app.domains.retrieval.planner import build_retrieval_plan
 class TestEvidencePacket:
     def test_packet_merges_files_and_spans_from_chunks(self):
         plan = build_retrieval_plan(
-            query="How is auth implemented?",
-            intent=QueryIntent.architecture,
-            expanded_query="Explain the auth implementation and the files involved.",
+            query="How is the onboarding guide structured?",
+            intent=QueryIntent.specific,
+            expanded_query="Walk through the structure of the onboarding guide.",
         )
 
         packet = build_evidence_packet(
@@ -21,120 +21,38 @@ class TestEvidencePacket:
             chunks=[
                 {
                     "chunk_id": "chunk-1",
-                    "chunk_type": "code_snippet",
-                    "source_ref": "app/auth.py",
+                    "chunk_type": "documentation",
+                    "source_ref": "docs/onboarding.md",
                     "source_id": "source-1",
                     "doctwin_id": "twin-1",
                     "snapshot_id": "snap-1",
                     "start_line": 10,
                     "end_line": 20,
                     "score": 0.91,
-                    "match_reasons": ["vector", "symbol:login_user"],
+                    "match_reasons": ["vector", "lexical"],
                 }
             ],
             file_matches=[
                 EvidenceFileRef(
-                    path="app/auth.py",
+                    path="docs/onboarding.md",
                     doctwin_id="twin-1",
                     source_id="source-1",
                     snapshot_id="snap-1",
                     reasons=["file"],
                 )
             ],
-            symbol_matches=[
-                EvidenceSymbolRef(
-                    symbol_name="login_user",
-                    qualified_name="login_user",
-                    symbol_kind="async_function",
-                    path="app/auth.py",
-                    doctwin_id="twin-1",
-                    source_id="source-1",
-                    snapshot_id="snap-1",
-                    reasons=["symbol"],
-                )
-            ],
+            symbol_matches=[],
         )
 
         assert packet.chunk_ids == ["chunk-1"]
-        assert packet.files[0].path == "app/auth.py"
-        assert "symbol:login_user" in packet.files[0].reasons
+        assert packet.files[0].path == "docs/onboarding.md"
         assert packet.spans[0].start_line == 10
         assert packet.layer_hits["file"] == 1
-        assert packet.layer_hits["symbol"] == 1
-
-    def test_packet_counts_facts_in_layer_hits_and_flow_outline(self):
-        plan = build_retrieval_plan(
-            query="How is auth implemented?",
-            intent=QueryIntent.architecture,
-        )
-        facts = [
-            {
-                "fact_type": "route",
-                "path": "app/routes.py",
-                "summary": "POST /login",
-                "subject": "login",
-                "predicate": "defines",
-                "object_ref": None,
-                "source_id": "s1",
-                "fact_id": "f1",
-                "score": 1.0,
-            },
-            {
-                "fact_type": "auth_check",
-                "path": "app/deps.py",
-                "summary": "Depends get_current_user",
-                "subject": "x",
-                "predicate": "y",
-                "object_ref": None,
-                "source_id": "s1",
-                "fact_id": "f2",
-                "score": 1.0,
-            },
-        ]
-        packet = build_evidence_packet(
-            plan=plan,
-            doctwin_id="twin-1",
-            chunks=[],
-            facts=facts,
-        )
-        assert packet.layer_hits.get("facts") == 2
-        assert "route:1" in packet.flow_outline
-        assert "auth_check:1" in packet.flow_outline
-
-    def test_packet_flow_outline_includes_structural_segment_from_graph_edges(self):
-        plan = build_retrieval_plan(
-            query="How is auth implemented?",
-            intent=QueryIntent.architecture,
-        )
-        facts = [
-            {
-                "fact_type": "route",
-                "path": "app/routes.py",
-                "summary": "POST /login",
-                "subject": "login",
-                "predicate": "defines",
-                "object_ref": None,
-                "source_id": "s1",
-                "fact_id": "f1",
-                "score": 1.0,
-            },
-        ]
-        edges = [{"source": "app/routes.py", "relationship": "contains", "target": "login"}]
-        packet = build_evidence_packet(
-            plan=plan,
-            doctwin_id="twin-1",
-            chunks=[],
-            facts=facts,
-            graph_edges=edges,
-        )
-        assert "|| structural:" in packet.flow_outline
-        assert "app/routes.py" in packet.flow_outline
-        assert "contains" in packet.flow_outline
 
     def test_packet_does_not_promote_memory_refs_into_file_list(self):
         plan = build_retrieval_plan(
-            query="How is auth implemented?",
-            intent=QueryIntent.architecture,
+            query="What is this project about?",
+            intent=QueryIntent.general,
         )
 
         packet = build_evidence_packet(
@@ -143,7 +61,7 @@ class TestEvidencePacket:
             chunks=[
                 {
                     "chunk_id": "chunk-1",
-                    "chunk_type": "auth_flow",
+                    "chunk_type": "memory_brief",
                     "source_ref": "__memory__/twin-1",
                     "source_id": "source-1",
                     "doctwin_id": "twin-1",
@@ -153,27 +71,27 @@ class TestEvidencePacket:
                 },
                 {
                     "chunk_id": "chunk-2",
-                    "chunk_type": "code_snippet",
-                    "source_ref": "app/auth.py",
+                    "chunk_type": "documentation",
+                    "source_ref": "docs/overview.md",
                     "source_id": "source-1",
                     "doctwin_id": "twin-1",
                     "snapshot_id": "snap-1",
                     "start_line": 10,
                     "end_line": 20,
                     "score": 0.88,
-                    "match_reasons": ["symbol:login_user"],
+                    "match_reasons": ["lexical"],
                 },
             ],
             file_matches=[],
             symbol_matches=[],
         )
 
-        assert [file_ref.path for file_ref in packet.files] == ["app/auth.py"]
+        assert [file_ref.path for file_ref in packet.files] == ["docs/overview.md"]
 
     def test_packet_promotes_grounded_file_refs_from_memory_provenance(self):
         plan = build_retrieval_plan(
             query="What changed recently in auth?",
-            intent=QueryIntent.change_query,
+            intent=QueryIntent.general,
         )
 
         packet = build_evidence_packet(
@@ -209,7 +127,7 @@ class TestEvidencePacket:
     def test_packet_promotes_backticked_file_refs_from_memory_content_when_provenance_missing(self):
         plan = build_retrieval_plan(
             query="What looks risky or fragile?",
-            intent=QueryIntent.risk_query,
+            intent=QueryIntent.general,
         )
 
         packet = build_evidence_packet(
@@ -237,3 +155,20 @@ class TestEvidencePacket:
         )
 
         assert [file_ref.path for file_ref in packet.files] == ["backend/app/api/v1/users.py"]
+
+    def test_packet_includes_graph_edges(self):
+        plan = build_retrieval_plan(
+            query="What is in the authentication flow?",
+            intent=QueryIntent.general,
+        )
+        edges = [{"source": "app/routes.py", "relationship": "contains", "target": "login"}]
+
+        packet = build_evidence_packet(
+            plan=plan,
+            doctwin_id="twin-1",
+            chunks=[],
+            graph_edges=edges,
+        )
+
+        assert len(packet.graph_edges) == 1
+        assert packet.graph_edges[0]["source"] == "app/routes.py"

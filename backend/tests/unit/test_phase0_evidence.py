@@ -102,30 +102,38 @@ class TestEvidenceHelpers:
 
 class TestHydration:
     @pytest.mark.asyncio
-    async def test_hydrates_strict_code_snippet_when_hash_matches(self):
+    async def test_hydrates_strict_documentation_chunk_when_hash_matches(self):
         chunk_id = "0f6754b8-ff73-4f33-9f90-2b09f3b3536d"
-        snippet = "# app/auth.py — def login\n\ndef login():\n    return True"
+        # Documentation content as produced by the extractor for the markdown below:
+        # "## Authentication\n\nUses JWT-based bearer tokens.\n"
+        # heading label + "\n\n" + body
+        expected_content = "Authentication\n\nUses JWT-based bearer tokens."
+        # sha256 of expected_content
+        content_hash = "ff6529d4f3df134e5184f3f9e37d1b7b6f514bf31591b7cc1349a23d1fa1ef17"
+        # segment_id = build_segment_id("docs/api.md", "documentation", 2, 2)
+        segment_id = "docs/api.md:2-2:documentation"
+
         chunk_row = SimpleNamespace(
             id=chunk_id,
-            chunk_type=ChunkType.code_snippet,
-            start_line=1,
+            chunk_type=ChunkType.documentation,
+            start_line=2,
             end_line=2,
-            source_ref="app/auth.py",
+            source_ref="docs/api.md",
             snapshot_id="a" * 40,
-            segment_id="app/auth.py:1-2:code_snippet",
-            content_hash="1c06351bb74e83597d21454ba3c348ca9e17fce87954b713a7827c6420adea67",
+            segment_id=segment_id,
+            content_hash=content_hash,
             lineage=ChunkLineage.file_backed,
-            chunk_metadata={"symbol_name": "def login"},
+            chunk_metadata={"section": "Authentication", "part": 0},
         )
         source = SimpleNamespace(
             id="source-1",
             index_mode=SourceIndexMode.strict,
             source_type=SourceType.google_drive,
-            connection_config={"file_id": "x", "file_path": "app/auth.py"},
+            connection_config={"file_id": "x", "file_path": "docs/api.md"},
             snapshot_id="a" * 40,
             last_commit_sha="a" * 40,
             connected_account_id="account-1",
-            index_health={"policy": {"allow_code_snippets": True}},
+            index_health={"policy": {"allow_code_snippets": False}},
         )
         db = MagicMock()
         result = MagicMock()
@@ -134,14 +142,14 @@ class TestHydration:
 
         with patch(
             "app.domains.retrieval.hydration._load_canonical_source_text",
-            AsyncMock(return_value="def login():\n    return True\n"),
+            AsyncMock(return_value="## Authentication\n\nUses JWT-based bearer tokens.\n"),
         ):
             hydrated = await hydrate_retrieved_chunks(
-                [{"chunk_id": chunk_id, "content": "stale", "chunk_type": "code_snippet"}],
+                [{"chunk_id": chunk_id, "content": "stale", "chunk_type": "documentation"}],
                 db,
             )
 
-        assert hydrated[0]["content"] == snippet
+        assert hydrated[0]["content"] == expected_content
         assert hydrated[0]["hydrated"] is True
 
     @pytest.mark.asyncio

@@ -151,60 +151,59 @@ def test_append_negative_bounds_lists_missing_evidence_gaps():
     assert "refresh rotation not indexed" in out
 
 
-def test_single_project_verifier_flags_strong_negative_denying_present_route_facts():
+def test_single_project_verifier_flags_absence_claim_contradicted_by_protectedroute():
     from app.domains.answering.verifier import _has_contradicted_absence_claim
 
     packet = RetrievalEvidencePacket(
-        query="routing?",
-        search_query="routing",
-        lexical_query="routing",
+        query="is there route protection?",
+        search_query="route protection",
+        lexical_query="route protection",
         intent=None,
         mode=RetrievalMode.implementation,
-        facts=[
+        files=[EvidenceFileRef(path="frontend/src/App.tsx", reasons=["file:lexical"])],
+        chunks=[
             {
-                "fact_type": "route",
-                "path": "app/routes.py",
-                "summary": "GET /health",
-                "subject": "/health",
-                "predicate": "defines",
-                "object_ref": "",
-                "source_id": "s",
-                "fact_id": "f",
-                "score": 1.0,
+                "chunk_id": "c1",
+                "chunk_type": "documentation",
+                "source_ref": "frontend/src/App.tsx",
+                "content": "function ProtectedRoute() { if (!isAuthenticated()) return <Navigate to='/login' /> }",
             }
         ],
-        chunks=[],
     )
     assert _has_contradicted_absence_claim(
-        "There are no routes in this service.",
+        "There is no route protection in this service.",
         packet,
     )
 
 
-def test_single_project_verifier_allows_file_paths_declared_only_on_implementation_facts():
-    """Phase 6 — fact rows extend the allowed reference namespace."""
+def test_single_project_verifier_allows_file_paths_declared_in_files():
     packet = RetrievalEvidencePacket(
         query="where is the handler?",
         search_query="handler",
         lexical_query="handler",
         intent=None,
         mode=RetrievalMode.implementation,
-        files=[],
-        symbols=[],
-        facts=[
+        files=[EvidenceFileRef(path="app/handlers.py", reasons=["file:lexical"])],
+        symbols=[
+            EvidenceSymbolRef(
+                symbol_name="handle_ping",
+                qualified_name="handle_ping",
+                symbol_kind="function",
+                path="app/handlers.py",
+                reasons=["symbol:lexical"],
+            )
+        ],
+        chunks=[
             {
-                "path": "only/from/facts.py",
-                "fact_type": "handler",
-                "subject": "handle_ping",
-                "predicate": "defined_in",
-                "object_ref": "",
-                "summary": "health check",
+                "chunk_id": "c1",
+                "chunk_type": "documentation",
+                "source_ref": "app/handlers.py",
+                "content": "def handle_ping(): return 'pong'",
             }
         ],
-        chunks=[],
     )
     result = verify_single_project_answer(
-        answer="See `only/from/facts.py` where `handle_ping` is defined.",
+        answer="See `app/handlers.py` where `handle_ping` is defined.",
         doctwin_name="Twin",
         packet=packet,
         allow_retry=False,

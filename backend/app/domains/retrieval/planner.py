@@ -441,22 +441,10 @@ def _classify_mode(
         return RetrievalMode.recruiter_summary
     if _STATUS_RE.search(lowered):
         return RetrievalMode.project_status
-    if intent == QueryIntent.change_query:
-        return RetrievalMode.change_review
-    if intent == QueryIntent.risk_query:
-        return RetrievalMode.risk_review
-    if intent == QueryIntent.onboarding:
-        return RetrievalMode.onboarding
-    if intent == QueryIntent.architecture and _IMPLEMENTATION_RE.search(lowered):
-        return RetrievalMode.implementation
-    if intent == QueryIntent.file_specific:
-        return RetrievalMode.implementation
     if "dashboard" in lowered and any(token in lowered for token in ("load", "loaded", "loading", "query", "fetch")):
         return RetrievalMode.implementation
     if _ENGINE_RE.search(lowered):
         return RetrievalMode.implementation
     if _IMPLEMENTATION_RE.search(lowered):
         return RetrievalMode.implementation
-    if intent == QueryIntent.architecture:
-        return RetrievalMode.architecture
     return RetrievalMode.general

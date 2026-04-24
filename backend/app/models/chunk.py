@@ -31,30 +31,35 @@ class ChunkType(enum.StrEnum):
     """
     What kind of knowledge this chunk represents.
 
-    Deterministic (produced by extractors.py from raw file content):
-      architecture_summary, module_description, feature_description,
-      dependency_signal, documentation, code_snippet, implementation_fact,
-      career_summary, experience_entry, project_description, skill_profile, manual_note
+    Deterministic (produced by extractors.py from document sources):
+      documentation, career_summary, experience_entry, project_description,
+      skill_profile, manual_note
 
     LLM-generated (produced by domains/memory/extractor.py — post-ingestion):
       change_entry, risk_note, decision_record, hotspot, memory_brief,
       feature_summary, auth_flow, onboarding_map
       These chunks always have source_ref = "__memory__/{doctwin_id}" to
       distinguish them from file-derived chunks and allow targeted deletion.
+
+    Retired (kept in enum so existing DB rows don't break; no longer produced):
+      architecture_summary, module_description, feature_description,
+      dependency_signal, code_snippet, implementation_fact
     """
-    # ── Deterministic chunk types ────────────────────────────────────────────
-    architecture_summary = "architecture_summary"
-    module_description = "module_description"
-    feature_description = "feature_description"
-    dependency_signal = "dependency_signal"
+    # ── Active deterministic chunk types ────────────────────────────────────
     documentation = "documentation"
-    code_snippet = "code_snippet"  # Only present if allow_code_snippets=True in TwinConfig
-    implementation_fact = "implementation_fact"  # Span-backed facts for RAG (see implementation_facts)
     career_summary = "career_summary"
     experience_entry = "experience_entry"
     project_description = "project_description"
     skill_profile = "skill_profile"
     manual_note = "manual_note"
+
+    # ── Retired code-intelligence types (no longer produced) ─────────────────
+    architecture_summary = "architecture_summary"
+    module_description = "module_description"
+    feature_description = "feature_description"
+    dependency_signal = "dependency_signal"
+    code_snippet = "code_snippet"
+    implementation_fact = "implementation_fact"
 
     # ── LLM-generated memory chunk types ────────────────────────────────────
     change_entry = "change_entry"       # Answers "what changed recently?"

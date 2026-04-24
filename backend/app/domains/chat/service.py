@@ -43,16 +43,8 @@ from app.domains.chat.routing_heuristics import (
 )
 from app.domains.answering.generator import generate_answer, generate_workspace_answer
 from app.domains.answering.llm_provider import LLMResponse
-from app.domains.answering.verifier import (
-    verify_single_project_answer,
-    verify_workspace_answer,
-)
 from app.domains.evaluation.answer_authority import build_answer_authority_diagnosis
 from app.domains.evaluation.latency import build_chat_latency_report
-from app.domains.evaluation.metrics import (
-    build_single_project_quality_metrics,
-    build_workspace_quality_metrics,
-)
 from app.domains.memory.service import get_workspace_synthesis
 from app.domains.retrieval.intent import QueryAnalysis, QueryIntent, analyse_query
 from app.domains.retrieval.router import (
@@ -603,134 +595,6 @@ async def send_message(
                     pipeline_trace_id=pipeline_trace_id,
                 )
                 generation_elapsed_ms += (perf_counter() - generation_started_at) * 1000
-                retry_hint: str | None = None
-                if guaranteed_refs and _HEDGE_RE.search(answer.content):
-                    retry_hint = (
-                        f"The retrieved context contains content from: {', '.join(guaranteed_refs)}. "
-                        "Answer directly from the retrieved <knowledge> and do not claim the information "
-                        "is unavailable."
-                    )
-                    logger.info(
-                        "response_retry_hedging",
-                        session_id=str(session_id),
-                        doctwin_id=str(routed_doctwin_id) if routed_doctwin_id else None,
-                        refs=guaranteed_refs,
-                    )
-                else:
-                    verification_started_at = perf_counter()
-                    verification = verify_single_project_answer(
-                        answer=answer.content,
-                        doctwin_name=doctwin_name,
-                        packet=retrieval_packet,
-                        allow_retry=True,
-                        query=content,
-                    )
-                    verification_elapsed_ms += (perf_counter() - verification_started_at) * 1000
-                    if verification.retry_hint:
-                        retry_hint = verification.retry_hint
-                        logger.info(
-                            "answer_verifier_retry_requested",
-                            session_id=str(session_id),
-                            doctwin_id=str(routed_doctwin_id) if routed_doctwin_id else None,
-                            issues=verification.issues,
-                        )
-                    else:
-                        answer.content = verification.content
-
-                if retry_hint:
-                    generation_started_at = perf_counter()
-                    answer = await generate_answer(
-                        doctwin_name=doctwin_name,
-                        query=content,
-                        context_chunks=chunks,
-                        conversation_history=history,
-                        custom_context=custom_context,
-                        allow_code_snippets=allow_code_snippets,
-                        trace_id=trace_id,
-                        sources=source_list,
-                        memory_brief=memory_brief,
-                        regeneration_hint=retry_hint,
-                        retrieval_packet=retrieval_packet,
-                        pipeline_trace_id=pipeline_trace_id,
-                    )
-                    generation_elapsed_ms += (perf_counter() - generation_started_at) * 1000
-                    verification_started_at = perf_counter()
-                    verification = verify_single_project_answer(
-                        answer=answer.content,
-                        doctwin_name=doctwin_name,
-                        packet=retrieval_packet,
-                        allow_retry=False,
-                        query=content,
-                    )
-                    verification_elapsed_ms += (perf_counter() - verification_started_at) * 1000
-                    answer.content = verification.content
-
-                if verification is not None:
-                    quality_metrics = build_single_project_quality_metrics(
-                        answer=answer.content,
-                        packet=retrieval_packet,
-                        verification=verification,
-                        retry_requested=bool(retry_hint),
-                    )
-                    logger.info(
-                        "answer_verifier_complete",
-                        session_id=str(session_id),
-                        doctwin_id=str(routed_doctwin_id) if routed_doctwin_id else None,
-                        verified=verification.verified,
-                        rewritten=verification.rewritten,
-                        issues=verification.issues,
-                        retried=bool(retry_hint),
-                    )
-                    logger.info(
-                        "answer_quality_metrics",
-                        session_id=str(session_id),
-                        doctwin_id=str(routed_doctwin_id) if routed_doctwin_id else None,
-                        **quality_metrics.to_log_dict(),
-                    )
-
-    from app.core.config import get_settings
-
-    _cfg = get_settings()
-    if (
-        _cfg.chat_quality_gate_enabled
-        and not used_deterministic_fallback
-        and not answer.model.startswith("deterministic")
-        and not answer_from_workspace_aggregate
-        and (session.doctwin_id is not None or routed_doctwin_id is not None)
-    ):
-        from app.domains.evaluation.quality_gate import apply_twin_path_quality_gate
-
-        answer, qg_gen_ms, qg_ver_ms = await apply_twin_path_quality_gate(
-            answer=answer,
-            query=content,
-            context_chunks=chunks,
-            doctwin_name=doctwin_name,
-            conversation_history=history,
-            custom_context=custom_context,
-            allow_code_snippets=allow_code_snippets,
-            trace_id=trace_id,
-            sources=source_list,
-            memory_brief=memory_brief,
-            retrieval_packet=retrieval_packet,
-            pipeline_trace_id=pipeline_trace_id,
-        )
-        generation_elapsed_ms += qg_gen_ms
-        verification_elapsed_ms += qg_ver_ms
-        if retrieval_packet is not None:
-            verification = verify_single_project_answer(
-                answer=answer.content,
-                doctwin_name=doctwin_name,
-                packet=retrieval_packet,
-                allow_retry=False,
-                query=content,
-            )
-            answer.content = verification.content
-            quality_metrics = build_single_project_quality_metrics(
-                answer=answer.content,
-                packet=retrieval_packet,
-                verification=verification,
-                retry_requested=True,
-            )
 
     # Persist assistant message
     context_chunk_ids = [c["chunk_id"] for c in chunks if "chunk_id" in c]
@@ -1529,92 +1393,7 @@ async def _answer_across_workspace(
         workspace_memory=workspace_memory_text,
     )
     generation_elapsed_ms += (perf_counter() - generation_started_at) * 1000
-    verification_started_at = perf_counter()
-    verification = verify_workspace_answer(
-        answer=answer.content,
-        workspace_name=workspace_name,
-        project_contexts=project_contexts,
-        allow_retry=True,
-        query=query,
-    )
-    verification_elapsed_ms += (perf_counter() - verification_started_at) * 1000
-    if verification.retry_hint:
-        retry_requested = True
-        logger.info(
-            "workspace_answer_verifier_retry_requested",
-            workspace_id=str(workspace_id),
-            issues=verification.issues,
-        )
-        generation_started_at = perf_counter()
-        answer = await generate_workspace_answer(
-            workspace_name=workspace_name,
-            query=query,
-            project_contexts=project_contexts,
-            conversation_history=history,
-            trace_id=trace_id,
-            regeneration_hint=verification.retry_hint,
-            workspace_memory=workspace_memory_text,
-        )
-        generation_elapsed_ms += (perf_counter() - generation_started_at) * 1000
-        verification_started_at = perf_counter()
-        verification = verify_workspace_answer(
-            answer=answer.content,
-            workspace_name=workspace_name,
-            project_contexts=project_contexts,
-            allow_retry=False,
-            query=query,
-        )
-        verification_elapsed_ms += (perf_counter() - verification_started_at) * 1000
 
-    answer.content = verification.content
-
-    from app.core.config import get_settings as _ws_gate_settings
-    from app.domains.evaluation.quality_gate import apply_workspace_aggregate_quality_gate
-
-    if _ws_gate_settings().chat_quality_gate_enabled and not answer.model.startswith(
-        "deterministic"
-    ):
-        answer, qg_gen_ms, qg_ver_ms = await apply_workspace_aggregate_quality_gate(
-            answer=answer,
-            query=query,
-            merged_chunks=merged_chunks,
-            workspace_name=workspace_name,
-            project_contexts=project_contexts,
-            conversation_history=history,
-            workspace_memory=workspace_memory_text,
-            trace_id=trace_id,
-            workspace_id=workspace_id,
-        )
-        generation_elapsed_ms += qg_gen_ms
-        verification_elapsed_ms += qg_ver_ms
-        verification = verify_workspace_answer(
-            answer=answer.content,
-            workspace_name=workspace_name,
-            project_contexts=project_contexts,
-            allow_retry=False,
-            query=query,
-        )
-        answer.content = verification.content
-
-    quality_metrics = build_workspace_quality_metrics(
-        answer=answer.content,
-        project_contexts=project_contexts,
-        verification=verification,
-        retry_requested=retry_requested,
-    )
-    logger.info(
-        "workspace_answer_verifier_complete",
-        workspace_id=str(workspace_id),
-        verified=verification.verified,
-        rewritten=verification.rewritten,
-        issues=verification.issues,
-        retried=retry_requested,
-    )
-    logger.info(
-        "workspace_answer_quality_metrics",
-        workspace_id=str(workspace_id),
-        **quality_metrics.to_log_dict(),
-    )
     latency_report = build_chat_latency_report(
         retrieval_ms=retrieval_elapsed_ms,
         generation_ms=generation_elapsed_ms,
@@ -1637,7 +1416,6 @@ async def _answer_across_workspace(
         "retrieval_ms": retrieval_elapsed_ms,
         "generation_ms": generation_elapsed_ms,
         "verification_ms": verification_elapsed_ms,
-        "quality_metrics": quality_metrics,
     }
 
 

@@ -34,22 +34,16 @@ from app.domains.embedding.embedder import (
     resolve_embedding_profile,
 )
 from app.domains.retrieval.hybrid import (
-    fetch_file_candidates,
     fetch_lexical_chunk_candidates,
-    fetch_symbol_candidates,
     merge_candidate,
 )
 from app.domains.retrieval.hydration import hydrate_retrieved_chunks
 from app.domains.retrieval.intent import QueryIntent, extract_path_hint
-from app.domains.retrieval.multihop import multihop_retrieve_with_graph
 from app.domains.retrieval.packets import (
-    EvidenceFileRef,
-    EvidenceSymbolRef,
     RetrievalEvidencePacket,
     build_evidence_packet,
 )
 from app.domains.retrieval.planner import RetrievalMode, build_retrieval_plan
-from app.domains.retrieval.reranker import rerank_chunks, reranker_available
 from app.models.chunk import Chunk
 from app.models.source import Source, SourceStatus
 from app.models.twin import Twin, TwinConfig
@@ -99,10 +93,6 @@ def _log_chat_rag_pipeline(
     logger.info("chat_rag_pipeline", **payload)
 
 
-# When a reranker is configured, over-fetch this many candidates from pgvector
-# so the reranker has a larger pool to choose from.
-_RERANK_OVERFETCH_MULTIPLIER = 3
-_RERANK_MAX_CANDIDATES = 40
 _MAX_GUARANTEED_CHUNKS = 8
 _MAX_GUARANTEED_PER_REF = 2
 
@@ -113,178 +103,14 @@ _MAX_GUARANTEED_PER_REF = 2
 # here improves recall without hurting precision in the final answer.
 _MIN_SCORE = 0.15
 
-# Score boost for preferred chunk types per mode (+/- additive)
-_MODE_SCORE_ADJUSTMENTS: dict[RetrievalMode, dict[str, float]] = {
-    RetrievalMode.implementation: {
-        "implementation_fact": 0.40,
-        "code_snippet": 0.35,
-        "module_description": 0.22,
-        "feature_description": 0.12,
-        "documentation": -0.18,
-        "memory_brief": -0.22,
-        "auth_flow": -0.08,
-        "onboarding_map": -0.10,
-        "feature_summary": -0.10,
-        "decision_record": -0.06,
-    },
-    RetrievalMode.onboarding: {
-        "implementation_fact": 0.30,
-        "code_snippet": 0.22,
-        "module_description": 0.18,
-        "feature_description": 0.12,
-        "onboarding_map": 0.12,
-        "documentation": -0.10,
-        "memory_brief": -0.08,
-    },
-    RetrievalMode.workspace_comparison: {
-        "implementation_fact": 0.38,
-        "code_snippet": 0.32,
-        "module_description": 0.2,
-        "feature_description": 0.1,
-        "documentation": -0.18,
-        "memory_brief": -0.2,
-        "auth_flow": -0.06,
-        "feature_summary": -0.08,
-    },
-    RetrievalMode.architecture: {
-        "implementation_fact": 0.16,
-        "module_description": 0.16,
-        "feature_description": 0.1,
-        "decision_record": 0.1,
-        "feature_summary": 0.08,
-        "code_snippet": 0.08,
-    },
-    RetrievalMode.change_review: {
-        "change_entry": 0.24,
-        "implementation_fact": 0.12,
-        "code_snippet": 0.08,
-        "documentation": -0.06,
-    },
-    RetrievalMode.risk_review: {
-        "risk_note": 0.24,
-        "implementation_fact": 0.12,
-        "module_description": 0.12,
-        "code_snippet": 0.08,
-        "documentation": -0.08,
-    },
-    RetrievalMode.recruiter_summary: {
-        "feature_summary": 0.12,
-        "implementation_fact": 0.12,
-        "module_description": 0.1,
-        "code_snippet": 0.08,
-        "documentation": -0.08,
-    },
-    RetrievalMode.project_status: {
-        "change_entry": 0.22,
-        "risk_note": 0.12,
-        "implementation_fact": 0.10,
-        "documentation": -0.08,
-    },
-    RetrievalMode.general: {},
-}
-
-_IMPLEMENTATIONISH_MODES = {
-    RetrievalMode.implementation,
-    RetrievalMode.onboarding,
-    RetrievalMode.workspace_comparison,
-}
-
-_AUTH_QUERY_HINTS = (
-    "auth",
-    "authentication",
-    "authorization",
-    "login",
-    "logout",
-    "register",
-    "signup",
-    "signin",
-    "refresh",
-    "token",
-    "session",
-    "jwt",
-    "current_user",
-)
-_DASHBOARD_QUERY_HINTS = ("dashboard", "audit", "useaudit", "load")
-_AUTH_CONTENT_HINTS = (
-    "get_current_user",
-    "current_user",
-    "owner_id",
-    "oauth2passwordbearer",
-    "refresh_token",
-    "refresh token",
-    "token",
-    "jwt",
-)
-_AUTH_FEATURE_PATH_HINTS = (
-    "/core/auth.py",
-    "/routes/auth.py",
-    "/api/v1/routes/auth.py",
-    "/users.py",
-    "/auth.ts",
-    "/authrefresh.ts",
-    "/sessiongate.tsx",
-    "/tokenrefreshscheduler.tsx",
-    "/app.tsx",
-)
-_AUTH_FEATURE_CONTENT_HINTS = (
-    "get_current_user",
-    "oauth2passwordbearer",
-    "create_access_token",
-    "create_refresh_token",
-    "decode_access_token",
-    "decode_refresh_token",
-    "hash_password",
-    "verify_password",
-    "async def login",
-    "async def register",
-    "async def refresh_tokens",
-    "depends(get_current_user)",
-    "owner_id",
-    "protectedroute",
-    "sessiongate",
-    "setsessiontokens",
-    "clearauth",
-    "performtokenrefresh",
-)
-# Diversity demotion for broad general queries (Phase 4) — tune with golden / retrieval evals.
+# Diversity demotion: cap how many chunks from a single source dominate results.
 _SURPLUS_SAME_SOURCE_DEMOTION_FACTOR = 0.62
 
-_ENGINE_QUERY_HINTS = (
-    "engine",
-    "engines",
-    "intake",
-    "document",
-    "documents",
-    "task intelligence",
-    "verification",
-    "audit",
-)
-
-# top_k overrides per intent (broader context for high-level questions)
+# top_k per intent — specific questions get a wider window
 _INTENT_TOP_K: dict[QueryIntent, int] = {
-    QueryIntent.change_query:  12,
-    QueryIntent.risk_query:    10,
-    QueryIntent.architecture:  8,
-    QueryIntent.onboarding:    16,
-    QueryIntent.file_specific: 8,
-    QueryIntent.general:       8,
+    QueryIntent.specific: 12,
+    QueryIntent.general:  8,
 }
-
-
-def _build_mode_boost_sql(mode: RetrievalMode) -> str:
-    adjustments = _MODE_SCORE_ADJUSTMENTS.get(mode, {})
-    if not adjustments:
-        return ""
-
-    when_clauses = "\n".join(
-        f"            WHEN c.chunk_type = '{chunk_type}' THEN {adjustment}"
-        for chunk_type, adjustment in adjustments.items()
-    )
-    return f"""
-          + CASE
-{when_clauses}
-            ELSE 0
-          END"""
 
 
 async def retrieve_packet_for_twin(
@@ -306,12 +132,7 @@ async def retrieve_packet_for_twin(
     signals, then hydrates the winning chunks and returns a structured packet.
     """
     effective_intent = intent or QueryIntent.general
-    if _query_has_auth_hint(f"{query} {expanded_query}"):
-        top_k = max(top_k, 22)
-    if _query_has_engine_hint(f"{query} {expanded_query}"):
-        top_k = max(top_k, 18)
-    if top_k == 8:
-        top_k = _INTENT_TOP_K.get(effective_intent, top_k)
+    top_k = _INTENT_TOP_K.get(effective_intent, top_k)
     plan = build_retrieval_plan(
         query=query,
         intent=effective_intent,
@@ -321,23 +142,11 @@ async def retrieve_packet_for_twin(
         workspace_scope=False,
     )
 
-    use_reranker = reranker_available()
-    dense_fetch_k = (
-        min(plan.dense_budget * _RERANK_OVERFETCH_MULTIPLIER, _RERANK_MAX_CANDIDATES)
-        if use_reranker
-        else plan.dense_budget
-    )
-    rerank_budget = min(plan.rerank_budget, _RERANK_MAX_CANDIDATES)
-
     code_filter = "" if allow_code_snippets else "AND c.chunk_type != 'code_snippet'"
-    boost_sql = _build_mode_boost_sql(plan.mode)
     profiles = await _load_doctwin_embedding_profiles(doctwin_id, db)
     candidates_by_id: dict[str, dict[str, Any]] = {}
     path_fetch_embedding_literal: str | None = None
-    file_matches: list[EvidenceFileRef] = []
-    symbol_matches: list[EvidenceSymbolRef] = []
     missing_evidence: list[str] = []
-    feature_chunks: list[dict[str, Any]] = []
 
     if profiles:
         for profile in profiles:
@@ -369,8 +178,7 @@ async def retrieve_packet_for_twin(
                     embedding_literal=embedding_literal,
                     profile=profile,
                     code_filter=code_filter,
-                    boost_sql=boost_sql,
-                    top_k=dense_fetch_k,
+                    top_k=plan.dense_budget,
                 )
             except Exception as exc:
                 logger.error(
@@ -404,73 +212,21 @@ async def retrieve_packet_for_twin(
                  "Check that ingestion completed and chunks have embeddings.",
         )
 
-    if "lexical" in plan.searched_layers:
-        lexical_chunks = await fetch_lexical_chunk_candidates(
-            db=db,
-            doctwin_id=doctwin_id,
-            lexical_query=plan.lexical_query,
-            allow_code_snippets=allow_code_snippets,
-            limit=plan.lexical_budget,
-        )
-        for candidate in lexical_chunks:
-            merge_candidate(candidates_by_id, candidate)
-        if not lexical_chunks:
-            missing_evidence.append("lexical")
+    lexical_chunks = await fetch_lexical_chunk_candidates(
+        db=db,
+        doctwin_id=doctwin_id,
+        lexical_query=plan.lexical_query,
+        allow_code_snippets=allow_code_snippets,
+        limit=plan.lexical_budget,
+    )
+    for candidate in lexical_chunks:
+        merge_candidate(candidates_by_id, candidate)
+    if not lexical_chunks:
+        missing_evidence.append("lexical")
 
-    if "file" in plan.searched_layers:
-        file_result = await fetch_file_candidates(
-            db=db,
-            doctwin_id=doctwin_id,
-            lexical_query=plan.lexical_query,
-            allow_code_snippets=allow_code_snippets,
-            limit=plan.file_budget,
-        )
-        file_matches = file_result.files
-        for candidate in file_result.chunks:
-            merge_candidate(candidates_by_id, candidate)
-        if not file_result.files:
-            missing_evidence.append("file")
-
-    if "symbol" in plan.searched_layers:
-        symbol_result = await fetch_symbol_candidates(
-            db=db,
-            doctwin_id=doctwin_id,
-            lexical_query=plan.lexical_query,
-            allow_code_snippets=allow_code_snippets,
-            limit=plan.symbol_budget,
-        )
-        symbol_matches = symbol_result.symbols
-        for candidate in symbol_result.chunks:
-            merge_candidate(candidates_by_id, candidate)
-        if not symbol_result.symbols:
-            missing_evidence.append("symbol")
-
-    if plan.mode in _IMPLEMENTATIONISH_MODES and _query_has_auth_hint(plan.search_query):
-        feature_chunks = await _fetch_auth_feature_chunks(
-            db=db,
-            doctwin_id=doctwin_id,
-            query=plan.query,
-            allow_code_snippets=allow_code_snippets,
-            limit=max(14, top_k),
-        )
-        for feature_chunk in feature_chunks:
-            merge_candidate(candidates_by_id, feature_chunk)
-    if _query_has_engine_hint(plan.search_query):
-        engine_feature_chunks = await _fetch_engine_feature_chunks(
-            db=db,
-            doctwin_id=doctwin_id,
-            query=plan.query,
-            allow_code_snippets=allow_code_snippets,
-            limit=max(12, top_k),
-        )
-        if engine_feature_chunks:
-            feature_chunks.extend(engine_feature_chunks)
-            for feature_chunk in engine_feature_chunks:
-                merge_candidate(candidates_by_id, feature_chunk)
-
-    # Path-hint: guarantee chunks from explicitly-named directories are included
+    # Path-hint: guarantee chunks from explicitly-named sections/docs
     resolved_hints: list[str] = list(path_hints) if path_hints else []
-    if not resolved_hints and "path" in plan.searched_layers:
+    if not resolved_hints:
         regex_hint = extract_path_hint(query)
         if regex_hint:
             resolved_hints = [regex_hint]
@@ -498,31 +254,6 @@ async def retrieve_packet_for_twin(
                 path_hint=path_hint,
                 added=len(path_chunks),
             )
-
-    graph_chunks: list[dict[str, Any]] = []
-    graph_edges: list[dict[str, str]] = []
-    if "graph" in plan.searched_layers:
-        graph_chunks, graph_edges = await multihop_retrieve_with_graph(
-            plan.search_query,
-            doctwin_id,
-            db,
-            allow_code_snippets,
-            max_additional_chunks=plan.graph_budget,
-        )
-        for gc in graph_chunks:
-            reasons = list(gc.get("match_reasons") or [])
-            reasons.append("graph")
-            gc["match_reasons"] = reasons
-            merge_candidate(candidates_by_id, gc)
-        if not graph_chunks:
-            missing_evidence.append("graph")
-
-    for memory_chunk in await _fetch_supporting_memory_chunks(
-        db=db,
-        doctwin_id=doctwin_id,
-        mode=plan.mode,
-    ):
-        merge_candidate(candidates_by_id, memory_chunk)
 
     if guaranteed_refs:
         remaining_budget = _MAX_GUARANTEED_CHUNKS
@@ -566,37 +297,15 @@ async def retrieve_packet_for_twin(
     )
 
     candidates = _score_and_prune_candidates(candidate_list, plan)
-    pruned_sorted = sorted(
-        candidates,
-        key=lambda x: float(x.get("score") or 0.0),
-        reverse=True,
-    )
-    _log_chat_rag_pipeline(
-        stage="2_after_prune",
-        pipeline_trace_id=pipeline_trace_id,
-        doctwin_id=doctwin_id,
-        query_preview=query,
-        chunks=pruned_sorted,
-        extra={"n_after_prune": len(candidates)},
-    )
-    if use_reranker and candidates:
-        rerank_query = plan.query.strip() or plan.search_query.strip()
-        chunks = await rerank_chunks(rerank_query, candidates[:rerank_budget], top_k)
-    else:
-        chunks = candidates[:top_k]
-    chunks = _pin_feature_chunks(chunks, feature_chunks, top_k)
+    chunks = candidates[:top_k]
 
     _log_chat_rag_pipeline(
-        stage="3_after_rerank_topk",
+        stage="2_after_prune_topk",
         pipeline_trace_id=pipeline_trace_id,
         doctwin_id=doctwin_id,
         query_preview=query,
         chunks=chunks,
-        extra={
-            "reranked": use_reranker,
-            "top_k": top_k,
-            "rerank_budget": rerank_budget if use_reranker else None,
-        },
+        extra={"n_after_prune": len(candidates), "top_k": top_k},
     )
 
     logger.info(
@@ -608,17 +317,14 @@ async def retrieve_packet_for_twin(
         candidates_before_prune=len(candidate_list),
         intent=plan.intent.value if plan.intent else None,
         mode=plan.mode.value,
-        reranked=use_reranker,
-        graph_chunks=len(graph_chunks),
         guaranteed_refs=len(guaranteed_refs or []),
         lexical_hits=sum(1 for chunk in chunks if "lexical" in (chunk.get("match_reasons") or [])),
-        symbol_hits=len(symbol_matches),
         embedding_profiles=len(profiles),
         missing_evidence=missing_evidence,
     )
     hydrated_chunks = await hydrate_retrieved_chunks(chunks, db)
     _log_chat_rag_pipeline(
-        stage="4_after_hydration",
+        stage="3_after_hydration",
         pipeline_trace_id=pipeline_trace_id,
         doctwin_id=doctwin_id,
         query_preview=query,
@@ -629,9 +335,9 @@ async def retrieve_packet_for_twin(
         plan=plan,
         chunks=hydrated_chunks,
         doctwin_id=doctwin_id,
-        file_matches=file_matches,
-        symbol_matches=symbol_matches,
-        graph_edges=graph_edges,
+        file_matches=[],
+        symbol_matches=[],
+        graph_edges=[],
         missing_evidence=sorted(set(missing_evidence)),
     )
 
@@ -661,544 +367,9 @@ def _score_and_prune_candidates(
 ) -> list[dict[str, Any]]:
     if not candidates:
         return []
-
-    query_text = f"{plan.query} {plan.search_query}".lower()
-    auth_query = any(token in query_text for token in _AUTH_QUERY_HINTS)
-    dashboard_query = any(token in query_text for token in _DASHBOARD_QUERY_HINTS)
-    has_code_candidates = any(_is_code_backed_candidate(candidate) for candidate in candidates)
-    auth_boost_trim = 0.0
-
-    adjusted: list[dict[str, Any]] = []
-    for candidate in candidates:
-        candidate = dict(candidate)
-        score = float(candidate.get("score") or 0.0)
-        chunk_type = _chunk_type_name(candidate)
-        source_ref = str(candidate.get("source_ref") or "")
-        lowered_ref = source_ref.lower()
-        lowered_content = str(candidate.get("content") or "").lower()
-        match_layers = {reason.split(":", 1)[0] for reason in (candidate.get("match_reasons") or [])}
-
-        if plan.mode in _IMPLEMENTATIONISH_MODES:
-            if chunk_type == "code_snippet":
-                score += 0.18
-            elif chunk_type == "module_description":
-                score += 0.14
-            elif chunk_type == "documentation":
-                score -= 0.08
-
-            if any(layer in {"file", "symbol", "path"} for layer in match_layers):
-                score += 0.08 * sum(layer in {"file", "symbol", "path"} for layer in match_layers)
-
-            if auth_query and any(token in lowered_ref for token in _AUTH_QUERY_HINTS):
-                score += 0.18 - auth_boost_trim
-            if auth_query and any(token in lowered_content for token in _AUTH_CONTENT_HINTS):
-                score += 0.18 - auth_boost_trim
-                if "/api/" in lowered_ref or "/routes/" in lowered_ref:
-                    score += 0.14
-                if lowered_ref.startswith("tests/"):
-                    score += 0.08
-            if dashboard_query and any(token in lowered_ref for token in _DASHBOARD_QUERY_HINTS):
-                score += 0.16
-
-            if has_code_candidates and source_ref.startswith("__memory__/"):
-                score -= 0.2
-            if has_code_candidates and _is_meta_doc_path(lowered_ref):
-                score -= 0.24
-
-        elif plan.mode == RetrievalMode.recruiter_summary:
-            if chunk_type in {"module_description", "code_snippet", "feature_summary"}:
-                score += 0.08
-            if _is_meta_doc_path(lowered_ref):
-                score -= 0.22
-
-        elif plan.mode == RetrievalMode.project_status:
-            if chunk_type == "change_entry":
-                score += 0.16
-            if _is_meta_doc_path(lowered_ref):
-                score -= 0.18
-
-        elif plan.mode == RetrievalMode.change_review:
-            if chunk_type == "change_entry":
-                score += 0.2
-            if auth_query and any(token in lowered_ref for token in _AUTH_QUERY_HINTS):
-                score += 0.1
-
-        candidate["score"] = score
-        adjusted.append(candidate)
-
-    adjusted.sort(key=lambda item: float(item.get("score") or 0.0), reverse=True)
-    if plan.mode in _IMPLEMENTATIONISH_MODES and has_code_candidates:
-        adjusted = _prune_low_signal_candidates(adjusted)
-    return adjusted
-
-
-async def _fetch_auth_feature_chunks(
-    *,
-    db: AsyncSession,
-    doctwin_id: str,
-    query: str,
-    allow_code_snippets: bool,
-    limit: int,
-) -> list[dict[str, Any]]:
-    """
-    Fetch deterministic auth/session evidence for implementation questions.
-
-    Dense and reranked search can prefer broad frontend/session chunks or docs
-    even when the codebase has the exact auth primitives.  This feature pass is
-    deliberately parser/index backed: it pins the files that form the real auth
-    flow before the LLM writes.
-    """
-    code_filter = "" if allow_code_snippets else "AND c.chunk_type != 'code_snippet'"
-    sql = text(
-        f"""
-        SELECT
-            c.id,
-            c.content,
-            c.chunk_type,
-            c.source_ref
-        FROM chunks c
-        JOIN sources s ON s.id = c.source_id
-        WHERE s.doctwin_id = :doctwin_id
-          AND s.status = 'ready'
-          AND coalesce(c.source_ref, '') NOT LIKE '__memory__/%'
-          {code_filter}
-          AND (
-               lower(coalesce(c.source_ref, '')) LIKE '%/core/auth.py'
-            OR lower(coalesce(c.source_ref, '')) LIKE '%/routes/auth.py'
-            OR lower(coalesce(c.source_ref, '')) LIKE '%/api/v1/routes/auth.py'
-            OR lower(coalesce(c.source_ref, '')) LIKE '%/users.py'
-            OR lower(coalesce(c.source_ref, '')) LIKE '%frontend/src/lib/auth.ts'
-            OR lower(coalesce(c.source_ref, '')) LIKE '%frontend/src/lib/authrefresh.ts'
-            OR lower(coalesce(c.source_ref, '')) LIKE '%frontend/src/lib/api.ts'
-            OR lower(coalesce(c.source_ref, '')) LIKE '%frontend/src/components/auth/%'
-            OR lower(coalesce(c.source_ref, '')) LIKE '%frontend/src/pages/loginpage.tsx'
-            OR lower(coalesce(c.source_ref, '')) LIKE '%frontend/src/components/layout/pageshell.tsx'
-            OR lower(coalesce(c.source_ref, '')) LIKE '%frontend/src/app.tsx'
-            OR lower(coalesce(c.content, '')) LIKE '%get_current_user%'
-            OR lower(coalesce(c.content, '')) LIKE '%depends(get_current_user)%'
-            OR lower(coalesce(c.content, '')) LIKE '%owner_id%'
-            OR lower(coalesce(c.content, '')) LIKE '%oauth2passwordbearer%'
-            OR lower(coalesce(c.content, '')) LIKE '%create_access_token%'
-            OR lower(coalesce(c.content, '')) LIKE '%decode_refresh_token%'
-            OR lower(coalesce(c.content, '')) LIKE '%clearauth%'
-            OR lower(coalesce(c.content, '')) LIKE '%performtokenrefresh%'
-            OR lower(coalesce(c.content, '')) LIKE '%authapi.login%'
-            OR lower(coalesce(c.content, '')) LIKE '%handlelogout%'
-            OR lower(coalesce(c.content, '')) LIKE '%protectedroute%'
-          )
-        ORDER BY
-          CASE
-            WHEN lower(coalesce(c.source_ref, '')) LIKE '%/core/auth.py' THEN 0
-            WHEN lower(coalesce(c.source_ref, '')) LIKE '%/routes/auth.py'
-              OR lower(coalesce(c.source_ref, '')) LIKE '%/api/v1/routes/auth.py' THEN 1
-            WHEN lower(coalesce(c.source_ref, '')) LIKE '%frontend/src/lib/auth.ts' THEN 2
-            WHEN lower(coalesce(c.source_ref, '')) LIKE '%frontend/src/lib/authrefresh.ts' THEN 3
-            WHEN lower(coalesce(c.source_ref, '')) LIKE '%frontend/src/lib/api.ts' THEN 4
-            WHEN lower(coalesce(c.source_ref, '')) LIKE '%frontend/src/pages/loginpage.tsx' THEN 5
-            WHEN lower(coalesce(c.source_ref, '')) LIKE '%frontend/src/components/layout/pageshell.tsx' THEN 6
-            WHEN lower(coalesce(c.source_ref, '')) LIKE '%frontend/src/app.tsx' THEN 7
-            WHEN lower(coalesce(c.source_ref, '')) LIKE '%frontend/src/components/auth/%' THEN 8
-            WHEN lower(coalesce(c.source_ref, '')) LIKE '%/routes/%' THEN 9
-            ELSE 10
-          END,
-          c.start_line NULLS LAST,
-          c.id
-        LIMIT 300
-        """
-    )
-    try:
-        result = await db.execute(sql, {"doctwin_id": doctwin_id})
-    except Exception as exc:
-        logger.warning("auth_feature_chunk_fetch_failed", doctwin_id=doctwin_id, error=str(exc))
-        await _safe_rollback(db)
-        return []
-
-    rows = result.fetchall()
-    if not rows:
-        return []
-
-    query_lower = query.lower()
-    candidates: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for row in rows:
-        chunk_id = str(row.id)
-        if chunk_id in seen:
-            continue
-        seen.add(chunk_id)
-        priority = _auth_feature_priority(
-            source_ref=str(row.source_ref or ""),
-            content=str(row.content or ""),
-            query=query_lower,
-        )
-        if priority >= 100:
-            continue
-        candidates.append(
-            {
-                "chunk_id": chunk_id,
-                "content": row.content,
-                "chunk_type": row.chunk_type,
-                "source_ref": row.source_ref,
-                "score": max(0.55, 1.08 - (priority * 0.025)),
-                "match_reasons": ["feature:auth_flow"],
-                "_feature_priority": priority,
-            }
-        )
-
-    candidates.sort(
-        key=lambda item: (
-            _feature_priority_sort_value(item),
-            -float(item.get("score") or 0.0),
-            str(item.get("source_ref") or ""),
-        )
-    )
-    return candidates[:limit]
-
-
-async def _fetch_engine_feature_chunks(
-    *,
-    db: AsyncSession,
-    doctwin_id: str,
-    query: str,
-    allow_code_snippets: bool,
-    limit: int,
-) -> list[dict[str, Any]]:
-    """Fetch deterministic Scaffold engine evidence for engine/system questions."""
-    code_filter = "" if allow_code_snippets else "AND c.chunk_type != 'code_snippet'"
-    sql = text(
-        f"""
-        SELECT
-            c.id,
-            c.content,
-            c.chunk_type,
-            c.source_ref
-        FROM chunks c
-        JOIN sources s ON s.id = c.source_id
-        WHERE s.doctwin_id = :doctwin_id
-          AND s.status = 'ready'
-          AND coalesce(c.source_ref, '') NOT LIKE '__memory__/%'
-          {code_filter}
-          AND (
-               lower(coalesce(c.source_ref, '')) LIKE '%readme.md'
-            OR lower(coalesce(c.source_ref, '')) LIKE '%/api/v1/routes/intake.py'
-            OR lower(coalesce(c.source_ref, '')) LIKE '%/engines/intake/%'
-            OR lower(coalesce(c.source_ref, '')) LIKE '%/engines/intake_engine.py'
-            OR lower(coalesce(c.source_ref, '')) LIKE '%/engines/documents/%'
-            OR lower(coalesce(c.source_ref, '')) LIKE '%/engines/tasks/%'
-            OR lower(coalesce(c.source_ref, '')) LIKE '%/engines/verification/%'
-            OR lower(coalesce(c.source_ref, '')) LIKE '%/engines/audit/%'
-            OR lower(coalesce(c.content, '')) LIKE '%intake engine%'
-            OR lower(coalesce(c.content, '')) LIKE '%document engine%'
-            OR lower(coalesce(c.content, '')) LIKE '%task intelligence engine%'
-            OR lower(coalesce(c.content, '')) LIKE '%verification engine%'
-            OR lower(coalesce(c.content, '')) LIKE '%audit engine%'
-            OR lower(coalesce(c.content, '')) LIKE '%run_intake%'
-            OR lower(coalesce(c.content, '')) LIKE '%build_intake_graph%'
-            OR lower(coalesce(c.content, '')) LIKE '%generate_document%'
-            OR lower(coalesce(c.content, '')) LIKE '%recommend_assignments%'
-            OR lower(coalesce(c.content, '')) LIKE '%process_commit%'
-            OR lower(coalesce(c.content, '')) LIKE '%evaluate_all_controls%'
-          )
-        LIMIT 400
-        """
-    )
-    try:
-        result = await db.execute(sql, {"doctwin_id": doctwin_id})
-    except Exception as exc:
-        logger.warning("engine_feature_chunk_fetch_failed", doctwin_id=doctwin_id, error=str(exc))
-        await _safe_rollback(db)
-        return []
-
-    query_lower = query.lower()
-    candidates: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for row in result.fetchall():
-        priority = _engine_feature_priority(
-            source_ref=str(row.source_ref or ""),
-            content=str(row.content or ""),
-            query=query_lower,
-        )
-        if priority >= 100:
-            continue
-        chunk_id = str(row.id)
-        if chunk_id in seen:
-            continue
-        seen.add(chunk_id)
-        candidates.append(
-            {
-                "chunk_id": chunk_id,
-                "content": row.content,
-                "chunk_type": row.chunk_type,
-                "source_ref": row.source_ref,
-                "score": max(0.56, 1.06 - (priority * 0.025)),
-                "match_reasons": ["feature:engine_flow"],
-                "_feature_priority": priority,
-            }
-        )
-
-    candidates.sort(
-        key=lambda item: (
-            _feature_priority_sort_value(item),
-            -float(item.get("score") or 0.0),
-            str(item.get("source_ref") or ""),
-        )
-    )
-    if "5 engine" in query_lower or "five engine" in query_lower or "engines" in query_lower:
-        # Engine-list questions need breadth across engine folders more than
-        # several chunks from the same high-scoring README or intake file.
-        selected: list[dict[str, Any]] = []
-        selected_refs: set[str] = set()
-        selected_ids: set[str] = set()
-        for candidate in candidates:
-            source_ref = str(candidate.get("source_ref") or "")
-            if source_ref in selected_refs:
-                continue
-            selected.append(candidate)
-            selected_refs.add(source_ref)
-            selected_ids.add(str(candidate.get("chunk_id") or ""))
-            if len(selected) >= limit:
-                return selected
-        for candidate in candidates:
-            chunk_id = str(candidate.get("chunk_id") or "")
-            if chunk_id in selected_ids:
-                continue
-            selected.append(candidate)
-            if len(selected) >= limit:
-                break
-        return selected[:limit]
-    return candidates[:limit]
-
-
-def _engine_feature_priority(*, source_ref: str, content: str, query: str) -> int:
-    ref = source_ref.lower()
-    text = content.lower()
-    compact = text.replace(" ", "")
-    wants_intake = "intake" in query
-    wants_list = "5 engine" in query or "five engine" in query or "engines" in query
-
-    if wants_intake:
-        if ref.endswith("/api/v1/routes/intake.py"):
-            return 0
-        if "/engines/intake/graph.py" in ref or "build_intake_graph" in compact or "run_intake" in compact:
-            return 1
-        if "/engines/intake/nodes.py" in ref:
-            return 2
-        if "/engines/intake/parser.py" in ref:
-            return 3
-        if "/engines/intake/brief_confidence.py" in ref:
-            return 4
-        if "/engines/intake/schemas.py" in ref or "/engines/intake/state.py" in ref:
-            return 5
-        if ref.endswith("readme.md") and "intake engine" in text:
-            return 6
-        return 100
-
-    if wants_list:
-        if ref.endswith("readme.md") and any(
-            marker in text
-            for marker in (
-                "intake engine",
-                "document engine",
-                "task intelligence engine",
-                "verification engine",
-                "audit engine",
-            )
-        ):
-            return 0
-        if "/engines/intake/" in ref:
-            return 1
-        if "/engines/documents/" in ref:
-            return 2
-        if "/engines/tasks/" in ref:
-            return 3
-        if "/engines/verification/" in ref:
-            return 4
-        if "/engines/audit/" in ref:
-            return 5
-        return 100
-
-    if "/engines/" in ref or ref.endswith("readme.md"):
-        return 20
-    return 100
-
-
-def _feature_priority_sort_value(item: dict[str, Any]) -> int:
-    priority = item.get("_feature_priority")
-    if priority is None:
-        return 100
-    try:
-        return int(priority)
-    except (TypeError, ValueError):
-        return 100
-
-
-def _auth_feature_priority(*, source_ref: str, content: str, query: str) -> int:
-    ref = source_ref.lower()
-    text = content.lower().replace(" ", "")
-    spaced_text = content.lower()
-    logout_query = "logout" in query or "sign out" in query or "sign-out" in query
-    authorization_query = "authorization" in query or "authorisation" in query or "permission" in query
-
-    if logout_query:
-        if ref.endswith("frontend/src/lib/auth.ts") and "clearauth" in text:
-            return 0
-        if "pageshell.tsx" in ref and ("handlelogout" in text or "clearauth" in text):
-            return 1
-        if ref.endswith("frontend/src/lib/auth.ts") and "setsessiontokens" in text:
-            return 2
-        if "authrefresh.ts" in ref and "performtokenrefresh" in text:
-            return 3
-        if ref.endswith("/routes/auth.py") or ref.endswith("/api/v1/routes/auth.py"):
-            if "async def refresh_tokens" in spaced_text:
-                return 4
-            if "async def login" in spaced_text:
-                return 5
-        if ref.endswith("/core/auth.py") and "decode_refresh_token" in spaced_text:
-            return 6
-        if "testauthflow" in text or "test_register_and_login" in text:
-            return 8
-        return 100
-
-    if ref.endswith("/core/auth.py") and "get_current_user" in spaced_text:
-        return 0
-    if authorization_query and ("owner_id" in text or "depends(get_current_user)" in text):
-        if "/routes/projects.py" in ref:
-            return 1
-        if "/routes/project_team.py" in ref:
-            return 2
-        if "/routes/" in ref:
-            return 3
-    if ref.endswith("/routes/auth.py") or ref.endswith("/api/v1/routes/auth.py"):
-        if "async def login" in spaced_text:
-            return 4 if authorization_query else 1
-        if "async def register" in spaced_text:
-            return 5 if authorization_query else 2
-        if "async def refresh_tokens" in spaced_text:
-            return 6 if authorization_query else 3
-        if "async def me" in spaced_text:
-            return 4
-        if "module:" in spaced_text:
-            return 5 if authorization_query else 5
-    if ref.endswith("/core/auth.py"):
-        if "create_access_token" in spaced_text:
-            return 7 if authorization_query else 6
-        if "create_refresh_token" in spaced_text:
-            return 8 if authorization_query else 7
-        if "decode_access_token" in spaced_text:
-            return 9 if authorization_query else 8
-        if "decode_refresh_token" in spaced_text:
-            return 10 if authorization_query else 9
-        if "module:" in spaced_text:
-            return 10
-    if "loginpage.tsx" in ref and ("authapi.login" in text or "setsessiontokens" in text):
-        return 11
-    if ref.endswith("frontend/src/lib/api.ts") and "authapi" in text:
-        return 12
-    if ref.endswith("frontend/src/app.tsx") and "protectedroute" in text:
-        return 13
-    if ref.endswith("frontend/src/lib/auth.ts"):
-        if "setsessiontokens" in text:
-            return 14
-        if "clearauth" in text:
-            return 15
-        if "isaccesstokenvalid" in text or "isrefreshtokenvalid" in text:
-            return 16
-        if "module:" in spaced_text:
-            return 17
-    if "authrefresh.ts" in ref and "performtokenrefresh" in text:
-        return 18
-    if "sessiongate.tsx" in ref or "tokenrefreshscheduler.tsx" in ref:
-        return 19
-    if "app.tsx" in ref and "protectedroute" in text:
-        return 20
-    return 100
-
-
-def _pin_feature_chunks(
-    chunks: list[dict[str, Any]],
-    feature_chunks: list[dict[str, Any]],
-    top_k: int,
-) -> list[dict[str, Any]]:
-    if not feature_chunks:
-        return chunks[:top_k]
-
-    by_id: dict[str, dict[str, Any]] = {}
-    for chunk in feature_chunks + chunks:
-        chunk_id = str(chunk.get("chunk_id") or "")
-        if chunk_id and chunk_id not in by_id:
-            by_id[chunk_id] = chunk
-    ordered = list(by_id.values())
-    return ordered[:top_k]
-
-
-def _query_has_auth_hint(value: str) -> bool:
-    lowered = value.lower()
-    return any(token in lowered for token in _AUTH_QUERY_HINTS)
-
-
-def _query_has_engine_hint(value: str) -> bool:
-    lowered = value.lower()
-    return any(token in lowered for token in _ENGINE_QUERY_HINTS)
-
-
-async def _safe_rollback(db: AsyncSession) -> None:
-    rollback = getattr(db, "rollback", None)
-    if rollback is None:
-        return
-    result = rollback()
-    if inspect.isawaitable(result):
-        await result
-
-
-def _prune_low_signal_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    pruned: list[dict[str, Any]] = []
-    memory_budget = 1
-    meta_doc_budget = 1
-    for candidate in candidates:
-        source_ref = str(candidate.get("source_ref") or "")
-        lowered_ref = source_ref.lower()
-        chunk_type = _chunk_type_name(candidate)
-        if source_ref.startswith("__memory__/") and chunk_type in {
-            "memory_brief",
-            "feature_summary",
-            "auth_flow",
-            "onboarding_map",
-            "decision_record",
-        }:
-            if memory_budget <= 0:
-                continue
-            memory_budget -= 1
-        elif _is_meta_doc_path(lowered_ref):
-            if meta_doc_budget <= 0:
-                continue
-            meta_doc_budget -= 1
-        pruned.append(candidate)
-    return pruned
-
-
-def _is_code_backed_candidate(candidate: dict[str, Any]) -> bool:
-    chunk_type = _chunk_type_name(candidate)
-    if chunk_type in {"code_snippet", "module_description", "feature_description"}:
-        source_ref = str(candidate.get("source_ref") or "")
-        return not source_ref.startswith("__memory__/")
-    return False
-
-
-def _chunk_type_name(candidate: dict[str, Any]) -> str:
-    chunk_type = candidate.get("chunk_type")
-    if hasattr(chunk_type, "value"):
-        return str(chunk_type.value)
-    return str(chunk_type)
-
-
-def _is_meta_doc_path(lowered_ref: str) -> bool:
-    return (
-        lowered_ref.endswith("agents.md")
-        or lowered_ref.endswith("claude.md")
-        or lowered_ref.endswith(".docx")
-        or "/templates/" in lowered_ref
-        or lowered_ref.startswith("guides/")
-        or lowered_ref.startswith("community_contributions/")
-    )
+    _demote_surplus_same_source(candidates)
+    candidates.sort(key=lambda item: float(item.get("score") or 0.0), reverse=True)
+    return candidates
 
 
 async def retrieve_for_twin(
@@ -1297,12 +468,7 @@ async def route_and_retrieve_packet_for_workspace(
             missing_evidence=["no_embedding_profiles"],
         )
 
-    use_reranker = reranker_available()
-    fetch_k = (
-        min(plan.rerank_budget, _RERANK_MAX_CANDIDATES)
-        if use_reranker
-        else max(top_k, 12)
-    )
+    fetch_k = max(top_k, 12)
     candidates_by_id: dict[str, dict[str, Any]] = {}
 
     for profile in profiles:
@@ -1375,20 +541,11 @@ async def route_and_retrieve_packet_for_workspace(
             missing_evidence=["no_workspace_candidates"],
         )
 
-    combined_candidates = sorted(
+    ranked_candidates = sorted(
         candidates_by_id.values(),
         key=lambda item: item["score"],
         reverse=True,
-    )
-    if use_reranker:
-        rerank_query = plan.query.strip() or plan.search_query.strip()
-        ranked_candidates = await rerank_chunks(
-            rerank_query,
-            combined_candidates[:fetch_k],
-            min(len(combined_candidates), fetch_k),
-        )
-    else:
-        ranked_candidates = combined_candidates[:fetch_k]
+    )[:fetch_k]
 
     doctwin_scores: dict[str, list[float]] = {}
     for candidate in ranked_candidates:
@@ -1547,7 +704,6 @@ async def _fetch_doctwin_candidates_for_profile(
     embedding_literal: str,
     profile: EmbeddingProfile,
     code_filter: str,
-    boost_sql: str,
     top_k: int,
 ) -> list[Any]:
     sql = text(
@@ -1557,7 +713,7 @@ async def _fetch_doctwin_candidates_for_profile(
             c.content,
             c.chunk_type,
             c.source_ref,
-            (1 - (c.embedding <=> :embedding ::vector)){boost_sql} AS score
+            1 - (c.embedding <=> :embedding ::vector) AS score
         FROM chunks c
         JOIN sources s ON s.id = c.source_id
         WHERE s.doctwin_id = :doctwin_id
@@ -1569,7 +725,7 @@ async def _fetch_doctwin_candidates_for_profile(
           AND COALESCE(s.embedding_dimensions, :legacy_dimensions) = :profile_dimensions
           {code_filter}
           AND 1 - (c.embedding <=> :embedding ::vector) >= :min_score
-        ORDER BY (1 - (c.embedding <=> :embedding ::vector)){boost_sql} DESC
+        ORDER BY c.embedding <=> :embedding ::vector
         LIMIT :top_k
         """
     )
@@ -1695,63 +851,6 @@ async def _fetch_workspace_lexical_candidates(
             "doctwin_id": str(row.doctwin_id),
             "score": float(row.score),
             "match_reasons": ["lexical"],
-        }
-        for row in result.fetchall()
-    ]
-
-
-async def _fetch_supporting_memory_chunks(
-    *,
-    db: AsyncSession,
-    doctwin_id: str,
-    mode: RetrievalMode,
-) -> list[dict[str, Any]]:
-    if mode == RetrievalMode.onboarding:
-        chunk_types = ["onboarding_map"]
-    elif mode == RetrievalMode.change_review:
-        chunk_types = ["change_entry"]
-    elif mode == RetrievalMode.risk_review:
-        chunk_types = ["risk_note"]
-    elif mode == RetrievalMode.project_status:
-        chunk_types = ["change_entry", "risk_note"]
-    else:
-        return []
-
-    sql = text(
-        """
-        SELECT c.id, c.content, c.chunk_type, c.source_ref, c.metadata AS chunk_metadata
-        FROM chunks c
-        JOIN sources s ON s.id = c.source_id
-        WHERE s.doctwin_id = :doctwin_id
-          AND s.status = 'ready'
-          AND c.source_ref LIKE '__memory__/%'
-          AND c.chunk_type = ANY(:chunk_types)
-        ORDER BY c.created_at DESC
-        LIMIT 2
-        """
-    )
-    try:
-        result = await db.execute(
-            sql,
-            {
-                "doctwin_id": str(doctwin_id),
-                "chunk_types": chunk_types,
-            },
-        )
-    except Exception as exc:
-        logger.warning("supporting_memory_chunk_fetch_failed", doctwin_id=doctwin_id, error=str(exc))
-        await db.rollback()
-        return []
-
-    return [
-        {
-            "chunk_id": str(row.id),
-            "content": row.content,
-            "chunk_type": row.chunk_type,
-            "source_ref": row.source_ref,
-            "chunk_metadata": row.chunk_metadata,
-            "score": 0.32,
-            "match_reasons": ["memory"],
         }
         for row in result.fetchall()
     ]
