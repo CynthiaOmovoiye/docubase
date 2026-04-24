@@ -326,7 +326,7 @@ function MemoryBriefPanel({
     return (
       <div style={s.briefPanel}>
         <div style={s.briefHeader}>
-          <span style={s.briefLabel}>Engineering Memory</span>
+          <span style={s.briefLabel}>Knowledge Brief</span>
           <span style={s.briefTimestamp}>
             {brief.generated_at
               ? `Generated ${new Date(brief.generated_at).toLocaleDateString()}`
@@ -336,7 +336,7 @@ function MemoryBriefPanel({
             style={s.briefRegenerateBtn}
             onClick={() => trigger.mutate(twinId)}
             disabled={trigger.isPending}
-            title="Regenerate Memory Brief"
+            title="Regenerate Knowledge Brief"
           >
             {trigger.isPending ? "Queued…" : "Regenerate"}
           </button>
@@ -358,9 +358,9 @@ function MemoryBriefPanel({
         <div style={{ ...s.promptOrb, background: "var(--color-iris-muted)" }}>
           <span style={s.spinnerSmall} />
         </div>
-        <h2 style={s.promptTitle}>Generating engineering memory…</h2>
+        <h2 style={s.promptTitle}>Generating knowledge brief…</h2>
         <p style={s.promptBody}>
-          Analysing architecture, risks, and recent changes for {displayName}. This takes 30–90 seconds.
+          Analysing indexed documents and building a knowledge summary for {displayName}. This takes 30–90 seconds.
         </p>
       </div>
     );
@@ -372,9 +372,9 @@ function MemoryBriefPanel({
       <div style={s.promptOrb}>
         <IconMemory />
       </div>
-      <h2 style={s.promptTitle}>No engineering memory yet</h2>
+      <h2 style={s.promptTitle}>No knowledge brief yet</h2>
       <p style={s.promptBody}>
-        Generate a structured overview of {displayName} — architecture, risks, recent changes, and onboarding path. Takes 30–90 seconds.
+        Generate a structured overview of {displayName} — key topics, coverage, and how to get the most out of this twin. Takes 30–90 seconds.
       </p>
       {brief?.status === "failed" && (
         <p style={{ ...s.promptBody, color: "var(--color-rose)", marginTop: 0 }}>
@@ -386,7 +386,7 @@ function MemoryBriefPanel({
         onClick={() => trigger.mutate(twinId)}
         disabled={trigger.isPending || isLoading}
       >
-        {trigger.isPending ? "Queued…" : "Generate Memory Brief"}
+        {trigger.isPending ? "Queued…" : "Generate Knowledge Brief"}
       </button>
       <p style={s.promptBodySmall}>
         Or start chatting — questions are answered from your connected sources.

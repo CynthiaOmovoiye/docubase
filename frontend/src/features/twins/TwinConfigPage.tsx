@@ -365,8 +365,8 @@ export default function TwinConfigPage() {
           {isPublic && <ShareLinksPanel twinId={twinId ?? ""} />}
         </Section>
 
-        {/* ── Section: Engineering Memory ───────────────────────────────── */}
-        <EngineeringMemorySection twinId={twinId ?? ""} />
+        {/* ── Section: Knowledge Brief ───────────────────────────────── */}
+        <KnowledgeBriefSection twinId={twinId ?? ""} />
 
         {/* ── Section: Danger zone ──────────────────────────────────────── */}
         <Section title="Danger zone" danger>
@@ -556,9 +556,9 @@ const sl: Record<string, React.CSSProperties> = {
   },
 };
 
-// ─── Engineering Memory section ───────────────────────────────────────────────
+// ─── Knowledge Brief section ───────────────────────────────────────────────
 
-function EngineeringMemorySection({ twinId }: { twinId: string }) {
+function KnowledgeBriefSection({ twinId }: { twinId: string }) {
   const { data: brief, isLoading } = useMemoryBrief(twinId);
   const trigger = useTriggerMemoryGeneration();
   const [expanded, setExpanded] = useState(false);
@@ -578,9 +578,9 @@ function EngineeringMemorySection({ twinId }: { twinId: string }) {
   };
 
   return (
-    <Section title="Engineering Memory">
+    <Section title="Knowledge Brief">
       <p style={s.sectionNote}>
-        Engineering memory synthesises architecture, risks, recent changes, and
+        The knowledge brief summarises document topics, coverage, and
         onboarding guidance from your sources. The generated brief is shown in the
         chat empty state and injected into every conversation as persistent context.
       </p>
@@ -625,7 +625,7 @@ function EngineeringMemorySection({ twinId }: { twinId: string }) {
               ? "Queued…"
               : brief?.status === "ready"
               ? "Regenerate"
-              : "Generate Memory Brief"}
+              : "Generate Knowledge Brief"}
           </button>
         </div>
       )}
@@ -1062,7 +1062,7 @@ const s: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
 
-  // Engineering Memory section
+  // Knowledge Brief section
   memLoadingRow: {
     display: "flex",
     alignItems: "center",

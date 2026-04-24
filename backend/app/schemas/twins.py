@@ -61,7 +61,7 @@ class TwinConfigResponse(BaseModel):
     accent_color: str | None
     custom_context: str | None  # owner-only — never return on public surfaces
     updated_at: datetime
-    # Engineering Memory fields — owner-only
+    # Knowledge Brief fields — owner-only
     memory_brief_status: str | None = None
     memory_brief_generated_at: datetime | None = None
     memory_brief: str | None = None  # full brief text — NOT on public surfaces

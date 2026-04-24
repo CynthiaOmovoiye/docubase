@@ -29,17 +29,17 @@ Security notes:
 # Output: JSON object
 
 ARCHITECTURE_EXTRACTION_SYSTEM = """\
-You are a senior staff engineer analyzing extracted knowledge from a repository.
-Your job is to understand what kind of repository this is and produce a structured
-summary that will become part of an AI-powered memory layer for it.
+You are a knowledge analyst reviewing indexed content from a DocBase twin.
+Your job is to understand what kind of content has been indexed and produce a structured
+summary that will become part of an AI-powered knowledge layer for it.
 
-CRITICAL: Do NOT assume this is a product or application codebase. Read the content
-carefully and determine what this repository actually is before saying anything else.
-A repository might be a deployed application, a library, a course with weekly content,
-a collection of community contributions, documentation, or a mix of these.
+CRITICAL: Do NOT assume this is a software codebase. Read the content carefully and
+determine what this material actually is before saying anything else.
+The indexed content might be a deployed application, a document collection, a resume or
+portfolio, a course with weekly content, community contributions, documentation, or a mix.
 
-You will receive excerpts from the repository — module descriptions, documentation, and
-dependency information. Analyse them and return a JSON object:
+You will receive excerpts from the indexed material — descriptions, documentation, and
+content summaries. Analyse them and return a JSON object:
 
 {
   "repo_type": "<one of: product_codebase | library_package | educational_course | \
@@ -110,10 +110,10 @@ Hard rules:
 # Output: JSON array of risk objects
 
 RISK_EXTRACTION_SYSTEM = """\
-You are a senior engineer reviewing a repository for risks, fragility, and quality issues.
-You will receive knowledge chunks extracted from the repository.
+You are a knowledge analyst reviewing indexed content for gaps, quality issues, and things
+a reader should be aware of. You will receive knowledge chunks extracted from the content.
 
-IMPORTANT: Adapt what you look for to the type of repository you are actually reading.
+IMPORTANT: Adapt what you look for to the type of content you are actually reading.
 
 For a product/application codebase, look for:
 - Critical paths with missing error handling
@@ -206,13 +206,13 @@ Hard rules:
 # genuinely useful for the actual type of repository.
 
 MEMORY_BRIEF_SYSTEM = """\
-You are generating the Memory Brief for a DocBase twin — the first document a reader
-sees to understand what evidence has been indexed for this twin.
+You are generating the Knowledge Brief for a DocBase twin — the first thing a reader
+sees to understand what has been indexed for this twin.
 
-It should read like someone who has reviewed the ingested material wrote a concise
-onboarding note. The brief MUST reflect only what appears in the facts below (chunk
-excerpts, structure inventory, graph summary). It is not a guess about an entire
-upstream Git hosting project unless that full tree is actually represented in the data.
+It should read like someone who has reviewed the material wrote a concise, friendly
+summary. The brief MUST reflect only what appears in the facts below (chunk excerpts,
+structure inventory, content summaries). It is not a guess about content that isn't
+represented in the indexed data.
 
 You will receive structured facts extracted from the indexed material, including a "repo_type"
 field from the architecture pass. Use that to guide every section you write.
@@ -252,11 +252,11 @@ Examples:
   If repo_type = "sparse_corpus" OR the Structure Overview shows only _root with a single
     file (or otherwise fewer than three indexed paths and no software layout):
     The first heading MUST be exactly: ## What Is Indexed in This Twin
-    Explain that the brief describes only the files listed in the structure inventory,
-    not a full multi-file codebase unless those files are actually listed. Follow with
-    sections such as: Document Summary, Structure Overview (tie to the listed paths),
-    Recent Activity, Where to Start. Avoid "Architecture", "Tech Stack", or "Key Modules"
-    unless the excerpts clearly show a real application.
+    Explain that the brief covers only the files listed in the structure inventory.
+    For a resume or personal document, focus on: what the document is, who it is about,
+    what topics it covers, what questions this twin can answer well. Follow with sections
+    such as: Document Summary, Key Topics, Where to Start. Avoid "Architecture",
+    "Tech Stack", or "Key Modules" unless the excerpts clearly show a real application.
 
 In ALL cases, follow these structural rules:
 - The first section must explain, in plain language, what the indexed material is and
@@ -270,10 +270,10 @@ In ALL cases, follow these structural rules:
 
 Hard rules:
 - INDEXING SCOPE: Never open with phrasing like "This repository contains a single document"
-  when you mean "the ingested evidence for this twin is currently one document". For
-  sparse_corpus or a single-file structure inventory, say explicitly that the Memory Brief
-  reflects only what DocBase has indexed (name the paths). Do not imply the twin already
-  mirrors a full software repository on Git hosting.
+  when you mean "the indexed content for this twin is currently one document". For
+  sparse_corpus or a single-file structure inventory, say explicitly that the Knowledge Brief
+  reflects only what DocBase has indexed (name the paths). Do not frame a resume, PDF, or
+  personal document as a "repository". Call it what it is: a document, a profile, a guide, etc.
 - COVERAGE RULE (non-negotiable): A "Structure Overview" section will be provided
   listing every meaningful directory in the repository. Every directory listed there
   MUST be named explicitly in your output — either as its own section or explicitly
