@@ -687,7 +687,7 @@ async def send_message(
             logger.warning("langfuse_trace_update_failed", error=str(exc))
 
     # ── Passive LLM-as-judge (non-blocking) when active gate is off ────────────
-    if not used_deterministic_fallback and not _cfg.chat_quality_gate_enabled:
+    if not used_deterministic_fallback:
         try:
             from app.domains.evaluation.evaluator import evaluate_response_async
 
@@ -1416,6 +1416,7 @@ async def _answer_across_workspace(
         "retrieval_ms": retrieval_elapsed_ms,
         "generation_ms": generation_elapsed_ms,
         "verification_ms": verification_elapsed_ms,
+        "quality_metrics": None,
     }
 
 

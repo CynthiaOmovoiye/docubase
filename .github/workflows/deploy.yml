@@ -1,8 +1,11 @@
 name: Deploy docbase
 
-# Intentionally manual-only: validate locally (make test / stack smoke) then
-# Actions → Run workflow → pick dev before prod.
+# Auto-deploys to dev on push to main.
+# Manual promotion to test/prod: Actions → Run workflow → pick environment.
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       environment:
