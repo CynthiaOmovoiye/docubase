@@ -1,4 +1,5 @@
 from app.domains.answering.verifier import (
+    _is_workspace_conversational_query,
     verify_single_project_answer,
     verify_workspace_answer,
 )
@@ -684,3 +685,14 @@ def test_single_project_engine_fallback_lists_five_scaffold_engines():
     assert "Task Intelligence Engine" in result.content
     assert "Verification Engine" in result.content
     assert "Audit Engine" in result.content
+
+
+def test_workspace_conversational_treats_about_yourself_as_small_talk():
+    assert _is_workspace_conversational_query("Tell me about yourself")
+    assert _is_workspace_conversational_query("introduce yourself")
+    assert _is_workspace_conversational_query("tell me about this workspace")
+
+
+def test_workspace_conversational_still_false_for_technical_questions():
+    assert not _is_workspace_conversational_query("Tell me about the authentication flow")
+    assert not _is_workspace_conversational_query("tell me about cynthia")

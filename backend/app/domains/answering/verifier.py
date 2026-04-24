@@ -171,6 +171,16 @@ def _is_workspace_conversational_query(query: str) -> bool:
             "what's my name",
             "whats my name",
             "who am i",
+            "tell me about yourself",
+            "about yourself",
+            "introduce yourself",
+            "a little about you",
+            "something about you",
+            "tell me about this workspace",
+            "about this workspace",
+            "what is this workspace",
+            "what's this workspace",
+            "describe this workspace",
         )
     ):
         return True

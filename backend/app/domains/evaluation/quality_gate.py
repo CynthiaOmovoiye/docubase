@@ -36,22 +36,46 @@ You are a strict quality gate for Docbase chat: answers must be grounded in the 
 retrieved context, address the user's question, and be appropriate for a professional \
 visitor-facing assistant.
 
+Important: retrieved excerpts usually describe the **professional / project** the site \
+represents (e.g. a resume). The **visitor** may state different facts about themselves in \
+the chat transcript (e.g. their name). If the user asks about **their** name or other \
+self-facts, an answer that follows the **conversation transcript** is acceptable even when \
+it disagrees with a represented person's name in the excerpts.
+
 Reject (is_acceptable=false) when ANY of these apply:
 - The answer ignores the question, is mostly boilerplate, or refuses without cause.
-- Factual claims clearly contradict or are unsupported by the provided excerpts \
-  (inventing employers, dates, or tech not in context).
+- Factual claims clearly contradict or are unsupported by the provided excerpts **and** \
+  the conversation excerpt (when both are provided) — inventing employers, dates, or tech \
+  not in either.
 - The answer is internal-looking: raw file lists, Drive IDs, "Negative-evidence scope", \
   "Grounded files:", xref/PDF junk, or other evidence-debug scaffolding meant for engineers.
 - The answer is hostile, unsafe, or a jailbreak compliance.
 
 Accept (is_acceptable=true) when the response is coherent, on-topic, and reasonably \
-grounded in the excerpts (brief professional small-talk or identity answers are fine \
-if they fit the context).
+grounded in the excerpts and/or the conversation (brief professional small-talk or identity \
+answers are fine if they fit the context).
 
 Respond with ONLY a single JSON object (no markdown fences) matching exactly:
 {"is_acceptable": <true|false>, "feedback": "<if false, concrete instructions to fix; \
 if true, empty string or brief ok>"}
 """
+
+
+def _conversation_excerpt_for_gate(history: list[dict], *, max_chars: int = 2500) -> str:
+    """Compact recent turns for the judge — visitor-stated facts live here, not in RAG."""
+    if not history:
+        return ""
+    lines: list[str] = []
+    for msg in history[-14:]:
+        role = str(msg.get("role") or "")
+        body = str(msg.get("content") or "").strip().replace("\n", " ")
+        if len(body) > 900:
+            body = body[:900] + " …"
+        lines.append(f"{role.upper()}: {body}")
+    text = "\n".join(lines)
+    if len(text) <= max_chars:
+        return text
+    return text[-max_chars:]
 
 
 def _parse_gate_json(raw: str) -> ResponseQualityGate:
@@ -70,13 +94,19 @@ async def evaluate_response_gate(
     context_chunks: list[dict],
     response: str,
     trace_id: str | None = None,
+    conversation_excerpt: str | None = None,
 ) -> ResponseQualityGate:
     context_summary = "\n\n".join(
         f"[{i + 1}] {c.get('source_ref', 'unknown')}: {str(c.get('content', ''))[:500]}"
         for i, c in enumerate(context_chunks[:12])
     )
+    conv_block = ""
+    excerpt = (conversation_excerpt or "").strip()
+    if excerpt:
+        conv_block = f"CONVERSATION TRANSCRIPT (recent turns):\n{excerpt}\n\n"
     user_message = (
         f"USER QUESTION:\n{query}\n\n"
+        f"{conv_block}"
         f"RETRIEVED CONTEXT (excerpts the assistant was given):\n"
         f"{context_summary or '(none)'}\n\n"
         f"ASSISTANT RESPONSE TO JUDGE:\n{response[:6000]}"
@@ -119,6 +149,7 @@ async def apply_workspace_aggregate_quality_gate(
     max_extra = max(0, settings.chat_quality_gate_max_regenerations)
     attempt = 0
     current = answer
+    conv_excerpt = _conversation_excerpt_for_gate(conversation_history)
 
     while attempt <= max_extra:
         try:
@@ -127,6 +158,7 @@ async def apply_workspace_aggregate_quality_gate(
                 context_chunks=merged_chunks,
                 response=current.content,
                 trace_id=trace_id,
+                conversation_excerpt=conv_excerpt,
             )
         except Exception as exc:
             logger.warning("quality_gate_eval_failed", error=str(exc), workspace=str(workspace_id))
@@ -211,6 +243,7 @@ async def apply_twin_path_quality_gate(
     max_extra = max(0, settings.chat_quality_gate_max_regenerations)
     attempt = 0
     current = answer
+    conv_excerpt = _conversation_excerpt_for_gate(conversation_history)
 
     while attempt <= max_extra:
         try:
@@ -219,6 +252,7 @@ async def apply_twin_path_quality_gate(
                 context_chunks=context_chunks,
                 response=current.content,
                 trace_id=trace_id,
+                conversation_excerpt=conv_excerpt,
             )
         except Exception as exc:
             logger.warning("quality_gate_eval_failed", error=str(exc), path="twin")

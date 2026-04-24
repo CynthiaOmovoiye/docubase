@@ -16,3 +16,5 @@ os.environ.setdefault(
     "postgresql+asyncpg://doctwin_user:doctwin_pass@localhost:5434/doctwin_db",
 )
 os.environ.setdefault("JWT_SECRET_KEY", "pytest-jwt-secret-key-minimum-32-chars")
+
+

@@ -48,6 +48,14 @@ def get_langfuse():
             flush_at=20,
             flush_interval=5.0,
         )
+        if not hasattr(client, "trace"):
+            logger.warning(
+                "langfuse_sdk_incompatible",
+                host=settings.langfuse_host,
+                hint="Docbase chat uses Langfuse Python SDK 2.x (trace/generation/span). "
+                "Pin langfuse>=2.57.0,<3 in the image, or upgrade observability to SDK v3.",
+            )
+            return None
         logger.info("langfuse_client_initialised", host=settings.langfuse_host)
         return client
 
