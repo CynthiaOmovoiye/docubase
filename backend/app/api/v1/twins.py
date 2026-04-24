@@ -157,7 +157,7 @@ async def trigger_memory_generation(
     # frontend treats it identically to a freshly queued job and continues
     # to poll GET /memory/brief — it doesn't need to know the distinction.
     redis = get_redis()
-    from app.domains.ops.twin_memory_queue import enqueue_memory_brief_for_twin
+    from app.domains.ops.doctwin_memory_queue import enqueue_memory_brief_for_twin
 
     try:
         return await enqueue_memory_brief_for_twin(doctwin_id=doctwin_id, db=db, redis=redis)

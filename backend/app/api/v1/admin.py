@@ -21,7 +21,7 @@ from app.core.db import get_db
 from app.core.logging import get_logger
 from app.core.redis import get_redis
 from app.domains.ops.platform_stats import fetch_platform_stats
-from app.domains.ops.twin_memory_queue import enqueue_memory_brief_for_twin
+from app.domains.ops.doctwin_memory_queue import enqueue_memory_brief_for_twin
 from app.models.twin import Twin
 from app.models.user import User
 from app.schemas.admin import (
