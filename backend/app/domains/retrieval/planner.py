@@ -17,7 +17,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from app.domains.retrieval.intent import QueryIntent
-from app.domains.retrieval.query_decompose import decompose_query_labels
 
 _IMPLEMENTATION_RE = re.compile(
     r"\b("
@@ -126,18 +125,6 @@ class RetrievalMode(StrEnum):
     general = "general"
 
 
-# Central tuning knob for Phase 4 fact SQL budget — adjust with golden harness + evals.
-_FACT_BUDGET_BY_MODE: dict[RetrievalMode, int] = {
-    RetrievalMode.implementation: 12,
-    RetrievalMode.onboarding: 10,
-    RetrievalMode.workspace_comparison: 12,
-    RetrievalMode.architecture: 10,
-    RetrievalMode.change_review: 6,
-    RetrievalMode.risk_review: 6,
-    RetrievalMode.project_status: 5,
-}
-
-
 @dataclass(slots=True)
 class RetrievalPlan:
     mode: RetrievalMode
@@ -148,9 +135,6 @@ class RetrievalPlan:
     path_hints: list[str] = field(default_factory=list)
     searched_layers: list[str] = field(default_factory=list)
     negative_evidence_scope: list[str] = field(default_factory=list)
-    query_labels: list[str] = field(default_factory=list)
-    fact_budget: int = 0
-    fact_hits: int = 0
     top_k: int = 8
     dense_budget: int = 8
     lexical_budget: int = 6
@@ -258,16 +242,6 @@ def build_retrieval_plan(
         symbol_budget = 3
         graph_budget = 5
 
-    query_labels = decompose_query_labels(stripped_query)
-    fact_budget = _fact_budget_for_mode(mode)
-    if fact_budget > 0 and "facts" not in searched_layers:
-        # Insert after lexical so logs read as progressive widening.
-        if "lexical" in searched_layers:
-            idx = searched_layers.index("lexical") + 1
-            searched_layers = [*searched_layers[:idx], "facts", *searched_layers[idx:]]
-        else:
-            searched_layers = [*searched_layers, "facts"]
-
     return RetrievalPlan(
         mode=mode,
         intent=intent,
@@ -277,8 +251,6 @@ def build_retrieval_plan(
         path_hints=hints,
         searched_layers=searched_layers,
         negative_evidence_scope=negative_scope,
-        query_labels=query_labels,
-        fact_budget=fact_budget,
         top_k=top_k,
         dense_budget=dense_budget,
         lexical_budget=lexical_budget,
@@ -287,10 +259,6 @@ def build_retrieval_plan(
         graph_budget=graph_budget,
         rerank_budget=rerank_budget,
     )
-
-
-def _fact_budget_for_mode(mode: RetrievalMode) -> int:
-    return _FACT_BUDGET_BY_MODE.get(mode, 0)
 
 
 def _augment_search_query(

@@ -11,7 +11,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.domains.retrieval.fact_retrieval import build_flow_outline
 from app.domains.retrieval.planner import RetrievalMode, RetrievalPlan
 
 LEXICAL_SEARCH_SUBSTRATE = "postgres_fts"
@@ -68,9 +67,6 @@ class RetrievalEvidencePacket:
     workspace_id: str | None = None
     searched_layers: list[str] = field(default_factory=list)
     negative_evidence_scope: list[str] = field(default_factory=list)
-    query_labels: list[str] = field(default_factory=list)
-    flow_outline: str = ""
-    facts: list[dict[str, Any]] = field(default_factory=list)
     chunks: list[dict[str, Any]] = field(default_factory=list)
     files: list[EvidenceFileRef] = field(default_factory=list)
     symbols: list[EvidenceSymbolRef] = field(default_factory=list)
@@ -94,17 +90,7 @@ def build_evidence_packet(
     symbol_matches: list[EvidenceSymbolRef] | None = None,
     graph_edges: list[dict[str, str]] | None = None,
     missing_evidence: list[str] | None = None,
-    facts: list[dict[str, Any]] | None = None,
-    query_labels: list[str] | None = None,
-    flow_outline: str | None = None,
 ) -> RetrievalEvidencePacket:
-    fact_rows = list(facts or [])
-    labels = list(query_labels if query_labels is not None else plan.query_labels)
-    outline = (
-        flow_outline
-        if flow_outline is not None
-        else build_flow_outline(fact_rows, graph_edges=list(graph_edges or []))
-    )
     packet = RetrievalEvidencePacket(
         query=plan.query,
         search_query=plan.search_query,
@@ -115,19 +101,15 @@ def build_evidence_packet(
         workspace_id=workspace_id,
         searched_layers=list(plan.searched_layers),
         negative_evidence_scope=list(plan.negative_evidence_scope),
-        query_labels=labels,
-        flow_outline=outline,
-        facts=fact_rows,
         chunks=chunks,
         files=list(file_matches or []),
         symbols=list(symbol_matches or []),
         graph_edges=list(graph_edges or []),
         missing_evidence=list(missing_evidence or []),
     )
-
     packet.spans = _build_spans(chunks)
     packet.files = _merge_files(packet.files, chunks)
-    packet.layer_hits = _build_layer_hits(chunks, packet.files, packet.symbols, fact_count=len(fact_rows))
+    packet.layer_hits = _build_layer_hits(chunks, packet.files, packet.symbols)
     return packet
 
 
@@ -247,8 +229,6 @@ def _build_layer_hits(
     chunks: list[dict[str, Any]],
     files: list[EvidenceFileRef],
     symbols: list[EvidenceSymbolRef],
-    *,
-    fact_count: int = 0,
 ) -> dict[str, int]:
     hits: dict[str, int] = {}
     reason_counts: dict[str, int] = {}
@@ -261,8 +241,6 @@ def _build_layer_hits(
         hits["file"] = max(hits.get("file", 0), len(files))
     if symbols:
         hits["symbol"] = max(hits.get("symbol", 0), len(symbols))
-    if fact_count:
-        hits["facts"] = fact_count
     return hits
 
 

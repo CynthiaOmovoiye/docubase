@@ -27,37 +27,12 @@ import re
 from app.core.logging import get_logger
 from app.domains.answering.contracts import build_answer_contract, build_workspace_answer_contract
 from app.domains.answering.llm_provider import LLMResponse, get_llm_provider
-from app.domains.answering.scaffold import build_answer_scaffold, build_workspace_answer_scaffold
 from app.domains.policy.rules import redact_sensitive_content
 from app.domains.retrieval.packets import RetrievalEvidencePacket
 
 logger = get_logger(__name__)
 
 
-def _build_implementation_facts_block(packet: RetrievalEvidencePacket | None) -> str:
-    """Structured implementation-fact rows for the knowledge block (Phase 4)."""
-    if packet is None or not packet.facts:
-        return ""
-    label_line = ", ".join(packet.query_labels) if packet.query_labels else "—"
-    flow = packet.flow_outline or "—"
-    lines = [
-        "## Implementation facts (query-matched, normalized)",
-        "",
-        f"Query labels: {label_line}",
-        f"Flow outline: {flow}",
-        "",
-    ]
-    for item in packet.facts[:20]:
-        summary = redact_sensitive_content(str(item.get("summary") or ""))[:400]
-        path = str(item.get("path") or "")
-        ft = str(item.get("fact_type") or "")
-        lines.append(f"- **{ft}** `{path}` — {summary}")
-    lines.append("")
-    lines.append(
-        "These rows are normalized implementation edges; prefer them when they "
-        "conflict with informal prose in excerpts below."
-    )
-    return "\n".join(lines)
 
 
 # XML-tag delimiters make context block injection harder than plain ---
@@ -357,9 +332,6 @@ async def generate_answer(
         context_parts.append(f"{ref_label}{safe_content}")
 
     context = "\n\n---\n\n".join(context_parts)
-    fact_block = _build_implementation_facts_block(retrieval_packet)
-    if fact_block:
-        context = f"{fact_block}\n\n---\n\n{context}"
 
     # Sanitise owner-provided context before embedding in the system prompt
     safe_custom_context = _sanitise_custom_context(custom_context) if custom_context else ""
@@ -383,7 +355,6 @@ async def generate_answer(
         retrieval_packet,
         allow_code_snippets=allow_code_snippets,
     )
-    answer_scaffold_block = build_answer_scaffold(retrieval_packet)
 
     system_prompt = _SYSTEM_PROMPT_BASE.format(
         doctwin_name=doctwin_name,
@@ -394,7 +365,7 @@ async def generate_answer(
         memory_brief_block=memory_brief_block,
         regeneration_hint_block=regeneration_hint_block,
         answer_contract_block=answer_contract_block,
-        answer_scaffold_block=answer_scaffold_block,
+        answer_scaffold_block="",
     )
 
     # Add the current query to the conversation
@@ -482,10 +453,6 @@ async def generate_workspace_answer(
             if chunk_lines
             else "(no relevant grounded excerpts provided)"
         )
-        evidence_packet: RetrievalEvidencePacket | None = project.get("evidence_packet")
-        fact_block = _build_implementation_facts_block(evidence_packet)
-        if fact_block:
-            knowledge_text = f"{fact_block}\n\n---\n\n{knowledge_text}"
         project_blocks.append(
             "\n".join(
                 [
@@ -515,7 +482,7 @@ async def generate_workspace_answer(
     system_prompt = _WORKSPACE_SYSTEM_PROMPT_BASE.format(
         workspace_name=workspace_name,
         workspace_answer_contract_block=build_workspace_answer_contract(project_contexts),
-        workspace_answer_scaffold_block=build_workspace_answer_scaffold(project_contexts),
+        workspace_answer_scaffold_block="",
         regeneration_hint_block=regeneration_hint_block,
         workspace_memory_block=workspace_memory_block,
         workspace_inventory="\n".join(inventory_lines) if inventory_lines else "(no projects available)",

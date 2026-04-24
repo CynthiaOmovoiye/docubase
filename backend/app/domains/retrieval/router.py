@@ -33,7 +33,6 @@ from app.domains.embedding.embedder import (
     get_primary_embedding_profile,
     resolve_embedding_profile,
 )
-from app.domains.retrieval.fact_retrieval import search_implementation_facts_for_twin
 from app.domains.retrieval.hybrid import (
     fetch_file_candidates,
     fetch_lexical_chunk_candidates,
@@ -50,7 +49,6 @@ from app.domains.retrieval.packets import (
     build_evidence_packet,
 )
 from app.domains.retrieval.planner import RetrievalMode, build_retrieval_plan
-from app.domains.retrieval.query_decompose import search_terms_from_query
 from app.domains.retrieval.reranker import rerank_chunks, reranker_available
 from app.models.chunk import Chunk
 from app.models.source import Source, SourceStatus
@@ -477,32 +475,6 @@ async def retrieve_packet_for_twin(
     ):
         merge_candidate(candidates_by_id, memory_chunk)
 
-    fact_rows: list[dict[str, Any]] = []
-    if "facts" in plan.searched_layers and plan.fact_budget > 0:
-        try:
-            terms = search_terms_from_query(
-                query=plan.query,
-                search_query=plan.search_query,
-                labels=plan.query_labels,
-            )
-            fact_rows = await search_implementation_facts_for_twin(
-                db,
-                doctwin_id,
-                terms,
-                limit=plan.fact_budget,
-            )
-        except Exception as exc:
-            logger.warning(
-                "implementation_fact_search_failed",
-                doctwin_id=doctwin_id,
-                error=str(exc),
-            )
-            await _safe_rollback(db)
-            fact_rows = []
-        plan.fact_hits = len(fact_rows)
-        if not fact_rows:
-            missing_evidence.append("facts")
-
     if guaranteed_refs:
         remaining_budget = _MAX_GUARANTEED_CHUNKS
         for ref in guaranteed_refs:
@@ -530,8 +502,6 @@ async def retrieve_packet_for_twin(
         )
 
     candidate_list = list(candidates_by_id.values())
-    if plan.mode == RetrievalMode.general and len(plan.query_labels) >= 4:
-        _demote_surplus_same_source(candidate_list, max_per_source=2)
 
     candidates = _score_and_prune_candidates(candidate_list, plan)
     if use_reranker and candidates:
@@ -562,7 +532,6 @@ async def retrieve_packet_for_twin(
         symbol_matches=symbol_matches,
         graph_edges=graph_edges,
         missing_evidence=sorted(set(missing_evidence)),
-        facts=fact_rows,
     )
 
 
@@ -596,10 +565,7 @@ def _score_and_prune_candidates(
     auth_query = any(token in query_text for token in _AUTH_QUERY_HINTS)
     dashboard_query = any(token in query_text for token in _DASHBOARD_QUERY_HINTS)
     has_code_candidates = any(_is_code_backed_candidate(candidate) for candidate in candidates)
-    fact_hits = int(getattr(plan, "fact_hits", 0) or 0)
-    auth_boost_trim = (
-        0.06 if (auth_query and fact_hits >= 8 and plan.mode in _IMPLEMENTATIONISH_MODES) else 0.0
-    )
+    auth_boost_trim = 0.0
 
     adjusted: list[dict[str, Any]] = []
     for candidate in candidates:

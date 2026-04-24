@@ -127,9 +127,6 @@ async def _hydrate_deterministic_chunk(
         dict[tuple[str, str | None], dict[str, Any]],
     ],
 ) -> dict[str, Any]:
-    if chunk_row.chunk_type == ChunkType.implementation_fact:
-        return chunk
-
     path = chunk_row.source_ref or ""
     allow_code_snippets = bool(
         ((source.index_health or {}).get("policy") or {}).get("allow_code_snippets")

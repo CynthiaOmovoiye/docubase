@@ -713,15 +713,6 @@ async def send_message(
         sources=source_list if not _src_orms else None,
         source_models=_src_orms if _src_orms else None,
     )
-    if verification is not None:
-        from app.domains.evaluation.phase6_exit import evaluate_phase6_verification_exit_signals
-
-        answer_authority.stage_signals["verification"]["phase6_verification"] = (
-            evaluate_phase6_verification_exit_signals(
-                verified=verification.verified,
-                issues=verification.issues,
-            )
-        )
     logger.info(
         "answer_authority_diagnosis",
         session_id=str(session_id),

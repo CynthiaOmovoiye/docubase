@@ -133,6 +133,5 @@ class TwinEvidenceHealthResponse(BaseModel):
     min_strict_coverage_ratio: float | None = None
     canonical_mirror_ready_count: int = 0
     canonical_mirror_file_count: int = 0
-    implementation_fact_count: int = 0
     any_strict_evidence_not_ready: bool
     memory_brief_status: str | None = None

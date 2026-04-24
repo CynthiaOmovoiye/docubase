@@ -252,25 +252,6 @@ def _build_allowed_refs(packet: RetrievalEvidencePacket) -> tuple[set[str], set[
         symbol_refs.add(_normalise(symbol.qualified_name))
         symbol_refs.add(_normalise(symbol.qualified_name.rsplit(".", 1)[-1]))
 
-    for item in packet.facts:
-        path = str(item.get("path") or "").strip()
-        if path:
-            file_refs.add(_normalise(path))
-            file_refs.add(_normalise(path.rsplit("/", 1)[-1]))
-        subj = str(item.get("subject") or "").strip()
-        if subj:
-            symbol_refs.add(_normalise(subj))
-            if "." in subj:
-                symbol_refs.add(_normalise(subj.rsplit(".", 1)[-1]))
-        obj = str(item.get("object_ref") or "").strip()
-        if obj:
-            if _looks_like_file_ref(obj):
-                file_refs.add(_normalise(obj))
-                file_refs.add(_normalise(obj.rsplit("/", 1)[-1]))
-            else:
-                symbol_refs.add(_normalise(obj))
-                if "." in obj:
-                    symbol_refs.add(_normalise(obj.rsplit(".", 1)[-1]))
     return file_refs, symbol_refs
 
 
@@ -358,13 +339,6 @@ def _ref_appears_in_packet_content(ref: str, packet: RetrievalEvidencePacket) ->
     compact_ref = re.sub(r"\s+", "", lowered_ref)
     blob = "\n".join(
         [str(chunk.get("content") or "") for chunk in packet.chunks]
-        + [
-            " ".join(
-                str(item.get(k) or "")
-                for k in ("path", "subject", "object_ref", "summary", "fact_type")
-            )
-            for item in packet.facts
-        ]
     ).lower()
     if lowered_ref in blob:
         return True
@@ -382,7 +356,7 @@ def _has_contradicted_absence_claim(content: str, packet: RetrievalEvidencePacke
     """
     packet_text = _packet_text(packet).lower()
     packet_compact = re.sub(r"\s+", "", packet_text)
-    fact_types_present = {str(f.get("fact_type") or "").lower() for f in packet.facts if f.get("fact_type")}
+    fact_types_present: set[str] = set()
     for line in content.splitlines():
         lowered = line.lower()
         if not (_BOUNDED_NEGATIVE_RE.search(lowered) or _STRONG_NEGATIVE_RE.search(lowered)):
@@ -1177,13 +1151,6 @@ def _packet_text(packet: RetrievalEvidencePacket) -> str:
     parts.extend(symbol.qualified_name for symbol in packet.symbols if symbol.qualified_name)
     parts.extend(str(chunk.get("source_ref") or "") for chunk in packet.chunks)
     parts.extend(str(chunk.get("content") or "") for chunk in packet.chunks)
-    for item in packet.facts:
-        parts.append(
-            " ".join(
-                str(item.get(k) or "")
-                for k in ("path", "fact_type", "subject", "predicate", "object_ref", "summary")
-            )
-        )
     return "\n".join(parts)
 
 
