@@ -1,0 +1,38 @@
+# Production Docker Compose overlay.
+# Apply with:
+#   ENVIRONMENT=prod AWS_REGION=us-east-1 \
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# What this changes vs docker-compose.yml:
+#   - backend/worker: awslogs logging driver → CloudWatch Log Groups
+#   - backend: production uvicorn command (no --reload, 2 workers)
+#   - dev-only services (frontend, redis-commander) disabled via profile
+
+services:
+  backend:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: "${AWS_REGION:-us-east-1}"
+        awslogs-group: "/docbase/${ENVIRONMENT:-prod}/backend"
+        awslogs-stream: "backend"
+        awslogs-create-group: "false"
+
+  worker:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: "${AWS_REGION:-us-east-1}"
+        awslogs-group: "/docbase/${ENVIRONMENT:-prod}/worker"
+        awslogs-stream: "worker"
+        awslogs-create-group: "false"
+
+  # Disable dev-only services in production
+  redis-commander:
+    profiles:
+      - dev-tools
+
+  frontend:
+    profiles:
+      - dev-tools

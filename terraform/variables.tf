@@ -33,3 +33,19 @@ variable "backend_origin_url" {
   type        = string
   default     = ""
 }
+
+variable "log_retention_days" {
+  description = "CloudWatch log retention period in days"
+  type        = number
+  default     = 30
+  validation {
+    condition     = contains([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653], var.log_retention_days)
+    error_message = "log_retention_days must be a valid CloudWatch retention value."
+  }
+}
+
+variable "alarm_email" {
+  description = "Email address for CloudWatch alarm notifications. Leave empty to skip SNS/email setup."
+  type        = string
+  default     = ""
+}

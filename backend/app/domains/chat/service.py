@@ -43,8 +43,10 @@ from app.domains.chat.routing_heuristics import (
 )
 from app.domains.answering.generator import generate_answer, generate_workspace_answer
 from app.domains.answering.llm_provider import LLMResponse
+from app.domains.answering.verifier import verify_workspace_answer
 from app.domains.evaluation.answer_authority import build_answer_authority_diagnosis
 from app.domains.evaluation.latency import build_chat_latency_report
+from app.domains.evaluation.metrics import build_workspace_quality_metrics
 from app.domains.memory.service import get_workspace_synthesis
 from app.domains.retrieval.intent import QueryAnalysis, QueryIntent, analyse_query
 from app.domains.retrieval.router import (
