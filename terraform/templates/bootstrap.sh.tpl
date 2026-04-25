@@ -53,6 +53,11 @@ curl -fsSL \
   "https://github.com/docker/compose/releases/download/$${COMPOSE_VERSION}/docker-compose-linux-$${COMPOSE_ARCH}" \
   -o /usr/local/lib/docker/cli-plugins/docker-compose
 chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+# Symlink into PATH so non-root users can run `docker-compose` directly.
+# The Docker CLI plugin loader has a known issue on Amazon Linux 2023 where
+# non-root users can't dispatch `docker compose` via the plugin mechanism
+# even when the binary and group membership are correct.
+ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
 
 # Enable and start Docker
 systemctl enable --now docker

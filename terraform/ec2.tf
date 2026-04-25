@@ -27,8 +27,11 @@ data "aws_ami" "amazon_linux_2023" {
   owners      = ["amazon"]
 
   filter {
+    # al2023-ami-2023.* matches the standard AL2023 release AMIs.
+    # Excludes ECS-optimized (al2023-ami-ecs-*) and minimal (al2023-ami-minimal-*)
+    # variants, which lack full package sets our bootstrap needs.
     name   = "name"
-    values = ["al2023-ami-*-x86_64"]
+    values = ["al2023-ami-2023*-kernel-*-x86_64"]
   }
   filter {
     name   = "virtualization-type"
