@@ -110,15 +110,24 @@ _GREETING_RE = re.compile(
 )
 _SOURCE_QUERY_RE = re.compile(
     r"\b("
-    r"what do you have|what sources?|which sources?|do you have|"
-    r"what do you know|what knowledge|attached sources?"
+    # Explicit source/knowledge inventory questions — always safe to intercept.
+    r"what do you have|what sources?|which sources?|attached sources?|"
+    r"what do you know|what knowledge|"
+    # "do you have" is only a scope query when followed by knowledge/source nouns.
+    # Avoid matching "do you have any experience", "do you have a project on X", etc.
+    r"do you have (?:any |some )?(?:sources?|documents?|files?|knowledge|data|context|twins?|info(?:rmation)?)"
     r")\b",
     re.IGNORECASE,
 )
 _WORKSPACE_COVERAGE_RE = re.compile(
     r"\b("
-    r"how many twins|how many projects|which twins|which projects|"
-    r"what twins|what projects|what can you help with|what can you cover|"
+    r"how many twins|how many projects|"
+    # "which/what twins" with no further verb is always a scope listing query.
+    r"which twins|what twins|"
+    # "which/what projects" only intercept when clearly asking about workspace scope,
+    # NOT when an action verb follows ("have you built", "did you work on", etc.).
+    r"(?:which|what) projects (?:do you (?:have|cover|serve|support)|can you (?:help|cover|answer)|are (?:available|in this workspace))|"
+    r"what can you help with|what can you cover|"
     r"what do you cover|what are you serving|what projects can you help with"
     r")\b",
     re.IGNORECASE,
