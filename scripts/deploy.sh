@@ -33,10 +33,16 @@ else
   terraform workspace select "$ENVIRONMENT"
 fi
 
+BACKEND_ORIGIN_URL="${DOCBASE_BACKEND_ORIGIN_URL:-}"
+BACKEND_VAR=""
+if [ -n "$BACKEND_ORIGIN_URL" ]; then
+  BACKEND_VAR="-var=backend_origin_url=$BACKEND_ORIGIN_URL"
+fi
+
 if [ "$ENVIRONMENT" = "prod" ] && [ -f "prod.tfvars" ]; then
-  TF_APPLY_CMD=(terraform apply -var-file=prod.tfvars -var="project_name=$PROJECT_NAME" -var="environment=$ENVIRONMENT" -auto-approve)
+  TF_APPLY_CMD=(terraform apply -var-file=prod.tfvars -var="project_name=$PROJECT_NAME" -var="environment=$ENVIRONMENT" $BACKEND_VAR -auto-approve)
 else
-  TF_APPLY_CMD=(terraform apply -var="project_name=$PROJECT_NAME" -var="environment=$ENVIRONMENT" -auto-approve)
+  TF_APPLY_CMD=(terraform apply -var="project_name=$PROJECT_NAME" -var="environment=$ENVIRONMENT" $BACKEND_VAR -auto-approve)
 fi
 
 echo "Applying Terraform (S3 + CloudFront)..."

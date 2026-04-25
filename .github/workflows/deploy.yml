@@ -55,6 +55,7 @@ jobs:
         run: |
           export DEFAULT_AWS_REGION=${{ secrets.DEFAULT_AWS_REGION }}
           export DOCBASE_VITE_API_URL=${{ vars.DOCBASE_VITE_API_URL }}
+          export DOCBASE_BACKEND_ORIGIN_URL=${{ vars.DOCBASE_BACKEND_ORIGIN_URL }}
           chmod +x scripts/deploy.sh
           ./scripts/deploy.sh ${{ github.event.inputs.environment || 'dev' }} docbase
         env:
