@@ -1,7 +1,40 @@
 name: Deploy docbase
 
-# Auto-deploys to dev on push to main.
-# Manual promotion to test/prod: Actions → Run workflow → pick environment.
+# Triggers:
+#   - Push to main → deploys to dev automatically
+#   - Manual trigger → choose environment (dev / test / prod)
+#
+# What this deploys on every push:
+#   1. Infrastructure  — Terraform (EC2, S3, CloudFront, IAM, CloudWatch)
+#   2. Frontend        — Vite build → S3 → CloudFront cache invalidation
+#   3. Backend+Worker  — git pull + docker compose up --build via SSM RunCommand
+#
+# Required GitHub Secrets (repo Settings → Secrets and variables → Actions → Secrets):
+#   AWS_ROLE_ARN       — ARN of the OIDC IAM role GitHub Actions assumes
+#   DEFAULT_AWS_REGION — e.g. us-east-1
+#
+# Required GitHub Actions Variables (Settings → Secrets and variables → Actions → Variables):
+#   DOCBASE_VITE_API_URL       — CloudFront URL baked into the frontend build
+#                                e.g. https://d123abc.cloudfront.net
+#   DOCBASE_BACKEND_ORIGIN_URL — EC2 Elastic IP (no scheme, no port)
+#                                Read from `terraform output ec2_public_ip` after first apply
+#
+# The AWS OIDC role needs these permissions IN ADDITION to the Terraform permissions:
+#   ssm:SendCommand
+#   ssm:GetCommandInvocation
+#   ssm:ListCommandInvocations
+#   ssm:DescribeInstanceInformation
+#   ec2:DescribeInstances
+#
+# First deploy (one-time setup after this workflow first runs):
+#   1. Check workflow logs for "ec2_public_ip" in the Terraform summary step
+#   2. Set that IP as the DOCBASE_BACKEND_ORIGIN_URL Actions variable
+#   3. In AWS Console → SSM → Parameter Store, populate:
+#        /docbase/dev/github-deploy-token  (fine-grained PAT, repo Contents: Read)
+#        /docbase/dev/app-env              (paste your full .env file contents)
+#   4. Push any change to main — the EC2 instance bootstraps itself via user_data
+#      then CI/CD takes over for all future deploys
+
 on:
   push:
     branches:
@@ -22,48 +55,285 @@ permissions:
   id-token: write
   contents: read
 
+env:
+  ENVIRONMENT: ${{ github.event.inputs.environment || 'dev' }}
+
 jobs:
-  deploy:
-    name: Deploy to ${{ github.event.inputs.environment || 'dev' }}
+  # ─── Job 1: Infrastructure ──────────────────────────────────────────────────
+  # Runs terraform apply so infrastructure is always in sync before code deploys.
+  terraform:
+    name: "Terraform (${{ github.event.inputs.environment || 'dev' }})"
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'dev' }}
 
+    outputs:
+      ec2_instance_id: ${{ steps.outputs.outputs.ec2_instance_id }}
+      ec2_public_ip:   ${{ steps.outputs.outputs.ec2_public_ip }}
+      cloudfront_url:  ${{ steps.outputs.outputs.cloudfront_url }}
+      s3_bucket:       ${{ steps.outputs.outputs.s3_bucket }}
+      cf_dist_id:      ${{ steps.outputs.outputs.cf_dist_id }}
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          role-session-name: docbase-actions-deploy
+          role-session-name: docbase-terraform-${{ env.ENVIRONMENT }}
           aws-region: ${{ secrets.DEFAULT_AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
+          terraform_version: "~1.9"
           terraform_wrapper: false
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Terraform init
+        working-directory: terraform
+        run: |
+          AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          terraform init -input=false \
+            -backend-config="bucket=docbase-terraform-state-${AWS_ACCOUNT}" \
+            -backend-config="key=${{ env.ENVIRONMENT }}/terraform.tfstate" \
+            -backend-config="region=${{ secrets.DEFAULT_AWS_REGION }}" \
+            -backend-config="dynamodb_table=docbase-terraform-locks" \
+            -backend-config="encrypt=true"
+
+      - name: Terraform workspace
+        working-directory: terraform
+        run: |
+          terraform workspace select ${{ env.ENVIRONMENT }} \
+            || terraform workspace new ${{ env.ENVIRONMENT }}
+
+      - name: Terraform apply
+        working-directory: terraform
+        run: |
+          terraform apply -auto-approve \
+            -var="project_name=docbase" \
+            -var="environment=${{ env.ENVIRONMENT }}" \
+            -var="backend_origin_url=${{ vars.DOCBASE_BACKEND_ORIGIN_URL }}"
+
+      - name: Capture outputs
+        id: outputs
+        working-directory: terraform
+        run: |
+          echo "ec2_instance_id=$(terraform output -raw ec2_instance_id)"           >> "$GITHUB_OUTPUT"
+          echo "ec2_public_ip=$(terraform output -raw ec2_public_ip)"               >> "$GITHUB_OUTPUT"
+          echo "cloudfront_url=$(terraform output -raw cloudfront_url)"             >> "$GITHUB_OUTPUT"
+          echo "s3_bucket=$(terraform output -raw s3_frontend_bucket)"              >> "$GITHUB_OUTPUT"
+          echo "cf_dist_id=$(terraform output -raw cloudfront_distribution_id)"     >> "$GITHUB_OUTPUT"
+
+      - name: Terraform summary
+        working-directory: terraform
+        run: |
+          echo "### Infrastructure" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Resource | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| CloudFront | $(terraform output -raw cloudfront_url) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| EC2 IP     | $(terraform output -raw ec2_public_ip) |"  >> "$GITHUB_STEP_SUMMARY"
+          echo "| EC2 ID     | $(terraform output -raw ec2_instance_id) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "> **First deploy?** Copy the EC2 IP above, set it as the" \
+               "\`DOCBASE_BACKEND_ORIGIN_URL\` Actions variable, then re-run." >> "$GITHUB_STEP_SUMMARY"
+
+  # ─── Job 2: Frontend ────────────────────────────────────────────────────────
+  # Build Vite, sync to S3, invalidate CloudFront. Runs in parallel with Job 3.
+  frontend:
+    name: "Frontend (${{ github.event.inputs.environment || 'dev' }})"
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    needs: terraform
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: docbase-frontend-${{ env.ENVIRONMENT }}
+          aws-region: ${{ secrets.DEFAULT_AWS_REGION }}
+
+      - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Run deployment script
+      - name: Build
+        working-directory: frontend
         run: |
-          export DEFAULT_AWS_REGION=${{ secrets.DEFAULT_AWS_REGION }}
-          export DOCBASE_VITE_API_URL=${{ vars.DOCBASE_VITE_API_URL }}
-          export DOCBASE_BACKEND_ORIGIN_URL=${{ vars.DOCBASE_BACKEND_ORIGIN_URL }}
-          chmod +x scripts/deploy.sh
-          ./scripts/deploy.sh ${{ github.event.inputs.environment || 'dev' }} docbase
-        env:
-          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+          if [ -n "${{ vars.DOCBASE_VITE_API_URL }}" ]; then
+            echo "VITE_API_URL=${{ vars.DOCBASE_VITE_API_URL }}" > .env.production
+          else
+            echo "DOCBASE_VITE_API_URL not set — build uses relative /api path (same origin)"
+          fi
+          npm ci
+          npm run build
 
-      - name: Deployment summary
-        working-directory: ./terraform
+      - name: Sync to S3
         run: |
-          terraform workspace select ${{ github.event.inputs.environment || 'dev' }}
-          echo "CloudFront: $(terraform output -raw cloudfront_url)"
-          echo "Bucket: $(terraform output -raw s3_frontend_bucket)"
+          aws s3 sync frontend/dist "s3://${{ needs.terraform.outputs.s3_bucket }}/" --delete
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ needs.terraform.outputs.cf_dist_id }}" \
+            --paths "/*" \
+            --query "Invalidation.Id" \
+            --output text
+
+      - name: Frontend summary
+        run: |
+          echo "### Frontend" >> "$GITHUB_STEP_SUMMARY"
+          echo "Deployed to: ${{ needs.terraform.outputs.cloudfront_url }}" >> "$GITHUB_STEP_SUMMARY"
+
+  # ─── Job 3: Backend ─────────────────────────────────────────────────────────
+  # Deploy backend + worker via SSM RunCommand — no SSH, no secrets on runner.
+  # The EC2 instance pulls its own GitHub token from SSM to run git pull.
+  backend:
+    name: "Backend (${{ github.event.inputs.environment || 'dev' }})"
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    needs: terraform
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: docbase-backend-${{ env.ENVIRONMENT }}
+          aws-region: ${{ secrets.DEFAULT_AWS_REGION }}
+
+      - name: Wait for SSM agent to be online
+        env:
+          INSTANCE_ID: ${{ needs.terraform.outputs.ec2_instance_id }}
+          REGION: ${{ secrets.DEFAULT_AWS_REGION }}
+        run: |
+          echo "Waiting for SSM agent on $INSTANCE_ID (up to 5 min)..."
+          for i in $(seq 1 30); do
+            STATUS=$(aws ssm describe-instance-information \
+              --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+              --query "InstanceInformationList[0].PingStatus" \
+              --output text \
+              --region "$REGION" 2>/dev/null || echo "None")
+            echo "  [$i/30] SSM status: $STATUS"
+            [ "$STATUS" = "Online" ] && { echo "SSM agent is online."; break; }
+            [ "$i" -eq 30 ] && { echo "ERROR: SSM agent never came online."; exit 1; }
+            sleep 10
+          done
+
+      - name: Send deploy command
+        id: deploy
+        env:
+          INSTANCE_ID: ${{ needs.terraform.outputs.ec2_instance_id }}
+          REGION: ${{ secrets.DEFAULT_AWS_REGION }}
+          ENVIRONMENT: ${{ env.ENVIRONMENT }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          COMMAND_ID=$(aws ssm send-command \
+            --region "$REGION" \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "docbase deploy ${COMMIT_SHA:0:7}" \
+            --timeout-seconds 600 \
+            --parameters "commands=[
+              \"set -euo pipefail\",
+              \"exec > >(tee -a /var/log/docbase-deploy.log) 2>&1\",
+              \"echo \\\"[deploy] commit=$COMMIT_SHA started=$(date -u +%Y-%m-%dT%H:%M:%SZ)\\\"\",
+              \"cd /home/ec2-user/docubase\",
+              \"REGION=\$(curl -sf http://169.254.169.254/latest/meta-data/placement/region)\",
+              \"TOKEN=\$(aws ssm get-parameter --name '/docbase/$ENVIRONMENT/github-deploy-token' --with-decryption --query Parameter.Value --output text --region \\\$REGION)\",
+              \"git config --global url.\\\"https://x-access-token:\\\${TOKEN}@github.com/\\\".insteadOf \\\"https://github.com/\\\"\",
+              \"git fetch origin main\",
+              \"git reset --hard origin/main\",
+              \"echo \\\"[deploy] Code at \$(git log -1 --format='%h %s')\\\"\",
+              \"aws ssm get-parameter --name '/docbase/$ENVIRONMENT/app-env' --with-decryption --query Parameter.Value --output text --region \\\$REGION > .env\",
+              \"printf '\\\\nDOCKER_LOG_DRIVER=awslogs\\\\nAWS_DEFAULT_REGION='\\\$REGION'\\\\nENVIRONMENT=$ENVIRONMENT\\\\n' >> .env\",
+              \"docker compose up -d --build backend worker\",
+              \"docker compose ps backend worker\",
+              \"echo \\\"[deploy] done=$(date -u +%Y-%m-%dT%H:%M:%SZ)\\\"\"
+            ]" \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "command_id=$COMMAND_ID" >> "$GITHUB_OUTPUT"
+          echo "SSM command sent: $COMMAND_ID"
+
+      - name: Wait for deploy to finish
+        env:
+          COMMAND_ID: ${{ steps.deploy.outputs.command_id }}
+          INSTANCE_ID: ${{ needs.terraform.outputs.ec2_instance_id }}
+          REGION: ${{ secrets.DEFAULT_AWS_REGION }}
+        run: |
+          echo "Polling SSM command $COMMAND_ID (up to 10 min)..."
+          for i in $(seq 1 60); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$INSTANCE_ID" \
+              --region "$REGION" \
+              --query "Status" \
+              --output text 2>/dev/null || echo "Pending")
+            echo "  [$i/60] status: $STATUS"
+            case "$STATUS" in
+              Success)    echo "Backend deploy succeeded."; break ;;
+              Failed|Cancelled|TimedOut|DeliveryTimedOut|ExecutionTimedOut)
+                echo "ERROR: Deploy failed with status: $STATUS"
+                echo "--- stdout ---"
+                aws ssm get-command-invocation \
+                  --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+                  --region "$REGION" --query "StandardOutputContent" --output text || true
+                echo "--- stderr ---"
+                aws ssm get-command-invocation \
+                  --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+                  --region "$REGION" --query "StandardErrorContent" --output text || true
+                exit 1 ;;
+              *) sleep 10 ;;
+            esac
+            [ "$i" -eq 60 ] && { echo "ERROR: Timed out waiting for deploy."; exit 1; }
+          done
+
+      - name: Print deploy log
+        if: always()
+        env:
+          COMMAND_ID: ${{ steps.deploy.outputs.command_id }}
+          INSTANCE_ID: ${{ needs.terraform.outputs.ec2_instance_id }}
+          REGION: ${{ secrets.DEFAULT_AWS_REGION }}
+        run: |
+          echo "=== SSM command output ==="
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --region "$REGION" \
+            --query "StandardOutputContent" \
+            --output text || echo "(no output available)"
+
+      - name: Backend summary
+        if: success()
+        run: |
+          echo "### Backend" >> "$GITHUB_STEP_SUMMARY"
+          echo "Deployed commit \`${{ github.sha }}\` to EC2 \`${{ needs.terraform.outputs.ec2_instance_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  # ─── Summary ────────────────────────────────────────────────────────────────
+  summary:
+    name: "Summary"
+    runs-on: ubuntu-latest
+    needs: [terraform, frontend, backend]
+    if: always()
+
+    steps:
+      - name: Deployment result
+        run: |
+          echo "╔══════════════════════════════════════════╗"
+          echo "║         docbase deploy complete          ║"
+          echo "╠══════════════════════════════════════════╣"
+          echo "║ Environment : ${{ env.ENVIRONMENT }}"
+          echo "║ Commit      : ${{ github.sha }}"
+          echo "║ CloudFront  : ${{ needs.terraform.outputs.cloudfront_url }}"
+          echo "║ EC2         : ${{ needs.terraform.outputs.ec2_public_ip }}"
+          echo "╠══════════════════════════════════════════╣"
+          echo "║ Terraform   : ${{ needs.terraform.result }}"
+          echo "║ Frontend    : ${{ needs.frontend.result }}"
+          echo "║ Backend     : ${{ needs.backend.result }}"
+          echo "╚══════════════════════════════════════════╝"

@@ -49,3 +49,29 @@ variable "alarm_email" {
   type        = string
   default     = ""
 }
+
+# ─── EC2 ─────────────────────────────────────────────────────────────────────
+
+variable "ec2_instance_type" {
+  description = "EC2 instance type for the backend server."
+  type        = string
+  default     = "t3.small"
+}
+
+variable "ec2_key_name" {
+  description = "EC2 key pair name for emergency SSH access. Leave empty to disable SSH key auth (SSM Session Manager is used for all normal access)."
+  type        = string
+  default     = ""
+}
+
+variable "ssh_allowed_cidr" {
+  description = "CIDR block allowed to reach port 22. Empty string disables the SSH ingress rule entirely (recommended; use SSM Session Manager instead)."
+  type        = string
+  default     = ""
+}
+
+variable "github_repo" {
+  description = "GitHub repository in owner/name format, e.g. 'CynthiaOmovoiye/docubase'. Used by the EC2 bootstrap script to git clone."
+  type        = string
+  default     = "CynthiaOmovoiye/docubase"
+}

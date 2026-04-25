@@ -24,11 +24,36 @@ output "cloudwatch_dashboard_url" {
 }
 
 output "ec2_instance_profile_name" {
-  description = "IAM instance profile to attach to your EC2 instance for CloudWatch permissions"
+  description = "IAM instance profile attached to the EC2 instance"
   value       = aws_iam_instance_profile.ec2_observability.name
 }
 
 output "cloudwatch_agent_ssm_parameter" {
-  description = "SSM parameter name for the CloudWatch Agent config (used by install-cloudwatch-agent.sh)"
+  description = "SSM parameter name for the CloudWatch Agent config"
   value       = aws_ssm_parameter.cloudwatch_agent_config.name
+}
+
+output "ec2_instance_id" {
+  description = "EC2 instance ID — used by GitHub Actions for SSM RunCommand backend deploys"
+  value       = aws_instance.backend.id
+}
+
+output "ec2_public_ip" {
+  description = "Elastic IP of the backend server — set this as DOCBASE_BACKEND_ORIGIN_URL in GitHub Actions vars"
+  value       = aws_eip.backend.public_ip
+}
+
+output "backend_api_url" {
+  description = "Direct URL to the backend API (before CloudFront)"
+  value       = "http://${aws_eip.backend.public_ip}:8000"
+}
+
+output "github_deploy_token_ssm_param" {
+  description = "SSM parameter to populate with your GitHub fine-grained PAT"
+  value       = aws_ssm_parameter.github_deploy_token.name
+}
+
+output "app_env_ssm_param" {
+  description = "SSM parameter to populate with your .env file contents"
+  value       = aws_ssm_parameter.app_env.name
 }

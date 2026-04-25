@@ -1,18 +1,23 @@
 #!/bin/bash
-# Static frontend to S3/CloudFront. API is separate (e.g. Docker on a host).
+# Emergency / local manual frontend deploy to S3 + CloudFront.
 #
-# Suggested order:
-#   1. Local — make up, smoke UI/API, then make test (and lint if you use it)
-#   2. AWS dev — ./scripts/deploy.sh dev
-#   3. AWS prod — only after dev CloudFront + API URL are verified
+# Normal deployments are fully automated via GitHub Actions (.github/workflows/deploy.yml).
+# Push to main → Actions runs Terraform + frontend + backend (SSM) automatically.
 #
-# Prereq: S3 bucket docbase-terraform-state-<account> + DynamoDB docbase-terraform-locks
+# Only use this script when you need to force a frontend-only re-deploy locally
+# without triggering a full CI run (e.g. debugging a CloudFront config issue).
+#
+# Usage:
+#   ./scripts/deploy.sh [environment] [project_name]
+#   ./scripts/deploy.sh dev docbase
 set -e
 
 ENVIRONMENT=${1:-dev}
 PROJECT_NAME=${2:-docbase}
 
-echo "Deploying ${PROJECT_NAME} frontend to ${ENVIRONMENT}..."
+echo "Manual frontend-only deploy: ${PROJECT_NAME} → ${ENVIRONMENT}"
+echo "Note: Backend is deployed automatically via GitHub Actions on push to main."
+echo ""
 
 cd "$(dirname "$0")/.."
 
@@ -33,51 +38,28 @@ else
   terraform workspace select "$ENVIRONMENT"
 fi
 
-BACKEND_ORIGIN_URL="${DOCBASE_BACKEND_ORIGIN_URL:-}"
-BACKEND_VAR=""
-if [ -n "$BACKEND_ORIGIN_URL" ]; then
-  BACKEND_VAR="-var=backend_origin_url=$BACKEND_ORIGIN_URL"
-fi
-
-if [ "$ENVIRONMENT" = "prod" ] && [ -f "prod.tfvars" ]; then
-  TF_APPLY_CMD=(terraform apply -var-file=prod.tfvars -var="project_name=$PROJECT_NAME" -var="environment=$ENVIRONMENT" $BACKEND_VAR -auto-approve)
-else
-  TF_APPLY_CMD=(terraform apply -var="project_name=$PROJECT_NAME" -var="environment=$ENVIRONMENT" $BACKEND_VAR -auto-approve)
-fi
-
-echo "Applying Terraform (S3 + CloudFront)..."
-"${TF_APPLY_CMD[@]}"
-
 FRONTEND_BUCKET=$(terraform output -raw s3_frontend_bucket)
 DISTRIBUTION_ID=$(terraform output -raw cloudfront_distribution_id)
-CUSTOM_URL=$(terraform output -raw custom_domain_url 2>/dev/null || true)
 
 cd ../frontend
 
 echo "Building Vite app..."
 if [ -n "${DOCBASE_VITE_API_URL:-}" ]; then
   echo "VITE_API_URL=$DOCBASE_VITE_API_URL" > .env.production
-  echo "DOCBASE_VITE_API_URL is set — Vite will bake VITE_API_URL into the client (check Network tab: API host should not be CloudFront)."
-else
-  rm -f .env.production
-  echo "DOCBASE_VITE_API_URL not set — build uses same-origin /api/v1 (set GitHub Actions Variable DOCBASE_VITE_API_URL, then re-run deploy)."
 fi
 
 npm ci
 npm run build
+
 aws s3 sync ./dist "s3://$FRONTEND_BUCKET/" --delete
 
 if [ -n "$DISTRIBUTION_ID" ] && [ "$DISTRIBUTION_ID" != "null" ]; then
   aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*" >/dev/null
+  echo "CloudFront cache invalidated."
 fi
 
 cd ..
 
 echo ""
-echo "Deployment complete."
+echo "Frontend deploy complete."
 echo "CloudFront: $(terraform -chdir=terraform output -raw cloudfront_url)"
-if [ -n "$CUSTOM_URL" ]; then
-  echo "Custom domain: $CUSTOM_URL"
-fi
-echo "Frontend bucket: $FRONTEND_BUCKET"
-echo "Note: deploy the FastAPI API separately (Docker Compose, ECS, etc.); this stack is static UI only."
