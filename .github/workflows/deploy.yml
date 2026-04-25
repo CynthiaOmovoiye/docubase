@@ -270,8 +270,16 @@ jobs:
           REPO=/home/ec2-user/docubase
           GIT="git -C \$REPO -c safe.directory=\$REPO"
 
-          \$GIT fetch "https://x-access-token:\${TOKEN}@github.com/${GITHUB_REPO}.git" main
-          \$GIT reset --hard FETCH_HEAD
+          # Update the origin remote to include the token so `git reset --hard origin/main`
+          # works reliably and the local tracking branch stays in sync.
+          # We restore the plain URL after the fetch so the token is never stored long-term.
+          AUTHED_URL="https://x-access-token:\${TOKEN}@github.com/${GITHUB_REPO}.git"
+          PLAIN_URL="https://github.com/${GITHUB_REPO}.git"
+
+          \$GIT remote set-url origin "\${AUTHED_URL}"
+          \$GIT fetch origin main
+          \$GIT reset --hard origin/main
+          \$GIT remote set-url origin "\${PLAIN_URL}"
 
           echo "[deploy] code at \$(\$GIT log -1 --format='%h %s')"
 
