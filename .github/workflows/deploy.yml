@@ -265,13 +265,15 @@ jobs:
             --output text \
             --region "${REGION}")
 
-          # Fetch using the token in the URL — no global git config needed
-          git -C /home/ec2-user/docubase fetch \
-            "https://x-access-token:\${TOKEN}@github.com/${GITHUB_REPO}.git" main
+          # -c safe.directory bypasses the ownership check for this command only.
+          # Needed because SSM runs as root but the repo is owned by ec2-user.
+          REPO=/home/ec2-user/docubase
+          GIT="git -C \$REPO -c safe.directory=\$REPO"
 
-          git -C /home/ec2-user/docubase reset --hard FETCH_HEAD
+          \$GIT fetch "https://x-access-token:\${TOKEN}@github.com/${GITHUB_REPO}.git" main
+          \$GIT reset --hard FETCH_HEAD
 
-          echo "[deploy] code at \$(git -C /home/ec2-user/docubase log -1 --format='%h %s')"
+          echo "[deploy] code at \$(\$GIT log -1 --format='%h %s')"
 
           bash /home/ec2-user/docubase/scripts/deploy-backend.sh "${ENVIRONMENT}" "${REGION}"
           DEPLOY
