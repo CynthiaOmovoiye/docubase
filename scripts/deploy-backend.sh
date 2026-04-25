@@ -14,7 +14,14 @@ set -euo pipefail
 ENVIRONMENT=${1:-dev}
 REGION=${2:-us-east-1}
 
-echo "[deploy-backend] environment=$ENVIRONMENT region=$REGION commit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+# Always run from the repo root — docker compose and .env writes are relative paths.
+# Works whether called as `bash scripts/deploy-backend.sh` or an absolute path from SSM.
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
+
+# safe.directory needed when running as root (SSM) on a repo owned by ec2-user
+COMMIT=$(git -c safe.directory="$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
+echo "[deploy-backend] environment=$ENVIRONMENT region=$REGION commit=$COMMIT"
 
 # ─── Refresh .env from SSM ────────────────────────────────────────────────────
 echo "[deploy-backend] Fetching .env from SSM..."
