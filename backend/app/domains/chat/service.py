@@ -1381,6 +1381,7 @@ async def _answer_across_workspace(
                 project_contexts=memory_brief_contexts,
                 conversation_history=history,
                 trace_id=trace_id,
+                pipeline_trace_id=pipeline_trace_id,
                 workspace_memory=workspace_memory_text,
             )
             generation_elapsed_ms_inner = (perf_counter() - generation_started_at) * 1000
@@ -1467,6 +1468,7 @@ async def _answer_across_workspace(
         project_contexts=project_contexts,
         conversation_history=history,
         trace_id=trace_id,
+        pipeline_trace_id=pipeline_trace_id,
         workspace_memory=workspace_memory_text,
     )
     generation_elapsed_ms += (perf_counter() - generation_started_at) * 1000

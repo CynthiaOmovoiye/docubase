@@ -34,13 +34,17 @@ def _log_llm_context_chunks(
         return
     rows: list[dict] = []
     for i, c in enumerate(context_chunks[:24]):
+        content = c.get("content") or ""
         rows.append(
             {
                 "rank": i,
                 "chunk_id": str(c.get("chunk_id") or ""),
                 "chunk_type": str(c.get("chunk_type") or ""),
                 "source_ref": (c.get("source_ref") or "")[:140],
-                "chars": len(c.get("content") or ""),
+                "chars": len(content),
+                # First 300 chars so you can confirm the right text is being sent.
+                # Truncated at a word boundary where possible.
+                "content_preview": content[:300].rsplit(" ", 1)[0] if len(content) > 300 else content,
             }
         )
     logger.info(
@@ -50,6 +54,47 @@ def _log_llm_context_chunks(
         twin_name=twin_name,
         n_chunks=len(context_chunks),
         chunks=rows,
+    )
+
+
+def _log_workspace_llm_context(
+    *,
+    pipeline_trace_id: str | None,
+    workspace_name: str,
+    project_contexts: list[dict],
+) -> None:
+    """Log what each twin is contributing to the workspace LLM call."""
+    if not pipeline_trace_id:
+        return
+    projects: list[dict] = []
+    for project in project_contexts:
+        chunks = project.get("chunks") or []
+        chunk_rows = []
+        for i, c in enumerate(chunks[:12]):
+            content = c.get("content") or ""
+            chunk_rows.append(
+                {
+                    "rank": i,
+                    "chunk_type": str(c.get("chunk_type") or ""),
+                    "source_ref": (c.get("source_ref") or "")[:140],
+                    "chars": len(content),
+                    "content_preview": content[:300].rsplit(" ", 1)[0] if len(content) > 300 else content,
+                }
+            )
+        projects.append(
+            {
+                "twin": str(project.get("name") or ""),
+                "n_chunks": len(chunks),
+                "chunks": chunk_rows,
+            }
+        )
+    logger.info(
+        "workspace_rag_pipeline",
+        pipeline_trace_id=pipeline_trace_id,
+        stage="5_llm_prompt_chunks",
+        workspace_name=workspace_name,
+        n_projects=len(project_contexts),
+        projects=projects,
     )
 
 
@@ -326,6 +371,7 @@ async def generate_workspace_answer(
     project_contexts: list[dict],
     conversation_history: list[dict],
     trace_id: str | None = None,
+    pipeline_trace_id: str | None = None,
     regeneration_hint: str | None = None,
     workspace_memory: str | None = None,
 ) -> LLMResponse:
@@ -384,6 +430,13 @@ async def generate_workspace_answer(
     )
 
     messages = conversation_history + [{"role": "user", "content": effective_query}]
+
+    # Log exactly what context each twin is contributing before the LLM call.
+    _log_workspace_llm_context(
+        pipeline_trace_id=pipeline_trace_id,
+        workspace_name=workspace_name,
+        project_contexts=project_contexts,
+    )
 
     logger.info(
         "workspace_answer_generation_start",
