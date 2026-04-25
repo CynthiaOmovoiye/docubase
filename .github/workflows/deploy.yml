@@ -239,13 +239,47 @@ jobs:
           REGION: ${{ secrets.DEFAULT_AWS_REGION }}
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
           COMMIT_SHA: ${{ github.sha }}
+          GITHUB_REPO: ${{ github.repository }}
         run: |
-          # The deploy command is intentionally simple:
-          # 1. Fetch GitHub token from SSM (no IMDS, no external curl needed)
-          # 2. git pull to get the latest code including scripts/deploy-backend.sh
-          # 3. Run that script — it handles .env refresh and docker compose
-          #
-          # Region is passed directly from CI so we never need to hit IMDS.
+          # Write the script to a temp file on the Actions runner.
+          # jq then encodes it as a single JSON string for --parameters.
+          # This avoids all JSON/shell escaping complexity in the YAML,
+          # and also fixes "fatal: $HOME not set" — SSM RunCommand runs
+          # as root with no login shell; we set HOME explicitly so git
+          # and other tools that need a home directory work correctly.
+          # We also fetch using the token directly in the URL so we never
+          # need `git config --global` (which would write to $HOME/.gitconfig).
+
+          cat > /tmp/ssm-deploy.sh << DEPLOY
+          #!/bin/bash
+          set -euo pipefail
+          export HOME=/home/ec2-user
+          exec > >(tee -a /var/log/docbase-deploy.log) 2>&1
+
+          echo "[deploy] commit=${COMMIT_SHA} started=\$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          TOKEN=\$(aws ssm get-parameter \
+            --name "/docbase/${ENVIRONMENT}/github-deploy-token" \
+            --with-decryption \
+            --query "Parameter.Value" \
+            --output text \
+            --region "${REGION}")
+
+          # Fetch using the token in the URL — no global git config needed
+          git -C /home/ec2-user/docubase fetch \
+            "https://x-access-token:\${TOKEN}@github.com/${GITHUB_REPO}.git" main
+
+          git -C /home/ec2-user/docubase reset --hard FETCH_HEAD
+
+          echo "[deploy] code at \$(git -C /home/ec2-user/docubase log -1 --format='%h %s')"
+
+          bash /home/ec2-user/docubase/scripts/deploy-backend.sh "${ENVIRONMENT}" "${REGION}"
+          DEPLOY
+
+          # Encode the script as a single JSON string and send it to SSM.
+          # Using one script string (not an array) means SSM passes it to bash
+          # as a complete script — no inter-line variable scoping issues.
+          PARAMS=$(jq -Rsc '{"commands": [.]}' /tmp/ssm-deploy.sh)
 
           COMMAND_ID=$(aws ssm send-command \
             --region "$REGION" \
@@ -253,16 +287,7 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --comment "docbase deploy ${COMMIT_SHA:0:7}" \
             --timeout-seconds 600 \
-            --parameters commands="[
-              \"set -euo pipefail\",
-              \"exec > >(tee -a /var/log/docbase-deploy.log) 2>&1\",
-              \"echo '[deploy] commit=$COMMIT_SHA started='\$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
-              \"TOKEN=\$(aws ssm get-parameter --name /docbase/$ENVIRONMENT/github-deploy-token --with-decryption --query Parameter.Value --output text --region $REGION)\",
-              \"git -C /home/ec2-user/docubase config --global url.\\\"https://x-access-token:\${TOKEN}@github.com/\\\".insteadOf https://github.com/\",
-              \"git -C /home/ec2-user/docubase fetch origin main\",
-              \"git -C /home/ec2-user/docubase reset --hard origin/main\",
-              \"bash /home/ec2-user/docubase/scripts/deploy-backend.sh $ENVIRONMENT $REGION\"
-            ]" \
+            --parameters "$PARAMS" \
             --query "Command.CommandId" \
             --output text)
 
