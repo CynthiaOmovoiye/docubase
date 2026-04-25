@@ -398,6 +398,11 @@ async def send_message(
     used_deterministic_fallback = False
 
     if workspace_scope_response is not None:
+        logger.info(
+            "workspace_coverage_shortcircuit",
+            session_id=str(session_id),
+            query_preview=content[:120],
+        )
         answer = LLMResponse(
             content=workspace_scope_response,
             model="deterministic-workspace-scope",
@@ -625,6 +630,9 @@ async def send_message(
         "chat_message_processed",
         session_id=str(session_id),
         pipeline_trace_id=pipeline_trace_id,
+        # First 120 chars of the query — enough to diagnose routing decisions
+        # without logging full user messages (no PII risk at this length).
+        query_preview=content[:120],
         chunks_used=len(chunks),
         intent=intent.value,
         memory_brief_injected=memory_brief is not None,
