@@ -1287,6 +1287,20 @@ async def _answer_across_workspace(
             inventory = await _load_structure_inventory(doctwin_id, db)
             guaranteed_refs = _resolve_refs_from_inventory(analysis.path_hints, inventory)
             project_config = await _load_doctwin_config(uuid.UUID(doctwin_id), db)
+            # Prepend the memory brief as the first chunk so the LLM always has
+            # the synthesized twin profile regardless of what retrieval returns.
+            if project_config and project_config.memory_brief_status == "ready" and project_config.memory_brief:
+                brief_chunk = {
+                    "content": project_config.memory_brief,
+                    "source_ref": f"__memory__/{doctwin_id}",
+                    "chunk_type": "memory_brief",
+                    "score": 1.0,
+                }
+                project_chunks.append(brief_chunk)
+                chunk_id_placeholder = f"__brief__{doctwin_id}"
+                if chunk_id_placeholder not in seen_chunk_ids:
+                    seen_chunk_ids.add(chunk_id_placeholder)
+                    merged_chunks.append(brief_chunk)
             project_packet = await retrieve_packet_for_twin(
                 query=query,
                 doctwin_id=doctwin_id,
@@ -1328,6 +1342,58 @@ async def _answer_across_workspace(
             query_length=len(query),
             projects_checked=len(project_contexts),
         )
+
+        # Before giving up, check if any twin has a ready memory brief.
+        # The memory brief covers identity and overview questions ("who are you?",
+        # "what projects have you built?") that no individual chunk answers directly.
+        memory_brief_contexts: list[dict] = []
+        for project in project_contexts:
+            project_id = project.get("id")
+            if not project_id:
+                continue
+            proj_config = await _load_doctwin_config(uuid.UUID(str(project_id)), db)
+            if proj_config and proj_config.memory_brief_status == "ready" and proj_config.memory_brief:
+                memory_brief_contexts.append({
+                    **project,
+                    "chunks": [{"content": proj_config.memory_brief, "source_ref": f"__memory__/{project_id}"}],
+                })
+
+        if memory_brief_contexts:
+            logger.info(
+                "workspace_topic_no_chunks_using_memory_brief",
+                workspace_id=str(workspace_id),
+                twins_with_brief=len(memory_brief_contexts),
+            )
+            workspace_memory_text = await get_workspace_synthesis(str(workspace_id), db)
+            generation_started_at = perf_counter()
+            answer = await generate_workspace_answer(
+                workspace_name=workspace_name,
+                query=query,
+                project_contexts=memory_brief_contexts,
+                conversation_history=history,
+                trace_id=trace_id,
+                workspace_memory=workspace_memory_text,
+            )
+            generation_elapsed_ms_inner = (perf_counter() - generation_started_at) * 1000
+            latency_report = build_chat_latency_report(
+                retrieval_ms=retrieval_elapsed_ms,
+                generation_ms=generation_elapsed_ms_inner,
+                verification_ms=0.0,
+                total_ms=retrieval_elapsed_ms + generation_elapsed_ms_inner,
+                workspace_scope=True,
+            )
+            logger.info(
+                "workspace_chat_latency_metrics",
+                workspace_id=str(workspace_id),
+                **latency_report.to_log_dict(),
+            )
+            return answer, [], {
+                "retrieval_ms": retrieval_elapsed_ms,
+                "generation_ms": generation_elapsed_ms_inner,
+                "verification_ms": 0.0,
+                "quality_metrics": None,
+            }
+
         answer = LLMResponse(
                 content=_build_workspace_topic_gap_response(query, workspace_name, project_contexts),
                 model="deterministic-workspace-topic-gap",

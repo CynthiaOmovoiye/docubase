@@ -100,6 +100,13 @@ async def hydrate_retrieved_chunks(
             continue
 
         path = chunk_row.source_ref or ""
+        # PDF chunks are never re-hydrated from disk: stored chunk text is
+        # authoritative (extracted at ingest time), re-parsing is slow and
+        # error-prone (e.g. float-division errors on certain page layouts).
+        # Google Drive PDFs are already skipped by the pattern below.
+        if source.source_type == SourceType.pdf:
+            hydrated.append(hydrated_chunk)
+            continue
         if (
             source.source_type == SourceType.google_drive
             and _DRIVE_STRICT_HYDRATE_SKIP_RE.search(path)

@@ -182,7 +182,26 @@ def _is_workspace_conversational_query(query: str) -> bool:
             "what is this workspace",
             "what's this workspace",
             "describe this workspace",
+            # Project/portfolio lookups — natural prose, no ## per-project headers needed
+            "what projects",
+            "which projects",
+            "any projects",
+            "have you built",
+            "have you worked on",
+            "have you made",
+            "projects you",
+            "what have you built",
+            "what did you build",
+            "what apps",
+            "what applications",
         )
+    ):
+        return True
+    # Short "what is X" / "who is X" / "do you have X" entity queries are
+    # conversational lookups — not structured technical RAG that needs ## headings.
+    if len(text) <= 80 and re.match(
+        r"^(what is|what's|who is|who's|do you have|tell me about|what about)\b",
+        lowered,
     ):
         return True
     if re.match(
