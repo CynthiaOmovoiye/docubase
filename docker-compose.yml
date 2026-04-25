@@ -4,16 +4,16 @@ services:
     image: pgvector/pgvector:pg16
     container_name: doctwin_db
     environment:
-      POSTGRES_USER: doctwin_user
-      POSTGRES_PASSWORD: doctwin_pass
-      POSTGRES_DB: doctwin_db
+      POSTGRES_USER: ${DB_USER:-doctwin_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-doctwin_pass}
+      POSTGRES_DB: ${DB_NAME:-doctwin_db}
     ports:
       - "5434:5432"
     # No host port: avoids clashes with local Postgres; use `make db-shell` or docker compose exec db psql ...
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U doctwin_user -d doctwin_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -40,7 +40,7 @@ services:
     env_file: .env
     environment:
       # Override host-oriented .env so in-container code uses Compose network DNS.
-      DATABASE_URL: postgresql+asyncpg://doctwin_user:doctwin_pass@db:5432/doctwin_db
+      DATABASE_URL: postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
       REDIS_URL: redis://redis:6379/0
       # Shared named volume — both backend and worker must use the same path
       # so uploaded files written by the API are readable by the ingestion worker.
@@ -65,7 +65,7 @@ services:
     container_name: doctwin_worker
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://doctwin_user:doctwin_pass@db:5432/doctwin_db
+      DATABASE_URL: postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
       REDIS_URL: redis://redis:6379/0
       STORAGE_LOCAL_PATH: /var/lib/docbase/uploads
     volumes:
