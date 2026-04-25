@@ -4,9 +4,6 @@ Twin domain service.
 Create, read, update, delete twins and their configs.
 All operations are scoped to the owning workspace/user.
 """
-
-
-
 import re
 import uuid
 
