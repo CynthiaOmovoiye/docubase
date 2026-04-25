@@ -39,8 +39,13 @@ output "ec2_instance_id" {
 }
 
 output "ec2_public_ip" {
-  description = "Elastic IP of the backend server — set this as DOCBASE_BACKEND_ORIGIN_URL in GitHub Actions vars"
+  description = "Elastic IP address of the backend server"
   value       = aws_eip.backend.public_ip
+}
+
+output "ec2_public_dns" {
+  description = "Public DNS hostname of the EC2 Elastic IP — use THIS as DOCBASE_BACKEND_ORIGIN_URL (CloudFront does not accept raw IPs)"
+  value       = aws_eip.backend.public_dns
 }
 
 output "backend_api_url" {

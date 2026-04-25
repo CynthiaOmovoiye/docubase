@@ -22,6 +22,20 @@ SSM_TOKEN_PARAM="${ssm_token_param}"
 SSM_CW_PARAM="${ssm_cw_param}"
 LOG_FILE="/var/log/docbase-bootstrap.log"
 
+# IMDSv2 helper — required on instances with hop-limit = 1 (the default for new instances)
+imds_token() {
+  curl -sf -X PUT "http://169.254.169.254/latest/api/token" \
+    -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"
+}
+imds_get() {
+  local token
+  token=$(imds_token)
+  curl -sf -H "X-aws-ec2-metadata-token: $token" \
+    "http://169.254.169.254/latest/meta-data/$1"
+}
+# Prefer the baked-in region variable; fall back to IMDS only if empty
+[ -z "$REGION" ] && REGION=$(imds_get placement/region)
+
 exec > >(tee -a "$LOG_FILE") 2>&1
 echo "[bootstrap] Started at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -77,26 +91,12 @@ chown -R ec2-user:ec2-user "$APP_DIR"
 echo "$APP_ENV" > "$APP_DIR/.env"
 chmod 600 "$APP_DIR/.env"
 
-# ─── 4. Configure Docker log driver ──────────────────────────────────────────
-# Switch containers to the awslogs driver so logs appear in CloudWatch.
+# ─── 4. Start application (reuses the same deploy script CI uses) ─────────────
 
-cat >> "$APP_DIR/.env" <<ENVBLOCK
-
-# Docker log driver — injected by bootstrap
-DOCKER_LOG_DRIVER=awslogs
-AWS_DEFAULT_REGION=$REGION
-ENVIRONMENT=$ENVIRONMENT
-ENVBLOCK
-
-# ─── 5. Start application ─────────────────────────────────────────────────────
-
-echo "[bootstrap] Starting docker compose..."
+echo "[bootstrap] Running initial deploy..."
 cd "$APP_DIR"
-# Run as ec2-user so docker socket permissions are correct
-sudo -u ec2-user docker compose up -d
-
-echo "[bootstrap] Containers started:"
-sudo -u ec2-user docker compose ps
+# deploy-backend.sh: fetches .env from SSM, appends log driver config, starts compose
+sudo -u ec2-user bash scripts/deploy-backend.sh "$ENVIRONMENT" "$REGION"
 
 # ─── 6. Systemd service (auto-restart on reboot) ──────────────────────────────
 

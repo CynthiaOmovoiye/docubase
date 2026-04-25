@@ -16,8 +16,10 @@ name: Deploy docbase
 # Required GitHub Actions Variables (Settings → Secrets and variables → Actions → Variables):
 #   DOCBASE_VITE_API_URL       — CloudFront URL baked into the frontend build
 #                                e.g. https://d123abc.cloudfront.net
-#   DOCBASE_BACKEND_ORIGIN_URL — EC2 Elastic IP (no scheme, no port)
-#                                Read from `terraform output ec2_public_ip` after first apply
+#   DOCBASE_BACKEND_ORIGIN_URL — EC2 public DNS hostname (NOT the IP — CloudFront
+#                                requires a hostname). Read from Terraform output
+#                                `ec2_public_dns` after the first apply, e.g.
+#                                ec2-44-218-139-23.compute-1.amazonaws.com
 #
 # The AWS OIDC role needs these permissions IN ADDITION to the Terraform permissions:
 #   ssm:SendCommand
@@ -26,14 +28,13 @@ name: Deploy docbase
 #   ssm:DescribeInstanceInformation
 #   ec2:DescribeInstances
 #
-# First deploy (one-time setup after this workflow first runs):
-#   1. Check workflow logs for "ec2_public_ip" in the Terraform summary step
-#   2. Set that IP as the DOCBASE_BACKEND_ORIGIN_URL Actions variable
-#   3. In AWS Console → SSM → Parameter Store, populate:
-#        /docbase/dev/github-deploy-token  (fine-grained PAT, repo Contents: Read)
-#        /docbase/dev/app-env              (paste your full .env file contents)
-#   4. Push any change to main — the EC2 instance bootstraps itself via user_data
-#      then CI/CD takes over for all future deploys
+# First deploy (one-time setup — do this once after workflow first runs):
+#   1. Check the Terraform job summary for ec2_public_dns
+#   2. Set that value as the DOCBASE_BACKEND_ORIGIN_URL Actions variable
+#   3. In AWS Console → SSM → Parameter Store, populate two SecureString params:
+#        /docbase/dev/github-deploy-token  — fine-grained GitHub PAT (Contents: Read)
+#        /docbase/dev/app-env              — paste the full contents of your .env file
+#   4. Push any commit — EC2 bootstraps itself via user_data, then CI takes over
 
 on:
   push:
@@ -60,7 +61,6 @@ env:
 
 jobs:
   # ─── Job 1: Infrastructure ──────────────────────────────────────────────────
-  # Runs terraform apply so infrastructure is always in sync before code deploys.
   terraform:
     name: "Terraform (${{ github.event.inputs.environment || 'dev' }})"
     runs-on: ubuntu-latest
@@ -68,7 +68,7 @@ jobs:
 
     outputs:
       ec2_instance_id: ${{ steps.outputs.outputs.ec2_instance_id }}
-      ec2_public_ip:   ${{ steps.outputs.outputs.ec2_public_ip }}
+      ec2_public_dns:  ${{ steps.outputs.outputs.ec2_public_dns }}
       cloudfront_url:  ${{ steps.outputs.outputs.cloudfront_url }}
       s3_bucket:       ${{ steps.outputs.outputs.s3_bucket }}
       cf_dist_id:      ${{ steps.outputs.outputs.cf_dist_id }}
@@ -118,27 +118,31 @@ jobs:
         id: outputs
         working-directory: terraform
         run: |
-          echo "ec2_instance_id=$(terraform output -raw ec2_instance_id)"           >> "$GITHUB_OUTPUT"
-          echo "ec2_public_ip=$(terraform output -raw ec2_public_ip)"               >> "$GITHUB_OUTPUT"
-          echo "cloudfront_url=$(terraform output -raw cloudfront_url)"             >> "$GITHUB_OUTPUT"
-          echo "s3_bucket=$(terraform output -raw s3_frontend_bucket)"              >> "$GITHUB_OUTPUT"
-          echo "cf_dist_id=$(terraform output -raw cloudfront_distribution_id)"     >> "$GITHUB_OUTPUT"
+          echo "ec2_instance_id=$(terraform output -raw ec2_instance_id)"        >> "$GITHUB_OUTPUT"
+          echo "ec2_public_dns=$(terraform output -raw ec2_public_dns)"          >> "$GITHUB_OUTPUT"
+          echo "cloudfront_url=$(terraform output -raw cloudfront_url)"          >> "$GITHUB_OUTPUT"
+          echo "s3_bucket=$(terraform output -raw s3_frontend_bucket)"           >> "$GITHUB_OUTPUT"
+          echo "cf_dist_id=$(terraform output -raw cloudfront_distribution_id)"  >> "$GITHUB_OUTPUT"
 
       - name: Terraform summary
         working-directory: terraform
         run: |
+          EC2_DNS=$(terraform output -raw ec2_public_dns)
+          CF_URL=$(terraform output -raw cloudfront_url)
+          EC2_ID=$(terraform output -raw ec2_instance_id)
+
           echo "### Infrastructure" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Resource | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| | |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| CloudFront | $(terraform output -raw cloudfront_url) |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| EC2 IP     | $(terraform output -raw ec2_public_ip) |"  >> "$GITHUB_STEP_SUMMARY"
-          echo "| EC2 ID     | $(terraform output -raw ec2_instance_id) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| CloudFront | $CF_URL |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| EC2 DNS    | \`$EC2_DNS\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| EC2 ID     | \`$EC2_ID\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "> **First deploy?** Copy the EC2 IP above, set it as the" \
-               "\`DOCBASE_BACKEND_ORIGIN_URL\` Actions variable, then re-run." >> "$GITHUB_STEP_SUMMARY"
+          echo "> **First deploy?** Set \`DOCBASE_BACKEND_ORIGIN_URL\` Actions variable" \
+               "to \`$EC2_DNS\` (the DNS hostname above — CloudFront requires a hostname," \
+               "not an IP). Then re-run the workflow." >> "$GITHUB_STEP_SUMMARY"
 
   # ─── Job 2: Frontend ────────────────────────────────────────────────────────
-  # Build Vite, sync to S3, invalidate CloudFront. Runs in parallel with Job 3.
   frontend:
     name: "Frontend (${{ github.event.inputs.environment || 'dev' }})"
     runs-on: ubuntu-latest
@@ -167,7 +171,7 @@ jobs:
           if [ -n "${{ vars.DOCBASE_VITE_API_URL }}" ]; then
             echo "VITE_API_URL=${{ vars.DOCBASE_VITE_API_URL }}" > .env.production
           else
-            echo "DOCBASE_VITE_API_URL not set — build uses relative /api path (same origin)"
+            echo "DOCBASE_VITE_API_URL not set — build uses relative /api path (same-origin)"
           fi
           npm ci
           npm run build
@@ -190,8 +194,12 @@ jobs:
           echo "Deployed to: ${{ needs.terraform.outputs.cloudfront_url }}" >> "$GITHUB_STEP_SUMMARY"
 
   # ─── Job 3: Backend ─────────────────────────────────────────────────────────
-  # Deploy backend + worker via SSM RunCommand — no SSH, no secrets on runner.
-  # The EC2 instance pulls its own GitHub token from SSM to run git pull.
+  # Uses SSM RunCommand — no SSH key or open port 22 needed.
+  # Flow:
+  #   1. Fetch GitHub deploy token from SSM (instance role has read access)
+  #   2. git fetch + reset to latest main
+  #   3. Run scripts/deploy-backend.sh (lives in the repo, versioned alongside the app)
+  #      which fetches .env from SSM and runs docker compose up --build
   backend:
     name: "Backend (${{ github.event.inputs.environment || 'dev' }})"
     runs-on: ubuntu-latest
@@ -232,28 +240,28 @@ jobs:
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
+          # The deploy command is intentionally simple:
+          # 1. Fetch GitHub token from SSM (no IMDS, no external curl needed)
+          # 2. git pull to get the latest code including scripts/deploy-backend.sh
+          # 3. Run that script — it handles .env refresh and docker compose
+          #
+          # Region is passed directly from CI so we never need to hit IMDS.
+
           COMMAND_ID=$(aws ssm send-command \
             --region "$REGION" \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
             --comment "docbase deploy ${COMMIT_SHA:0:7}" \
             --timeout-seconds 600 \
-            --parameters "commands=[
+            --parameters commands="[
               \"set -euo pipefail\",
               \"exec > >(tee -a /var/log/docbase-deploy.log) 2>&1\",
-              \"echo \\\"[deploy] commit=$COMMIT_SHA started=$(date -u +%Y-%m-%dT%H:%M:%SZ)\\\"\",
-              \"cd /home/ec2-user/docubase\",
-              \"REGION=\$(curl -sf http://169.254.169.254/latest/meta-data/placement/region)\",
-              \"TOKEN=\$(aws ssm get-parameter --name '/docbase/$ENVIRONMENT/github-deploy-token' --with-decryption --query Parameter.Value --output text --region \\\$REGION)\",
-              \"git config --global url.\\\"https://x-access-token:\\\${TOKEN}@github.com/\\\".insteadOf \\\"https://github.com/\\\"\",
-              \"git fetch origin main\",
-              \"git reset --hard origin/main\",
-              \"echo \\\"[deploy] Code at \$(git log -1 --format='%h %s')\\\"\",
-              \"aws ssm get-parameter --name '/docbase/$ENVIRONMENT/app-env' --with-decryption --query Parameter.Value --output text --region \\\$REGION > .env\",
-              \"printf '\\\\nDOCKER_LOG_DRIVER=awslogs\\\\nAWS_DEFAULT_REGION='\\\$REGION'\\\\nENVIRONMENT=$ENVIRONMENT\\\\n' >> .env\",
-              \"docker compose up -d --build backend worker\",
-              \"docker compose ps backend worker\",
-              \"echo \\\"[deploy] done=$(date -u +%Y-%m-%dT%H:%M:%SZ)\\\"\"
+              \"echo '[deploy] commit=$COMMIT_SHA started='\$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
+              \"TOKEN=\$(aws ssm get-parameter --name /docbase/$ENVIRONMENT/github-deploy-token --with-decryption --query Parameter.Value --output text --region $REGION)\",
+              \"git -C /home/ec2-user/docubase config --global url.\\\"https://x-access-token:\${TOKEN}@github.com/\\\".insteadOf https://github.com/\",
+              \"git -C /home/ec2-user/docubase fetch origin main\",
+              \"git -C /home/ec2-user/docubase reset --hard origin/main\",
+              \"bash /home/ec2-user/docubase/scripts/deploy-backend.sh $ENVIRONMENT $REGION\"
             ]" \
             --query "Command.CommandId" \
             --output text)
@@ -277,7 +285,10 @@ jobs:
               --output text 2>/dev/null || echo "Pending")
             echo "  [$i/60] status: $STATUS"
             case "$STATUS" in
-              Success)    echo "Backend deploy succeeded."; break ;;
+              Success)
+                echo "Backend deploy succeeded."
+                break
+                ;;
               Failed|Cancelled|TimedOut|DeliveryTimedOut|ExecutionTimedOut)
                 echo "ERROR: Deploy failed with status: $STATUS"
                 echo "--- stdout ---"
@@ -288,8 +299,11 @@ jobs:
                 aws ssm get-command-invocation \
                   --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
                   --region "$REGION" --query "StandardErrorContent" --output text || true
-                exit 1 ;;
-              *) sleep 10 ;;
+                exit 1
+                ;;
+              *)
+                sleep 10
+                ;;
             esac
             [ "$i" -eq 60 ] && { echo "ERROR: Timed out waiting for deploy."; exit 1; }
           done
@@ -313,7 +327,9 @@ jobs:
         if: success()
         run: |
           echo "### Backend" >> "$GITHUB_STEP_SUMMARY"
-          echo "Deployed commit \`${{ github.sha }}\` to EC2 \`${{ needs.terraform.outputs.ec2_instance_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Deployed \`${COMMIT_SHA:0:7}\` to \`${{ needs.terraform.outputs.ec2_instance_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          COMMIT_SHA: ${{ github.sha }}
 
   # ─── Summary ────────────────────────────────────────────────────────────────
   summary:
@@ -328,12 +344,12 @@ jobs:
           echo "╔══════════════════════════════════════════╗"
           echo "║         docbase deploy complete          ║"
           echo "╠══════════════════════════════════════════╣"
-          echo "║ Environment : ${{ env.ENVIRONMENT }}"
-          echo "║ Commit      : ${{ github.sha }}"
-          echo "║ CloudFront  : ${{ needs.terraform.outputs.cloudfront_url }}"
-          echo "║ EC2         : ${{ needs.terraform.outputs.ec2_public_ip }}"
+          echo "  Environment : ${{ env.ENVIRONMENT }}"
+          echo "  Commit      : ${{ github.sha }}"
+          echo "  CloudFront  : ${{ needs.terraform.outputs.cloudfront_url }}"
+          echo "  EC2 DNS     : ${{ needs.terraform.outputs.ec2_public_dns }}"
           echo "╠══════════════════════════════════════════╣"
-          echo "║ Terraform   : ${{ needs.terraform.result }}"
-          echo "║ Frontend    : ${{ needs.frontend.result }}"
-          echo "║ Backend     : ${{ needs.backend.result }}"
+          echo "  Terraform   : ${{ needs.terraform.result }}"
+          echo "  Frontend    : ${{ needs.frontend.result }}"
+          echo "  Backend     : ${{ needs.backend.result }}"
           echo "╚══════════════════════════════════════════╝"
