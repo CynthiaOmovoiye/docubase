@@ -55,6 +55,17 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Ship container logs to CloudWatch so they appear in the pre-built dashboard.
+    # Requires the EC2 instance profile to have CloudWatch Logs write permission
+    # (provisioned by terraform/observability.tf → aws_iam_instance_profile.ec2_observability).
+    # Falls back to the default json-file driver when run locally (awslogs is EC2-only).
+    logging:
+      driver: ${DOCKER_LOG_DRIVER:-json-file}
+      options:
+        awslogs-region: ${AWS_DEFAULT_REGION:-us-east-1}
+        awslogs-group: /docbase/${ENVIRONMENT:-dev}/backend
+        awslogs-stream: backend
+        awslogs-create-group: "true"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   # ─── Background Workers ──────────────────────────────────────────────────────
@@ -76,6 +87,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    logging:
+      driver: ${DOCKER_LOG_DRIVER:-json-file}
+      options:
+        awslogs-region: ${AWS_DEFAULT_REGION:-us-east-1}
+        awslogs-group: /docbase/${ENVIRONMENT:-dev}/worker
+        awslogs-stream: worker
+        awslogs-create-group: "true"
     # No --watch flag: hot-reload on the worker kills long-running jobs (memory
     # extraction can run for 3-5 minutes). Code changes are picked up by restarting
     # the service explicitly with `make worker-restart`.
