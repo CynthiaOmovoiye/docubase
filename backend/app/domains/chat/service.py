@@ -1299,6 +1299,7 @@ async def _answer_across_workspace(
         ready_source_count = int(project.get("ready_source_count") or 0)
         project_chunks: list[dict] = []
         project_packet = None
+        brief_chunk: dict | None = None
         if ready_source_count > 0 and project.get("id"):
             doctwin_id = str(project["id"])
             inventory = await _load_structure_inventory(doctwin_id, db)
@@ -1313,7 +1314,6 @@ async def _answer_across_workspace(
                     "chunk_type": "memory_brief",
                     "score": 1.0,
                 }
-                project_chunks.append(brief_chunk)
                 chunk_id_placeholder = f"__brief__{doctwin_id}"
                 if chunk_id_placeholder not in seen_chunk_ids:
                     seen_chunk_ids.add(chunk_id_placeholder)
@@ -1332,7 +1332,9 @@ async def _answer_across_workspace(
                 expanded_query=analysis.expanded_query,
                 pipeline_trace_id=pipeline_trace_id,
             )
-            project_chunks = project_packet.chunks
+            # Keep the memory brief chunk (when available) even if retrieval returns
+            # unrelated / sparse evidence for this specific query.
+            project_chunks = ([brief_chunk] if brief_chunk else []) + list(project_packet.chunks or [])
             for chunk in project_chunks:
                 chunk_id = chunk.get("chunk_id")
                 if chunk_id and chunk_id not in seen_chunk_ids:
@@ -1341,6 +1343,7 @@ async def _answer_across_workspace(
 
         project_contexts.append(
             {
+                "id": project.get("id"),
                 "name": project["name"],
                 "description": project.get("description"),
                 "ready_source_count": ready_source_count,
