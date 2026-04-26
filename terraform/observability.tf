@@ -228,6 +228,39 @@ resource "aws_cloudwatch_log_metric_filter" "worker_errors" {
   }
 }
 
+# Quality gate rejections — fires on every LLM judge decision where is_acceptable=false.
+# This is the closest proxy to a hallucination/quality flag that the system produces.
+# Both the single-twin path (quality_gate_twin) and workspace path (quality_gate_workspace)
+# emit the same is_acceptable field, so one filter covers both.
+resource "aws_cloudwatch_log_metric_filter" "quality_gate_rejections" {
+  name           = "${local.name_prefix}-quality-gate-rejections"
+  log_group_name = aws_cloudwatch_log_group.backend.name
+  pattern        = "{ ($.event = \"quality_gate_twin\" || $.event = \"quality_gate_workspace\") && $.is_acceptable = false }"
+
+  metric_transformation {
+    name      = "QualityGateRejectionCount"
+    namespace = "Docbase/${title(var.environment)}/Quality"
+    value     = "1"
+    unit      = "Count"
+  }
+}
+
+# Exhausted gate — fires when bounded regeneration ran out of attempts and the
+# answer still didn't pass. This is the stronger hallucination signal: the judge
+# rejected the answer multiple times and we served the best available draft.
+resource "aws_cloudwatch_log_metric_filter" "quality_gate_exhausted" {
+  name           = "${local.name_prefix}-quality-gate-exhausted"
+  log_group_name = aws_cloudwatch_log_group.backend.name
+  pattern        = "{ $.event = \"quality_gate_twin_exhausted\" || $.event = \"quality_gate_workspace_exhausted\" }"
+
+  metric_transformation {
+    name      = "QualityGateExhaustedCount"
+    namespace = "Docbase/${title(var.environment)}/Quality"
+    value     = "1"
+    unit      = "Count"
+  }
+}
+
 # ─── SNS Alarm Notifications ──────────────────────────────────────────────────
 
 resource "aws_sns_topic" "alarms" {
@@ -307,6 +340,44 @@ resource "aws_cloudwatch_metric_alarm" "zero_retrieval_chunks" {
   statistic           = "Average"
   threshold           = 1
   alarm_description   = "Average retrieved chunks near zero — RAG pipeline may be broken"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+  tags                = local.common_tags
+}
+
+# Quality gate rejection rate — elevated rejections mean the LLM judge is
+# consistently finding answers unacceptable: possible prompt regression,
+# retrieval degradation, or model behaviour change.
+resource "aws_cloudwatch_metric_alarm" "quality_gate_rejection_rate" {
+  alarm_name          = "${local.name_prefix}-quality-gate-rejection-rate"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "QualityGateRejectionCount"
+  namespace           = "Docbase/${title(var.environment)}/Quality"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 10
+  alarm_description   = "More than 10 quality gate rejections in 5 min — possible retrieval or prompt degradation"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+  tags                = local.common_tags
+}
+
+# Exhausted gate alarm — any exhaustion event is serious: it means an answer
+# was served to a user after failing the judge every time. Even one in a window
+# warrants investigation.
+resource "aws_cloudwatch_metric_alarm" "quality_gate_exhausted_rate" {
+  alarm_name          = "${local.name_prefix}-quality-gate-exhausted"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "QualityGateExhaustedCount"
+  namespace           = "Docbase/${title(var.environment)}/Quality"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 2
+  alarm_description   = "Quality gate exhausted — answer served after all regeneration attempts failed"
   treat_missing_data  = "notBreaching"
   alarm_actions       = local.alarm_actions
   ok_actions          = local.alarm_actions
@@ -401,10 +472,30 @@ resource "aws_cloudwatch_dashboard" "main" {
           ]
         }
       },
-      # Row 3: Errors
+      # Row 3: Quality Gate — Rejections
       {
         type   = "metric"
         x      = 0
+        y      = 12
+        width  = 12
+        height = 6
+        properties = {
+          title   = "LLM Judge — Quality Gate Rejections"
+          view    = "timeSeries"
+          stacked = false
+          region  = "us-east-1"
+          period  = 300
+          yAxis   = { left = { min = 0, label = "count" } }
+          metrics = [
+            ["Docbase/${title(var.environment)}/Quality", "QualityGateRejectionCount", { stat = "Sum", label = "rejections", color = "#ff7f0e" }],
+            [".", "QualityGateExhaustedCount", { stat = "Sum", label = "exhausted (served anyway)", color = "#d62728" }],
+          ]
+        }
+      },
+      # Row 3: Errors
+      {
+        type   = "metric"
+        x      = 12
         y      = 12
         width  = 12
         height = 6
@@ -421,11 +512,11 @@ resource "aws_cloudwatch_dashboard" "main" {
           ]
         }
       },
-      # Row 3: EC2 CPU
+      # Row 4: EC2 CPU
       {
         type   = "metric"
-        x      = 12
-        y      = 12
+        x      = 0
+        y      = 18
         width  = 12
         height = 6
         properties = {
@@ -444,7 +535,7 @@ resource "aws_cloudwatch_dashboard" "main" {
       # Row 4: Memory
       {
         type   = "metric"
-        x      = 0
+        x      = 12
         y      = 18
         width  = 12
         height = 6
@@ -460,11 +551,11 @@ resource "aws_cloudwatch_dashboard" "main" {
           ]
         }
       },
-      # Row 4: Disk
+      # Row 5: Disk
       {
         type   = "metric"
-        x      = 12
-        y      = 18
+        x      = 0
+        y      = 24
         width  = 12
         height = 6
         properties = {
@@ -479,11 +570,11 @@ resource "aws_cloudwatch_dashboard" "main" {
           ]
         }
       },
-      # Row 5: Alarm Status
+      # Row 6: Alarm Status
       {
         type   = "alarm"
         x      = 0
-        y      = 24
+        y      = 30
         width  = 24
         height = 4
         properties = {
@@ -493,14 +584,16 @@ resource "aws_cloudwatch_dashboard" "main" {
             aws_cloudwatch_metric_alarm.budget_exceeded_rate.arn,
             aws_cloudwatch_metric_alarm.app_error_rate.arn,
             aws_cloudwatch_metric_alarm.zero_retrieval_chunks.arn,
+            aws_cloudwatch_metric_alarm.quality_gate_rejection_rate.arn,
+            aws_cloudwatch_metric_alarm.quality_gate_exhausted_rate.arn,
           ]
         }
       },
-      # Row 6: Log Insights — Recent Errors
+      # Row 7: Log Insights — Recent Errors
       {
         type   = "log"
         x      = 0
-        y      = 28
+        y      = 34
         width  = 24
         height = 6
         properties = {
