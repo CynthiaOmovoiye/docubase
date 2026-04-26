@@ -179,6 +179,11 @@ async def apply_workspace_aggregate_quality_gate(
                 "quality_gate_workspace_exhausted",
                 workspace_id=str(workspace_id),
                 feedback_preview=gate.feedback[:300],
+                # Include a preview of the answer that will be served despite failing
+                # the gate — gives operators enough context to assess severity without
+                # logging the full response.
+                served_answer_preview=current.content[:300],
+                attempts=attempt + 1,
             )
             break
 
@@ -273,6 +278,11 @@ async def apply_twin_path_quality_gate(
                 "quality_gate_twin_exhausted",
                 doctwin_name=doctwin_name,
                 feedback_preview=gate.feedback[:300],
+                # Include a preview of the answer that will be served despite failing
+                # the gate — gives operators enough context to assess severity without
+                # logging the full response.
+                served_answer_preview=current.content[:300],
+                attempts=attempt + 1,
             )
             break
 

@@ -11,7 +11,7 @@ sources) is verified by the service layer via the authenticated user.
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -53,6 +53,7 @@ async def list_sources(
 async def attach_source(
     doctwin_id: uuid.UUID,
     body: AttachSourceRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -79,8 +80,9 @@ async def attach_source(
 
     await db.commit()
 
-    # Enqueue background ingestion job
-    await _enqueue_ingestion(str(source.id))
+    # Enqueue background ingestion job, carrying the request ID for log tracing
+    request_id = _get_request_id(request)
+    await _enqueue_ingestion(str(source.id), request_id=request_id)
 
     return SourceResponse.from_source(source)
 
@@ -122,6 +124,7 @@ async def detach_source(
 @router.post("/{source_id}/sync", response_model=TriggerSyncResponse)
 async def trigger_sync(
     source_id: uuid.UUID,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -137,7 +140,8 @@ async def trigger_sync(
     await sources_svc.update_source_status(str(source_id), SourceStatus.pending, None, db)
     await db.commit()
 
-    await _enqueue_ingestion(str(source_id))
+    request_id = _get_request_id(request)
+    await _enqueue_ingestion(str(source_id), request_id=request_id)
 
     return TriggerSyncResponse(
         source_id=source_id,
@@ -274,16 +278,31 @@ async def upload_pdf_source(
 
 # ─── Background job enqueueing ────────────────────────────────────────────────
 
-async def _enqueue_ingestion(source_id: str) -> None:
+def _get_request_id(request: Request) -> str:
+    """
+    Return a correlation ID for the current request.
+
+    Prefers the X-Request-ID header if the client (or a gateway/load balancer)
+    set one. Falls back to a fresh UUID so every job always has a traceable ID.
+    This ID flows into every log event the background worker emits, making it
+    possible to join API logs and worker logs in a single query.
+    """
+    return request.headers.get("X-Request-ID") or str(uuid.uuid4())
+
+
+async def _enqueue_ingestion(source_id: str, request_id: str | None = None) -> None:
     """
     Enqueue an ingestion job via ARQ.
+
+    `request_id` is threaded into the job payload so worker log events carry
+    the same correlation token as the API request that triggered the job.
 
     Uses a fire-and-forget pattern — we create a short-lived Redis connection
     to enqueue and then close it. The worker picks it up asynchronously.
     """
     from app.domains.ops.arq_enqueue import enqueue_ingest_source_job
 
-    await enqueue_ingest_source_job(source_id)
+    await enqueue_ingest_source_job(source_id, request_id=request_id)
 
 
 async def _enqueue_ingestions(source_ids: list[str]) -> None:

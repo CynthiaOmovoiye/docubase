@@ -79,9 +79,15 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 
-async def ingest_source(ctx: dict, source_id: str) -> dict:
-    """Main ingestion job. ctx is the ARQ worker context dict."""
-    logger.info("ingestion_job_start", source_id=source_id)
+async def ingest_source(ctx: dict, source_id: str, request_id: str | None = None) -> dict:
+    """Main ingestion job. ctx is the ARQ worker context dict.
+
+    `request_id` is an optional correlation token passed from the API call that
+    triggered this job. It is included in every log event so the full journey
+    from HTTP request → background worker → memory extraction can be traced
+    with a single log filter query.
+    """
+    logger.info("ingestion_job_start", source_id=source_id, request_id=request_id)
     job_started_at = perf_counter()
 
     async with get_async_session() as db:
@@ -98,7 +104,7 @@ async def ingest_source(ctx: dict, source_id: str) -> dict:
             source = source_result.scalar_one_or_none()
 
             if source is None:
-                logger.error("ingestion_source_not_found", source_id=source_id)
+                logger.error("ingestion_source_not_found", source_id=source_id, request_id=request_id)
                 return {"source_id": source_id, "status": "not_found"}
 
             doctwin_id = str(source.doctwin_id)
@@ -280,12 +286,21 @@ async def ingest_source(ctx: dict, source_id: str) -> dict:
                 await db.commit()
                 return {"source_id": source_id, "status": "failed", "error": msg}
 
+            logger.info(
+                "ingestion_job_complete",
+                source_id=source_id,
+                doctwin_id=doctwin_id,
+                request_id=request_id,
+                status="processing",
+                **{k: v for k, v in stats.items() if isinstance(v, (int, float, str, bool))},
+            )
             return {"source_id": source_id, "status": "processing", **stats}
 
         except Exception as exc:
             logger.error(
                 "ingestion_job_unexpected_error",
                 source_id=source_id,
+                request_id=request_id,
                 error=str(exc),
                 exc_info=True,
             )
