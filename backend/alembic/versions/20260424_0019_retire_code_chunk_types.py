@@ -39,8 +39,13 @@ _RETIRED_TYPES = (
 
 
 def upgrade() -> None:
+    # Cast chunk_type to text to avoid PostgreSQL's UnsafeNewEnumValueUsageError.
+    # When migration 0017 added "implementation_fact" to the enum, PostgreSQL
+    # requires that value to be committed before it can be used in SQL expressions
+    # within the same session. Casting to text sidesteps the enum catalog lookup
+    # entirely, so this DELETE works correctly regardless of transaction order.
     placeholders = ", ".join(f"'{t}'" for t in _RETIRED_TYPES)
-    op.execute(f"DELETE FROM chunks WHERE chunk_type IN ({placeholders})")
+    op.execute(f"DELETE FROM chunks WHERE chunk_type::text IN ({placeholders})")
 
 
 def downgrade() -> None:
