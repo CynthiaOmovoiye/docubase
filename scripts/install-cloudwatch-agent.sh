@@ -7,12 +7,15 @@
 # Usage:
 #   ./scripts/install-cloudwatch-agent.sh [environment] [region]
 #   ./scripts/install-cloudwatch-agent.sh prod us-east-1
+# SSM path matches Terraform: /AmazonCloudWatch-<project_name>-<environment>-config
+# If project_name in terraform.tfvars is not "docbase", set DOCBASE_PROJECT_NAME first.
 set -euo pipefail
 
 ENVIRONMENT=${1:-prod}
 AWS_REGION=${2:-us-east-1}
-PROJECT_NAME="docbase"
-SSM_PARAM="/AmazonCloudWatch-${PROJECT_NAME}-${ENVIRONMENT}-ec2-observability-config"
+# Must match terraform variable project_name (see aws_ssm_parameter.cloudwatch_agent_config).
+PROJECT_NAME="${DOCBASE_PROJECT_NAME:-docbase}"
+SSM_PARAM="/AmazonCloudWatch-${PROJECT_NAME}-${ENVIRONMENT}-config"
 
 echo "Installing CloudWatch Agent for ${PROJECT_NAME} (${ENVIRONMENT}) in ${AWS_REGION}..."
 
@@ -56,7 +59,7 @@ sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
 
 echo ""
 echo "CloudWatch Agent installed and running."
-echo "System metrics will appear in the 'Docbase/$(python3 -c "print('${ENVIRONMENT}'.title()")' namespace within 1–2 minutes."
+echo "System metrics will appear in the 'Docbase/$(python3 -c "print('${ENVIRONMENT}'.title())")' namespace within 1–2 minutes."
 echo ""
 echo "Verify status:"
 echo "  sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -m ec2 -a status"
