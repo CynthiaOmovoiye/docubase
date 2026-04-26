@@ -107,7 +107,7 @@ function Hero() {
           <CTAButton href="/register" primary>
             Create your first twin →
           </CTAButton>
-          <CTAButton href="/#how-it-works">
+          <CTAButton href="#how-it-works">
             See how it works
           </CTAButton>
         </div>
