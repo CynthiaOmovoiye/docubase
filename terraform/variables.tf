@@ -65,9 +65,9 @@ variable "ec2_key_name" {
 }
 
 variable "ssh_allowed_cidr" {
-  description = "CIDR block allowed to reach port 22. Empty string disables the SSH ingress rule entirely (recommended; use SSM Session Manager instead)."
+  description = "CIDR block allowed to reach port 22. WARNING: 0.0.0.0/0 exposes SSH to the public internet. Empty string disables the SSH ingress rule entirely (recommended; use SSM Session Manager instead)."
   type        = string
-  default     = ""
+  default     = "0.0.0.0/0"
 }
 
 variable "github_repo" {

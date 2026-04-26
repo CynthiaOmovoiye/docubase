@@ -9,8 +9,8 @@ locals {
     "www.${var.root_domain}"
   ] : []
 
-  name_prefix       = "${var.project_name}-${var.environment}"
-  has_backend       = var.backend_origin_url != ""
+  name_prefix = "${var.project_name}-${var.environment}"
+  has_backend = var.backend_origin_url != ""
 
   common_tags = {
     Project     = var.project_name
@@ -69,7 +69,7 @@ resource "aws_cloudfront_distribution" "main" {
 
   viewer_certificate {
     # Reference the validation resource so CloudFront waits for ISSUED cert (depends_on cannot use ? :).
-    acm_certificate_arn = var.use_custom_domain ? aws_acm_certificate_validation.site[0].certificate_arn : null
+    acm_certificate_arn            = var.use_custom_domain ? aws_acm_certificate_validation.site[0].certificate_arn : null
     cloudfront_default_certificate = var.use_custom_domain ? false : true
     ssl_support_method             = var.use_custom_domain ? "sni-only" : null
     minimum_protocol_version       = "TLSv1.2_2021"
@@ -96,8 +96,8 @@ resource "aws_cloudfront_distribution" "main" {
       origin_id   = "Backend-API"
 
       custom_origin_config {
-        http_port              = 8000
-        https_port             = 443
+        http_port  = 8000
+        https_port = 443
         # Use HTTP to backend (EC2 without HTTPS cert). Switch to https-only once you add a cert.
         origin_protocol_policy = "http-only"
         origin_ssl_protocols   = ["TLSv1.2"]

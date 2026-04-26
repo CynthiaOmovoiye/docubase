@@ -101,10 +101,10 @@ resource "aws_ssm_parameter" "cloudwatch_agent_config" {
           metrics_collection_interval = 60
         }
         disk = {
-          measurement              = ["used_percent"]
+          measurement                 = ["used_percent"]
           metrics_collection_interval = 60
-          resources                = ["/", "/var/lib/docker"]
-          ignore_file_system_types = ["sysfs", "devtmpfs", "tmpfs"]
+          resources                   = ["/", "/var/lib/docker"]
+          ignore_file_system_types    = ["sysfs", "devtmpfs", "tmpfs"]
         }
         net = {
           measurement                 = ["bytes_sent", "bytes_recv"]
@@ -192,7 +192,7 @@ resource "aws_cloudwatch_log_metric_filter" "missing_evidence" {
   name           = "${local.name_prefix}-missing-evidence"
   log_group_name = aws_cloudwatch_log_group.backend.name
   # Count retrievals where lexical search returned nothing (proxy for missing evidence)
-  pattern        = "{ $.event = \"retrieval_complete\" && $.lexical_hits = 0 }"
+  pattern = "{ $.event = \"retrieval_complete\" && $.lexical_hits = 0 }"
 
   metric_transformation {
     name      = "MissingEvidenceCount"
@@ -487,7 +487,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         width  = 24
         height = 4
         properties = {
-          title  = "Alarm Status"
+          title = "Alarm Status"
           alarms = [
             aws_cloudwatch_metric_alarm.chat_p95_latency.arn,
             aws_cloudwatch_metric_alarm.budget_exceeded_rate.arn,
