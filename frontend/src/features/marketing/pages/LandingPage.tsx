@@ -10,6 +10,7 @@
  */
 
 import { Link } from "react-router-dom";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { MarketingNav, MarketingFooter } from "../components/MarketingNav";
 
 export default function LandingPage() {
@@ -193,20 +194,27 @@ function Hero() {
 
 /* ── Logo bar ────────────────────────────────────────── */
 function LogoBar() {
+  const isMobile = useIsMobile();
   const kinds = ["PDFs & documents", "Cloud folders", "Briefs & decks", "Portfolios", "Resumes", "Case studies"];
   return (
     <section style={{
-      padding: "var(--space-8) var(--space-6)",
+      padding: isMobile ? "var(--space-6) var(--space-5)" : "var(--space-8) var(--space-6)",
       textAlign: "center",
       borderTop: "1px solid var(--color-border)",
       borderBottom: "1px solid var(--color-border)",
     }}>
-      <p style={{ fontSize: "13px", color: "var(--color-text-tertiary)", marginBottom: "var(--space-5)", letterSpacing: "0.05em", fontWeight: 500 }}>
+      <p style={{ fontSize: "13px", color: "var(--color-text-tertiary)", marginBottom: "var(--space-4)", letterSpacing: "0.05em", fontWeight: 500 }}>
         START FROM CONTENT YOU ALREADY HAVE
       </p>
-      <div style={{ display: "flex", gap: "var(--space-8)", justifyContent: "center", flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(6, auto)",
+        gap: isMobile ? "var(--space-3) var(--space-4)" : "var(--space-8)",
+        justifyContent: isMobile ? undefined : "center",
+        alignItems: "center",
+      }}>
         {kinds.map((k) => (
-          <span key={k} style={{ fontSize: "15px", fontWeight: 600, color: "var(--color-text-tertiary)", fontFamily: "var(--font-display)" }}>{k}</span>
+          <span key={k} style={{ fontSize: isMobile ? "13px" : "15px", fontWeight: 600, color: "var(--color-text-tertiary)", fontFamily: "var(--font-display)", textAlign: "center" }}>{k}</span>
         ))}
       </div>
     </section>
@@ -215,6 +223,7 @@ function LogoBar() {
 
 /* ── Features ────────────────────────────────────────── */
 function Features() {
+  const isMobile = useIsMobile();
   const features = [
     {
       icon: "◎",
@@ -250,18 +259,18 @@ function Features() {
 
   return (
     <section id="features" style={{
-      padding: "var(--space-24) var(--space-6)",
+      padding: isMobile ? "var(--space-12) var(--space-5)" : "var(--space-24) var(--space-6)",
       maxWidth: "var(--max-width-content)",
       margin: "0 auto",
     }}>
       <SectionLabel>Features</SectionLabel>
-      <h2 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 700, letterSpacing: "-0.03em", marginBottom: "var(--space-12)", lineHeight: 1.15 }}>
-        Everything you need to share<br />your work intelligently.
+      <h2 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 700, letterSpacing: "-0.03em", marginBottom: isMobile ? "var(--space-8)" : "var(--space-12)", lineHeight: 1.15 }}>
+        Everything you need to share your work intelligently.
       </h2>
 
       <div style={{
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+        gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(300px, 1fr))",
         gap: "var(--space-4)",
       }}>
         {features.map((f) => (
@@ -300,6 +309,7 @@ function FeatureCard({ icon, title, description }: { icon: string; title: string
 
 /* ── Use cases ───────────────────────────────────────── */
 function UseCases() {
+  const isMobile = useIsMobile();
   const cases = [
     {
       id: "creators",
@@ -326,34 +336,34 @@ function UseCases() {
 
   return (
     <section style={{
-      padding: "var(--space-24) var(--space-6)",
+      padding: isMobile ? "var(--space-12) var(--space-5)" : "var(--space-24) var(--space-6)",
       background: "var(--color-surface)",
       borderTop: "1px solid var(--color-border)",
       borderBottom: "1px solid var(--color-border)",
     }}>
       <div style={{ maxWidth: "var(--max-width-content)", margin: "0 auto" }}>
         <SectionLabel>Use cases</SectionLabel>
-        <h2 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 700, letterSpacing: "-0.03em", marginBottom: "var(--space-12)", lineHeight: 1.15 }}>
+        <h2 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 700, letterSpacing: "-0.03em", marginBottom: isMobile ? "var(--space-8)" : "var(--space-12)", lineHeight: 1.15 }}>
           Who uses docbase.
         </h2>
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
           {cases.map(c => (
             <div key={c.id} id={c.id} style={{
-              padding: "var(--space-8)",
+              padding: isMobile ? "var(--space-6)" : "var(--space-8)",
               borderRadius: "var(--radius-lg)",
               border: "1px solid var(--color-border)",
               background: "var(--color-bg)",
               display: "grid",
-              gridTemplateColumns: "1fr 2fr",
-              gap: "var(--space-8)",
-              alignItems: "center",
+              gridTemplateColumns: isMobile ? "1fr" : "1fr 2fr",
+              gap: isMobile ? "var(--space-4)" : "var(--space-8)",
+              alignItems: "start",
             }}>
               <div>
                 <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-iris)", letterSpacing: "0.05em" }}>{c.label.toUpperCase()}</span>
-                <h3 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(20px, 3vw, 28px)", fontWeight: 700, letterSpacing: "-0.02em", marginTop: "var(--space-2)", lineHeight: 1.2 }}>{c.headline}</h3>
+                <h3 style={{ fontFamily: "var(--font-display)", fontSize: isMobile ? "22px" : "clamp(20px, 3vw, 28px)", fontWeight: 700, letterSpacing: "-0.02em", marginTop: "var(--space-2)", lineHeight: 1.2 }}>{c.headline}</h3>
               </div>
               <div>
-                <p style={{ fontSize: "16px", lineHeight: 1.7, color: "var(--color-text-secondary)", marginBottom: "var(--space-5)" }}>{c.body}</p>
+                <p style={{ fontSize: isMobile ? "15px" : "16px", lineHeight: 1.7, color: "var(--color-text-secondary)", marginBottom: "var(--space-5)" }}>{c.body}</p>
                 <Link to="/register" style={{
                   display: "inline-flex",
                   padding: "10px var(--space-5)",
@@ -387,6 +397,7 @@ function UseCases() {
 
 /* ── How it works ────────────────────────────────────── */
 function HowItWorks() {
+  const isMobile = useIsMobile();
   const steps = [
     { n: "01", title: "Create a twin", body: "Give your twin a name and connect a source — a cloud folder, PDF resume, or written brief." },
     { n: "02", title: "docbase processes it safely", body: "We read structure, outlines, and summaries from what you connect. Sensitive credentials are never touched. Detailed excerpts stay off by default." },
@@ -395,17 +406,17 @@ function HowItWorks() {
   ];
 
   return (
-    <section id="how-it-works" style={{ padding: "var(--space-24) var(--space-6)", maxWidth: "var(--max-width-content)", margin: "0 auto" }}>
+    <section id="how-it-works" style={{ padding: isMobile ? "var(--space-12) var(--space-5)" : "var(--space-24) var(--space-6)", maxWidth: "var(--max-width-content)", margin: "0 auto" }}>
       <SectionLabel>How it works</SectionLabel>
-      <h2 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 700, letterSpacing: "-0.03em", marginBottom: "var(--space-12)", lineHeight: 1.15 }}>
+      <h2 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 700, letterSpacing: "-0.03em", marginBottom: isMobile ? "var(--space-8)" : "var(--space-12)", lineHeight: 1.15 }}>
         Up and running in minutes.
       </h2>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "var(--space-4)" }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(auto-fit, minmax(220px, 1fr))", gap: "var(--space-4)" }}>
         {steps.map(s => (
-          <div key={s.n} style={{ padding: "var(--space-6)", borderRadius: "var(--radius-lg)", border: "1px solid var(--color-border)", background: "var(--color-surface)" }}>
+          <div key={s.n} style={{ padding: isMobile ? "var(--space-4)" : "var(--space-6)", borderRadius: "var(--radius-lg)", border: "1px solid var(--color-border)", background: "var(--color-surface)" }}>
             <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-iris)", letterSpacing: "0.08em", display: "block", marginBottom: "var(--space-3)" }}>{s.n}</span>
-            <h3 style={{ fontFamily: "var(--font-display)", fontSize: "18px", fontWeight: 600, marginBottom: "var(--space-2)", letterSpacing: "-0.01em" }}>{s.title}</h3>
-            <p style={{ fontSize: "14px", lineHeight: 1.6, color: "var(--color-text-secondary)" }}>{s.body}</p>
+            <h3 style={{ fontFamily: "var(--font-display)", fontSize: isMobile ? "15px" : "18px", fontWeight: 600, marginBottom: "var(--space-2)", letterSpacing: "-0.01em" }}>{s.title}</h3>
+            <p style={{ fontSize: "13px", lineHeight: 1.6, color: "var(--color-text-secondary)" }}>{s.body}</p>
           </div>
         ))}
       </div>
@@ -415,14 +426,15 @@ function HowItWorks() {
 
 /* ── Security section ────────────────────────────────── */
 function SecuritySection() {
+  const isMobile = useIsMobile();
   return (
     <section style={{
-      padding: "var(--space-16) var(--space-6)",
+      padding: isMobile ? "var(--space-12) var(--space-5)" : "var(--space-16) var(--space-6)",
       background: "var(--color-surface)",
       borderTop: "1px solid var(--color-border)",
       borderBottom: "1px solid var(--color-border)",
     }}>
-      <div style={{ maxWidth: "var(--max-width-content)", margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-16)", alignItems: "center" }}>
+      <div style={{ maxWidth: "var(--max-width-content)", margin: "0 auto", display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? "var(--space-8)" : "var(--space-16)", alignItems: "center" }}>
         <div>
           <SectionLabel>Security</SectionLabel>
           <h2 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(24px, 3vw, 32px)", fontWeight: 700, letterSpacing: "-0.02em", marginBottom: "var(--space-5)", lineHeight: 1.2 }}>
@@ -465,9 +477,10 @@ function SecuritySection() {
 
 /* ── Final CTA ───────────────────────────────────────── */
 function FinalCTA() {
+  const isMobile = useIsMobile();
   return (
     <section style={{
-      padding: "var(--space-24) var(--space-6)",
+      padding: isMobile ? "var(--space-12) var(--space-5)" : "var(--space-24) var(--space-6)",
       textAlign: "center",
       maxWidth: "var(--max-width-prose)",
       margin: "0 auto",

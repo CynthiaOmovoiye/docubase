@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import AppShell from "@/components/AppShell";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import {
   useConnectedAccounts,
   useConnectAccount,
@@ -31,6 +32,7 @@ const PROVIDERS: {
 ];
 
 export default function ConnectAccountsPage() {
+  const isMobile = useIsMobile();
   const [params] = useSearchParams();
   const [banner, setBanner] = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
@@ -55,7 +57,7 @@ export default function ConnectAccountsPage() {
 
   return (
     <AppShell>
-      <div style={s.page}>
+      <div style={{ ...s.page, padding: isMobile ? "68px 16px 40px" : s.page.padding }}>
         <div style={s.header}>
           <h1 style={s.title}>Connected Accounts</h1>
           <p style={s.subtitle}>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useAuthStore } from "@/store/authStore";
 
 interface AppShellProps {
@@ -46,8 +47,10 @@ export default function AppShell({ children }: AppShellProps) {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const isMobile = useIsMobile();
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const initials = user?.display_name
     ? user.display_name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
@@ -58,10 +61,52 @@ export default function AppShell({ children }: AppShellProps) {
     navigate("/");
   }
 
+  function closeDrawer() {
+    setDrawerOpen(false);
+  }
+
   return (
     <div style={s.root}>
-      <aside style={s.sidebar}>
-        <Link to="/dashboard" style={s.logoRow}>
+      {/* ── Mobile hamburger button ──────────────────────────────────────── */}
+      {isMobile && (
+        <button
+          style={s.hamburger}
+          onClick={() => setDrawerOpen(true)}
+          aria-label="Open navigation"
+        >
+          <IconMenu />
+        </button>
+      )}
+
+      {/* ── Mobile backdrop (dismiss drawer by tapping outside) ─────────── */}
+      {isMobile && drawerOpen && (
+        <div style={s.backdrop} onClick={closeDrawer} aria-hidden="true" />
+      )}
+
+      {/* ── Sidebar ─────────────────────────────────────────────────────── */}
+      <aside
+        style={{
+          ...s.sidebar,
+          ...(isMobile ? {
+            position: "fixed",
+            top: 0,
+            left: 0,
+            height: "100dvh",
+            zIndex: 300,
+            transform: drawerOpen ? "translateX(0)" : "translateX(-100%)",
+            transition: "transform 0.24s cubic-bezier(0.4,0,0.2,1)",
+            boxShadow: drawerOpen ? "4px 0 32px rgba(15,23,42,0.18)" : "none",
+          } : {}),
+        }}
+      >
+        {/* Mobile close button (inside drawer) */}
+        {isMobile && (
+          <button style={s.drawerClose} onClick={closeDrawer} aria-label="Close navigation">
+            <IconX />
+          </button>
+        )}
+
+        <Link to="/dashboard" style={s.logoRow} onClick={closeDrawer}>
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
             <rect width="32" height="32" rx="10" fill="url(#shell-brand)" />
             <circle cx="16" cy="16" r="6.5" fill="white" fillOpacity="0.96" />
@@ -89,6 +134,7 @@ export default function AppShell({ children }: AppShellProps) {
                 <Link
                   key={item.label}
                   to={item.to}
+                  onClick={closeDrawer}
                   style={{
                     ...s.navItem,
                     ...(active ? s.navItemActive : {}),
@@ -136,6 +182,8 @@ export default function AppShell({ children }: AppShellProps) {
   );
 }
 
+// ─── Icons ────────────────────────────────────────────────────────────────────
+
 function IconGrid() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -179,6 +227,27 @@ function IconPlugs() {
   );
 }
 
+function IconMenu() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="3" y1="6" x2="21" y2="6" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <line x1="3" y1="18" x2="21" y2="18" />
+    </svg>
+  );
+}
+
+function IconX() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const s: Record<string, React.CSSProperties> = {
   root: {
     display: "flex",
@@ -186,6 +255,48 @@ const s: Record<string, React.CSSProperties> = {
     background:
       "radial-gradient(circle at top left, rgba(15,118,110,0.08), transparent 24%), var(--color-bg)",
   },
+  // ── Mobile controls ──────────────────────────────────────────────────
+  hamburger: {
+    position: "fixed",
+    top: 12,
+    left: 12,
+    zIndex: 400,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    border: "1px solid var(--color-border)",
+    background: "rgba(255,255,255,0.96)",
+    backdropFilter: "blur(8px)",
+    boxShadow: "0 1px 8px rgba(15,23,42,0.12)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    color: "var(--color-text-primary)",
+  },
+  backdrop: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(15,23,42,0.42)",
+    zIndex: 299,
+    backdropFilter: "blur(2px)",
+  },
+  drawerClose: {
+    position: "absolute",
+    top: 14,
+    right: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    border: "1px solid var(--color-border)",
+    background: "transparent",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    color: "var(--color-text-secondary)",
+  },
+  // ── Sidebar ──────────────────────────────────────────────────────────
   sidebar: {
     width: 272,
     minWidth: 272,

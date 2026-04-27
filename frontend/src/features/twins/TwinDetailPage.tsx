@@ -17,6 +17,7 @@
 import { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import AppShell from "@/components/AppShell";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useTwin, useMemoryBrief, useTriggerMemoryGeneration } from "@/hooks/useTwins";
 import { useSources } from "@/hooks/useSources";
 import { useChat, useTwinSessions } from "@/features/chat/hooks/useChat";
@@ -48,6 +49,7 @@ const STATUS_COLOR: Record<string, string> = {
 export default function TwinDetailPage() {
   const { twinId } = useParams<{ twinId: string }>();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const { data: twin, isLoading, error } = useTwin(twinId ?? "");
   const { data: sources = [] } = useSources(twinId ?? "");
 
@@ -127,7 +129,7 @@ export default function TwinDetailPage() {
     <AppShell>
       <div style={s.page}>
         {/* ── Topbar ─────────────────────────────────────────────────────── */}
-        <div style={s.topbar}>
+        <div style={{ ...s.topbar, paddingLeft: isMobile ? 58 : 24 }}>
           <div style={s.topbarLeft}>
             {/* Avatar */}
             <div style={{ ...s.twinAvatar, background: accentColor }}>
@@ -151,27 +153,31 @@ export default function TwinDetailPage() {
           <div style={s.topbarActions}>
             {resumeSessionId && (
               <button style={s.actionBtn} onClick={handleNewChat} title="Start a new chat">
-                + New chat
+                {isMobile ? "+" : "+ New chat"}
               </button>
             )}
-            <Link to={`/twin/${twin.id}/sources`} style={s.actionBtn}>
-              <IconDatabase />
-              Sources
-              {sources.length > 0 && (
-                <span style={s.sourceCount}>{sources.length}</span>
-              )}
-            </Link>
-            <Link to={`/twin/${twin.id}/config`} style={s.actionBtn}>
-              <IconSettings />
-              Config
-            </Link>
+            {!isMobile && (
+              <>
+                <Link to={`/twin/${twin.id}/sources`} style={s.actionBtn}>
+                  <IconDatabase />
+                  Sources
+                  {sources.length > 0 && (
+                    <span style={s.sourceCount}>{sources.length}</span>
+                  )}
+                </Link>
+                <Link to={`/twin/${twin.id}/config`} style={s.actionBtn}>
+                  <IconSettings />
+                  Config
+                </Link>
+              </>
+            )}
             <button
               style={{ ...s.actionBtn, ...(sidebarMode === "sessions" ? s.actionBtnActive : {}) }}
               onClick={() => setSidebarMode((m) => m === "sessions" ? "sources" : "sessions")}
               title="Session history"
             >
               <IconHistory />
-              History
+              {!isMobile && "History"}
               {sessions.length > 0 && (
                 <span style={s.sourceCount}>{sessions.length}</span>
               )}
@@ -185,6 +191,15 @@ export default function TwinDetailPage() {
             </button>
           </div>
         </div>
+
+        {/* ── Mobile sidebar backdrop ───────────────────────────────────── */}
+        {isMobile && sidebarMode && (
+          <div
+            style={s.mobileSidebarBackdrop}
+            onClick={() => setSidebarMode(null)}
+            aria-hidden="true"
+          />
+        )}
 
         {/* ── Body: chat + sidebar ───────────────────────────────────────── */}
         <div style={s.body}>
@@ -208,7 +223,7 @@ export default function TwinDetailPage() {
 
           {/* Right sidebar — sources or session history */}
           {sidebarMode === "sources" && (
-            <aside style={s.sidebar}>
+            <aside style={{ ...s.sidebar, ...(isMobile ? s.sidebarMobileOverlay : {}) }}>
               <div style={s.sidebarHeader}>
                 <span style={s.sidebarTitle}>Sources</span>
                 <Link to={`/twin/${twin.id}/sources`} style={s.sidebarManageLink}>
@@ -241,7 +256,7 @@ export default function TwinDetailPage() {
           )}
 
           {sidebarMode === "sessions" && (
-            <aside style={s.sidebar}>
+            <aside style={{ ...s.sidebar, ...(isMobile ? s.sidebarMobileOverlay : {}) }}>
               <div style={s.sidebarHeader}>
                 <span style={s.sidebarTitle}>Chat history</span>
                 <button style={s.sidebarManageLink} onClick={handleNewChat}>
@@ -702,15 +717,33 @@ const s: Record<string, React.CSSProperties> = {
     textAlign: "center" as const,
   },
 
+  // Mobile sidebar backdrop
+  mobileSidebarBackdrop: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(15,23,42,0.38)",
+    zIndex: 199,
+    backdropFilter: "blur(2px)",
+  },
+
   // Sources sidebar
   sidebar: {
-    // width: 280,
     minWidth: 280,
     borderLeft: "1px solid var(--color-border)",
     background: "var(--color-surface)",
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
+  },
+  sidebarMobileOverlay: {
+    position: "fixed",
+    right: 0,
+    top: 60,
+    bottom: 0,
+    width: "min(88vw, 300px)",
+    minWidth: "unset",
+    zIndex: 200,
+    boxShadow: "-4px 0 28px rgba(15,23,42,0.14)",
   },
   sidebarHeader: {
     display: "flex",

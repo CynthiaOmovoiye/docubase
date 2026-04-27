@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import AppShell from "@/components/AppShell";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import {
   useCreateTwin,
   useDeleteTwin,
@@ -10,6 +11,7 @@ import {
 import { useWorkspaces } from "@/hooks/useWorkspaces";
 
 export default function TwinsPage() {
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -76,7 +78,7 @@ export default function TwinsPage() {
 
   return (
     <AppShell>
-      <div style={s.page}>
+      <div style={{ ...s.page, padding: isMobile ? "68px 16px 32px" : "36px 32px 42px" }}>
         <div style={s.header}>
           <div>
             <p style={s.eyebrow}>Twins</p>
@@ -224,7 +226,11 @@ export default function TwinsPage() {
                           </p>
                         </div>
 
-                        <div style={s.rowActions}>
+                        <div style={{
+                          ...s.rowActions,
+                          width: isMobile ? "100%" : undefined,
+                          marginLeft: isMobile ? 0 : "auto",
+                        }}>
                           <button
                             style={s.inlineAction}
                             onClick={(e) => {
@@ -594,6 +600,7 @@ const s: Record<string, React.CSSProperties> = {
     color: "var(--color-text-secondary)",
     border: "1px solid var(--color-border)",
     fontFamily: "var(--font-mono)",
+    whiteSpace: "nowrap",
   },
   publicChip: {
     padding: "5px 9px",
@@ -603,6 +610,7 @@ const s: Record<string, React.CSSProperties> = {
     background: "rgba(15,118,110,0.12)",
     color: "var(--color-teal)",
     border: "1px solid rgba(15,118,110,0.14)",
+    whiteSpace: "nowrap",
   },
   privateChip: {
     padding: "5px 9px",
@@ -612,6 +620,7 @@ const s: Record<string, React.CSSProperties> = {
     background: "rgba(148,163,184,0.12)",
     color: "var(--color-text-secondary)",
     border: "1px solid rgba(148,163,184,0.18)",
+    whiteSpace: "nowrap",
   },
   rowDescription: {
     margin: "8px 0 0",

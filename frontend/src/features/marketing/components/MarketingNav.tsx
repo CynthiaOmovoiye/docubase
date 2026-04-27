@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 const NAV_LINKS = [
   { label: "Features", href: "/#features" },
@@ -8,6 +9,7 @@ const NAV_LINKS = [
 ];
 
 export function MarketingNav() {
+  const isMobile = useIsMobile();
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -27,9 +29,9 @@ export function MarketingNav() {
         height: "var(--nav-height)",
         display: "flex",
         alignItems: "center",
-        padding: "0 var(--space-6)",
+        padding: isMobile ? "0 var(--space-4)" : "0 var(--space-6)",
         background: scrolled
-          ? "rgba(245,245,248,0.88)"
+          ? "rgba(245,245,248,0.92)"
           : "transparent",
         backdropFilter: scrolled ? "blur(12px)" : "none",
         borderBottom: scrolled ? "1px solid var(--color-border)" : "1px solid transparent",
@@ -60,61 +62,65 @@ export function MarketingNav() {
           </span>
         </Link>
 
-        {/* Desktop nav */}
-        <nav style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }} aria-label="Main navigation">
-          {NAV_LINKS.map((link) => (
+        {/* Desktop nav — hidden on mobile */}
+        {!isMobile && (
+          <nav style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }} aria-label="Main navigation">
+            {NAV_LINKS.map((link) => (
+              <Link
+                key={link.href}
+                to={link.href}
+                style={{
+                  padding: "var(--space-2) var(--space-3)",
+                  borderRadius: "var(--radius-sm)",
+                  fontSize: "14px",
+                  fontWeight: 500,
+                  fontFamily: "var(--font-body)",
+                  color: "var(--color-text-secondary)",
+                  textDecoration: "none",
+                  transition: "color var(--duration-base), background var(--duration-base)",
+                }}
+                onMouseEnter={e => {
+                  (e.target as HTMLElement).style.color = "var(--color-text-primary)";
+                  (e.target as HTMLElement).style.background = "var(--color-surface-raised)";
+                }}
+                onMouseLeave={e => {
+                  (e.target as HTMLElement).style.color = "var(--color-text-secondary)";
+                  (e.target as HTMLElement).style.background = "transparent";
+                }}
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+        )}
+
+        {/* CTA buttons — Sign in hidden on mobile */}
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          {!isMobile && (
             <Link
-              key={link.href}
-              to={link.href}
+              to="/login"
               style={{
-                padding: "var(--space-2) var(--space-3)",
+                padding: "var(--space-2) var(--space-4)",
                 borderRadius: "var(--radius-sm)",
                 fontSize: "14px",
                 fontWeight: 500,
                 fontFamily: "var(--font-body)",
                 color: "var(--color-text-secondary)",
                 textDecoration: "none",
-                transition: "color var(--duration-base), background var(--duration-base)",
+                transition: "color var(--duration-base)",
               }}
-              onMouseEnter={e => {
-                (e.target as HTMLElement).style.color = "var(--color-text-primary)";
-                (e.target as HTMLElement).style.background = "var(--color-surface-raised)";
-              }}
-              onMouseLeave={e => {
-                (e.target as HTMLElement).style.color = "var(--color-text-secondary)";
-                (e.target as HTMLElement).style.background = "transparent";
-              }}
+              onMouseEnter={e => (e.target as HTMLElement).style.color = "var(--color-text-primary)"}
+              onMouseLeave={e => (e.target as HTMLElement).style.color = "var(--color-text-secondary)"}
             >
-              {link.label}
+              Sign in
             </Link>
-          ))}
-        </nav>
-
-        {/* CTA buttons */}
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-          <Link
-            to="/login"
-            style={{
-              padding: "var(--space-2) var(--space-4)",
-              borderRadius: "var(--radius-sm)",
-              fontSize: "14px",
-              fontWeight: 500,
-              fontFamily: "var(--font-body)",
-              color: "var(--color-text-secondary)",
-              textDecoration: "none",
-              transition: "color var(--duration-base)",
-            }}
-            onMouseEnter={e => (e.target as HTMLElement).style.color = "var(--color-text-primary)"}
-            onMouseLeave={e => (e.target as HTMLElement).style.color = "var(--color-text-secondary)"}
-          >
-            Sign in
-          </Link>
+          )}
           <Link
             to="/register"
             style={{
-              padding: "10px var(--space-4)",
+              padding: isMobile ? "8px var(--space-3)" : "10px var(--space-4)",
               borderRadius: "var(--radius-sm)",
-              fontSize: "14px",
+              fontSize: isMobile ? "13px" : "14px",
               fontWeight: 600,
               fontFamily: "var(--font-body)",
               background: "var(--color-iris)",
@@ -132,7 +138,7 @@ export function MarketingNav() {
               (e.target as HTMLElement).style.boxShadow = "var(--shadow-sm)";
             }}
           >
-            Get started free
+            {isMobile ? "Get started" : "Get started free"}
           </Link>
         </div>
       </div>
@@ -157,18 +163,19 @@ function DocbaseLogo() {
 }
 
 export function MarketingFooter() {
+  const isMobile = useIsMobile();
   return (
     <footer style={{
       borderTop: "1px solid var(--color-border)",
-      padding: "var(--space-12) var(--space-6)",
-      marginTop: "var(--space-24)",
+      padding: isMobile ? "var(--space-10) var(--space-5)" : "var(--space-12) var(--space-6)",
+      marginTop: isMobile ? "var(--space-12)" : "var(--space-24)",
     }}>
       <div style={{
         maxWidth: "var(--max-width-content)",
         margin: "0 auto",
         display: "grid",
-        gridTemplateColumns: "1fr 1fr 1fr 1fr",
-        gap: "var(--space-8)",
+        gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr 1fr",
+        gap: isMobile ? "var(--space-8) var(--space-6)" : "var(--space-8)",
       }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-3)" }}>
@@ -208,6 +215,8 @@ export function MarketingFooter() {
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
+        flexWrap: "wrap",
+        gap: "var(--space-2)",
       }}>
         <p style={{ fontSize: "13px", color: "var(--color-text-tertiary)" }}>
           © {new Date().getFullYear()} docbase. All rights reserved.

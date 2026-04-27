@@ -14,6 +14,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import AppShell from "@/components/AppShell";
@@ -43,6 +44,7 @@ const ACCENT_PRESETS = [
 ];
 
 export default function TwinConfigPage() {
+  const isMobile = useIsMobile();
   const { twinId } = useParams<{ twinId: string }>();
   const navigate = useNavigate();
 
@@ -205,7 +207,7 @@ export default function TwinConfigPage() {
 
   return (
     <AppShell>
-      <div style={s.page}>
+      <div style={{ ...s.page, padding: isMobile ? "68px 16px 48px" : s.page.padding }}>
         {/* ── Page header ───────────────────────────────────────────────── */}
         <div style={s.header}>
           <Link to={`/twin/${twin.id}`} style={s.backLink}>

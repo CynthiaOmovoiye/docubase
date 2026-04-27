@@ -32,11 +32,12 @@ aws ssm get-parameter \
   --output text \
   --region "$REGION" > .env
 
-# Append Docker log driver config so containers ship logs to CloudWatch
+# Merge docker-compose.awslogs.yml so backend/worker use the awslogs driver (json-file
+# in the base file is for local dev only; awslogs options cannot share one compose service).
 cat >> .env <<APPEND
 
 # Injected by deploy-backend.sh
-DOCKER_LOG_DRIVER=awslogs
+COMPOSE_FILE=docker-compose.yml:docker-compose.awslogs.yml
 AWS_DEFAULT_REGION=${REGION}
 ENVIRONMENT=${ENVIRONMENT}
 APPEND

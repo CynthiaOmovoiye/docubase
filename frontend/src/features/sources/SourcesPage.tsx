@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import AppShell from "@/components/AppShell";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useTwin } from "@/hooks/useTwins";
 import {
   useSources,
@@ -80,6 +81,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SourcesPage() {
+  const isMobile = useIsMobile();
   const { twinId } = useParams<{ twinId: string }>();
   const { data: twin, isLoading: twinLoading } = useTwin(twinId ?? "");
   const { data: sources = [], isLoading: sourcesLoading } = useSources(twinId ?? "");
@@ -209,9 +211,9 @@ export default function SourcesPage() {
 
   return (
     <AppShell>
-      <div style={s.page}>
+      <div style={{ ...s.page, padding: isMobile ? "68px 16px 32px" : s.page.padding }}>
         {/* Header */}
-        <div style={s.header}>
+        <div style={{ ...s.header, flexWrap: "wrap" }}>
           <div style={s.headerLeft}>
             <Link to={`/twin/${twin.id}`} style={s.backLink}><IconArrowLeft /> {twin.config?.display_name || twin.name}</Link>
             <h1 style={s.pageTitle}>Sources</h1>
@@ -970,7 +972,7 @@ const s: Record<string, React.CSSProperties> = {
   sourceCardTop: { display: "flex", alignItems: "center", gap: 12 },
   sourceCardIcon: { width: 36, height: 36, borderRadius: 8, background: "var(--color-bg)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)", flexShrink: 0 },
   sourceCardMeta: { flex: 1, display: "flex", flexDirection: "column", gap: 2, minWidth: 0 },
-  sourceCardName: { fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)" },
+  sourceCardName: { fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const },
   sourceCardType: { fontSize: 12, color: "var(--color-text-tertiary)" },
   statusBadge: { display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, padding: "3px 8px", borderRadius: 6 },
   statusDot: { width: 6, height: 6, borderRadius: "50%", display: "inline-block" },

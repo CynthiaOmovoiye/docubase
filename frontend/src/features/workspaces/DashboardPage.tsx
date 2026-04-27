@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 
 import AppShell from "@/components/AppShell";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useWorkspaceShareSurfacesForWorkspaces } from "@/hooks/useSharing";
 import { useTwinsForWorkspaces } from "@/hooks/useTwins";
 import { useWorkspaces } from "@/hooks/useWorkspaces";
@@ -8,6 +9,7 @@ import { useAuthStore } from "@/store/authStore";
 import type { Twin } from "@/types";
 
 export default function DashboardPage() {
+  const isMobile = useIsMobile();
   const user = useAuthStore((s) => s.user);
   const { data: workspaces = [], isLoading: workspacesLoading } = useWorkspaces();
   const workspaceTwinGroups = useTwinsForWorkspaces(workspaces);
@@ -37,14 +39,14 @@ export default function DashboardPage() {
   if (isLoading) {
     return (
       <AppShell>
-        <div style={s.center}>Loading dashboard…</div>
+        <div style={{ ...s.center, paddingTop: isMobile ? 80 : 48 }}>Loading dashboard…</div>
       </AppShell>
     );
   }
 
   return (
     <AppShell>
-      <div style={s.page}>
+      <div style={{ ...s.page, padding: isMobile ? "68px 16px 32px" : "34px 32px 40px" }}>
         <section style={s.hero}>
           <div>
             <p style={s.eyebrow}>Dashboard</p>
@@ -117,9 +119,12 @@ export default function DashboardPage() {
 
               <div style={s.list}>
                 {workspaceRows.map(({ workspace, twinCount }) => (
-                  <div key={workspace.id} style={s.listRow}>
+                  <div
+                    key={workspace.id}
+                    style={{ ...s.listRow, alignItems: isMobile ? "flex-start" : "center" }}
+                  >
                     <div style={s.avatar}>{workspace.name.charAt(0).toUpperCase()}</div>
-                    <div style={s.listMeta}>
+                    <div style={{ ...s.listMeta, flexBasis: isMobile ? "calc(100% - 50px)" : undefined }}>
                       <div style={s.listTitle}>{workspace.name}</div>
                       <div style={s.listBody}>
                         {workspace.description || "Workspace-wide chat and grouped twins."}
@@ -189,10 +194,11 @@ function TwinRow({
   twin: Twin;
   workspaceName: string;
 }) {
+  const isMobile = useIsMobile();
   return (
-    <div style={s.listRow}>
+    <div style={{ ...s.listRow, alignItems: isMobile ? "flex-start" : "center" }}>
       <div style={s.avatar}>{(twin.config?.display_name || twin.name).charAt(0).toUpperCase()}</div>
-      <div style={s.listMeta}>
+      <div style={{ ...s.listMeta, flexBasis: isMobile ? "calc(100% - 50px)" : undefined }}>
         <div style={s.listTitle}>{twin.config?.display_name || twin.name}</div>
         <div style={s.listBody}>
           {twin.description || `${workspaceName} twin`}

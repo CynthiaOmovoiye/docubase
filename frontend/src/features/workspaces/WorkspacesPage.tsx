@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import AppShell from "@/components/AppShell";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import {
   useCreateWorkspaceSharePage,
   useRevokeShareSurface,
@@ -16,6 +17,7 @@ import {
 } from "@/hooks/useWorkspaces";
 
 export default function WorkspacesPage() {
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
   const { data: workspaces = [], isLoading: workspacesLoading } = useWorkspaces();
   const workspaceTwinGroups = useTwinsForWorkspaces(workspaces);
@@ -79,7 +81,7 @@ export default function WorkspacesPage() {
 
   return (
     <AppShell>
-      <div style={s.page}>
+      <div style={{ ...s.page, padding: isMobile ? "68px 16px 32px" : "36px 32px 42px" }}>
         <div style={s.header}>
           <div>
             <p style={s.eyebrow}>Workspaces</p>
@@ -114,7 +116,7 @@ export default function WorkspacesPage() {
             {rows.map(({ workspace, twinCount, publicPageCount }) => (
               <div
                 key={workspace.id}
-                style={s.row}
+                style={{ ...s.row, flexWrap: "wrap" }}
                 onClick={() => navigate(`/workspace/${workspace.id}/chat`)}
               >
                 <div style={s.rowAvatar}>{workspace.name.charAt(0).toUpperCase()}</div>
@@ -133,7 +135,12 @@ export default function WorkspacesPage() {
                   </p>
                   <p style={s.rowSlug}>/{workspace.slug}</p>
                 </div>
-                <div style={s.rowActions}>
+                <div style={{
+                  ...s.rowActions,
+                  width: isMobile ? "100%" : undefined,
+                  flexWrap: "wrap",
+                  flexShrink: isMobile ? 1 : 0,
+                }}>
                   <button
                     style={s.secondaryBtn}
                     onClick={(e) => {
@@ -509,6 +516,7 @@ const s: Record<string, React.CSSProperties> = {
     background: "var(--color-bg)",
     color: "var(--color-text-secondary)",
     border: "1px solid var(--color-border)",
+    whiteSpace: "nowrap",
   },
   rowDescription: {
     margin: "8px 0 0",
@@ -597,15 +605,19 @@ const s: Record<string, React.CSSProperties> = {
     maxWidth: 500,
     background: "var(--color-surface)",
     borderRadius: 20,
-    padding: "30px 28px",
+    padding: "24px",
     boxShadow: "var(--shadow-lg)",
     border: "1px solid var(--color-border)",
+    boxSizing: "border-box",
+    maxHeight: "90dvh",
+    overflowY: "auto",
   },
   modalTitle: {
     margin: 0,
     fontFamily: "var(--font-display)",
     fontSize: 22,
     color: "var(--color-text-primary)",
+    wordBreak: "break-word",
   },
   modalSubtitle: {
     margin: "8px 0 20px",

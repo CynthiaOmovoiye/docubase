@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import AppShell from "@/components/AppShell";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import {
   RichConversationPanel,
   SessionHistoryPanel,
@@ -16,6 +17,7 @@ export default function WorkspaceChatPage() {
   const { data: twins = [], isLoading: twinsLoading } = useTwins(workspaceId ?? "");
   const { data: sessions = [] } = useWorkspaceSessions(workspaceId);
 
+  const isMobile = useIsMobile();
   const [resumeSessionId, setResumeSessionId] = useState<string | null>(null);
   const [sidebarMode, setSidebarMode] = useState<"twins" | "sessions" | null>("twins");
   const [inputValue, setInputValue] = useState("");
@@ -83,7 +85,7 @@ export default function WorkspaceChatPage() {
   return (
     <AppShell>
       <div style={s.page}>
-        <div style={s.topbar}>
+        <div style={{ ...s.topbar, paddingLeft: isMobile ? 58 : 24 }}>
           <div style={s.topbarLeft}>
             <div style={{ ...s.workspaceAvatar, background: accentColor }}>
               {avatarLetter}
@@ -93,7 +95,7 @@ export default function WorkspaceChatPage() {
               <h1 style={s.workspaceName}>{workspace.name}</h1>
               <div style={s.metaRow}>
                 {workspace.slug && <span style={s.slugChip}>/{workspace.slug}</span>}
-                <span style={s.routeBadge}>Workspace routing</span>
+                {!isMobile && <span style={s.routeBadge}>Workspace routing</span>}
                 <span style={s.metaLabel}>{twins.length} twin{twins.length === 1 ? "" : "s"}</span>
               </div>
             </div>
@@ -102,25 +104,29 @@ export default function WorkspaceChatPage() {
           <div style={s.topbarActions}>
             {resumeSessionId && (
               <button style={s.actionBtn} onClick={handleNewChat} title="Start a new chat">
-                + New chat
+                {isMobile ? "+" : "+ New chat"}
               </button>
             )}
-            <Link to="/workspaces" style={s.actionBtn}>
-              <IconLayers />
-              Workspaces
-            </Link>
-            <Link to={`/twins?workspace=${workspace.id}`} style={s.actionBtn}>
-              <IconTwin />
-              Twins
-              {twins.length > 0 && <span style={s.countPill}>{twins.length}</span>}
-            </Link>
+            {!isMobile && (
+              <>
+                <Link to="/workspaces" style={s.actionBtn}>
+                  <IconLayers />
+                  Workspaces
+                </Link>
+                <Link to={`/twins?workspace=${workspace.id}`} style={s.actionBtn}>
+                  <IconTwin />
+                  Twins
+                  {twins.length > 0 && <span style={s.countPill}>{twins.length}</span>}
+                </Link>
+              </>
+            )}
             <button
               style={{ ...s.actionBtn, ...(sidebarMode === "sessions" ? s.actionBtnActive : {}) }}
               onClick={() => setSidebarMode((mode) => mode === "sessions" ? "twins" : "sessions")}
               title="Session history"
             >
               <IconHistory />
-              History
+              {!isMobile && "History"}
               {sessions.length > 0 && <span style={s.countPill}>{sessions.length}</span>}
             </button>
             <button
@@ -133,7 +139,19 @@ export default function WorkspaceChatPage() {
           </div>
         </div>
 
-        <div style={s.body}>
+        {/* Mobile sidebar backdrop */}
+        {isMobile && sidebarMode && (
+          <div
+            style={s.mobileSidebarBackdrop}
+            onClick={() => setSidebarMode(null)}
+            aria-hidden="true"
+          />
+        )}
+
+        <div style={{
+          ...s.body,
+          gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) 320px",
+        }}>
           <RichConversationPanel
             messages={messages}
             isSending={isSending}
@@ -153,7 +171,10 @@ export default function WorkspaceChatPage() {
           />
 
           {sidebarMode === "twins" && (
-            <aside style={s.sidebar}>
+            <aside style={{
+              ...s.sidebar,
+              ...(isMobile ? s.sidebarMobileOverlay : {}),
+            }}>
               <div style={s.sidebarHeader}>
                 <span style={s.sidebarTitle}>Twins in this workspace</span>
                 <Link to={`/twins?workspace=${workspace.id}`} style={s.sidebarManageLink}>
@@ -203,7 +224,10 @@ export default function WorkspaceChatPage() {
           )}
 
           {sidebarMode === "sessions" && (
-            <aside style={s.sidebar}>
+            <aside style={{
+              ...s.sidebar,
+              ...(isMobile ? s.sidebarMobileOverlay : {}),
+            }}>
               <div style={s.sidebarHeader}>
                 <span style={s.sidebarTitle}>Chat history</span>
                 <button style={s.sidebarManageLink} onClick={handleNewChat}>
@@ -463,6 +487,13 @@ const s: Record<string, React.CSSProperties> = {
     minHeight: 0,
     flex: 1,
   },
+  mobileSidebarBackdrop: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(15,23,42,0.38)",
+    zIndex: 199,
+    backdropFilter: "blur(2px)",
+  },
   sidebar: {
     background: "var(--color-surface)",
     borderLeft: "1px solid var(--color-border)",
@@ -471,6 +502,16 @@ const s: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     gap: 14,
     overflowY: "auto",
+  },
+  sidebarMobileOverlay: {
+    position: "fixed",
+    right: 0,
+    top: 60,
+    bottom: 0,
+    width: "min(88vw, 320px)",
+    zIndex: 200,
+    boxShadow: "-4px 0 28px rgba(15,23,42,0.14)",
+    borderLeft: "1px solid var(--color-border)",
   },
   sidebarHeader: {
     display: "flex",
