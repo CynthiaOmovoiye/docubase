@@ -522,41 +522,47 @@ function CTAButton({ href, primary, large, children }: {
 }) {
   const pad = large ? "14px 32px" : "10px 20px";
   const fz = large ? "16px" : "14px";
+  const style: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: pad,
+    borderRadius: "var(--radius-sm)",
+    fontSize: fz,
+    fontWeight: 600,
+    fontFamily: "var(--font-body)",
+    textDecoration: "none",
+    transition: "background var(--duration-base), box-shadow var(--duration-base), color var(--duration-base)",
+    background: primary ? "var(--color-iris)" : "var(--color-surface)",
+    color: primary ? "#fff" : "var(--color-text-primary)",
+    border: primary ? "none" : "1px solid var(--color-border)",
+    boxShadow: primary ? "var(--shadow-sm)" : "none",
+  };
+  const onMouseEnter = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (primary) {
+      e.currentTarget.style.background = "var(--color-iris-dim)";
+      e.currentTarget.style.boxShadow = "var(--shadow-iris)";
+    } else {
+      e.currentTarget.style.background = "var(--color-surface-raised)";
+    }
+  };
+  const onMouseLeave = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (primary) {
+      e.currentTarget.style.background = "var(--color-iris)";
+      e.currentTarget.style.boxShadow = "var(--shadow-sm)";
+    } else {
+      e.currentTarget.style.background = "var(--color-surface)";
+    }
+  };
+  // Hash-only links: use a real <a> so the browser scrolls to #id. React Router <Link> does not.
+  if (href.startsWith("#")) {
+    return (
+      <a href={href} style={style} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
+        {children}
+      </a>
+    );
+  }
   return (
-    <Link
-      to={href}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        padding: pad,
-        borderRadius: "var(--radius-sm)",
-        fontSize: fz,
-        fontWeight: 600,
-        fontFamily: "var(--font-body)",
-        textDecoration: "none",
-        transition: "background var(--duration-base), box-shadow var(--duration-base), color var(--duration-base)",
-        background: primary ? "var(--color-iris)" : "var(--color-surface)",
-        color: primary ? "#fff" : "var(--color-text-primary)",
-        border: primary ? "none" : "1px solid var(--color-border)",
-        boxShadow: primary ? "var(--shadow-sm)" : "none",
-      }}
-      onMouseEnter={e => {
-        if (primary) {
-          (e.currentTarget as HTMLElement).style.background = "var(--color-iris-dim)";
-          (e.currentTarget as HTMLElement).style.boxShadow = "var(--shadow-iris)";
-        } else {
-          (e.currentTarget as HTMLElement).style.background = "var(--color-surface-raised)";
-        }
-      }}
-      onMouseLeave={e => {
-        if (primary) {
-          (e.currentTarget as HTMLElement).style.background = "var(--color-iris)";
-          (e.currentTarget as HTMLElement).style.boxShadow = "var(--shadow-sm)";
-        } else {
-          (e.currentTarget as HTMLElement).style.background = "var(--color-surface)";
-        }
-      }}
-    >
+    <Link to={href} style={style} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
       {children}
     </Link>
   );

@@ -31,9 +31,10 @@
  * /w/:slug               — Public workspace share page
  */
 
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter, Outlet } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import RequireAuth from "@/features/auth/RequireAuth";
+import { NotFoundPage, RouteErrorPage } from "@/app/errorPages";
 
 // ─── Marketing ────────────────────────────────────────────────────────────────
 const LandingPage         = lazy(() => import("@/features/marketing/pages/LandingPage"));
@@ -70,31 +71,36 @@ function protect(element: React.ReactNode) {
   );
 }
 
+/**
+ * All UI routes are nested under `path: "/"` so a single `errorElement` can replace
+ * React Router’s default error screen, and a splat `*` can render a product 404.
+ */
 export const router = createBrowserRouter([
-  // Marketing
-  { path: "/",          element: <LandingPage /> },
-  { path: "/pricing",   element: <PricingPage /> },
-  { path: "/about",     element: <AboutPage /> },
-  { path: "/contact",   element: <ContactPage /> },
-  { path: "/security",  element: <SecurityPage /> },
-  { path: "/privacy",   element: <PrivacyPage /> },
-  { path: "/terms",     element: <TermsPage /> },
-
-  // Auth (public)
-  { path: "/login",     element: <LoginPage /> },
-  { path: "/register",  element: <RegisterPage /> },
-
-  // Authenticated app routes
-  { path: "/dashboard",            element: protect(<DashboardPage />) },
-  { path: "/workspaces",           element: protect(<WorkspacesPage />) },
-  { path: "/twins",                element: protect(<TwinsPage />) },
-  { path: "/workspace/:workspaceId/chat", element: protect(<WorkspaceChatPage />) },
-  { path: "/twin/:twinId",         element: protect(<TwinDetailPage />) },
-  { path: "/twin/:twinId/sources", element: protect(<SourcesPage />) },
-  { path: "/twin/:twinId/config",  element: protect(<TwinConfigPage />) },
-  { path: "/integrations",         element: protect(<ConnectAccountsPage />) },
-
-  // Public share surfaces (no auth)
-  { path: "/t/:slug",  element: <PublicTwinPage /> },
-  { path: "/w/:slug",  element: <PublicWorkspacePage /> },
+  {
+    path: "/",
+    element: <Outlet />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      { index: true, element: <LandingPage /> },
+      { path: "pricing", element: <PricingPage /> },
+      { path: "about", element: <AboutPage /> },
+      { path: "contact", element: <ContactPage /> },
+      { path: "security", element: <SecurityPage /> },
+      { path: "privacy", element: <PrivacyPage /> },
+      { path: "terms", element: <TermsPage /> },
+      { path: "login", element: <LoginPage /> },
+      { path: "register", element: <RegisterPage /> },
+      { path: "dashboard", element: protect(<DashboardPage />) },
+      { path: "workspaces", element: protect(<WorkspacesPage />) },
+      { path: "twins", element: protect(<TwinsPage />) },
+      { path: "workspace/:workspaceId/chat", element: protect(<WorkspaceChatPage />) },
+      { path: "twin/:twinId", element: protect(<TwinDetailPage />) },
+      { path: "twin/:twinId/sources", element: protect(<SourcesPage />) },
+      { path: "twin/:twinId/config", element: protect(<TwinConfigPage />) },
+      { path: "integrations", element: protect(<ConnectAccountsPage />) },
+      { path: "t/:slug", element: <PublicTwinPage /> },
+      { path: "w/:slug", element: <PublicWorkspacePage /> },
+      { path: "*", element: <NotFoundPage /> },
+    ],
+  },
 ]);
