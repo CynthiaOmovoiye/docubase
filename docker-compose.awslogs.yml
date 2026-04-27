@@ -1,0 +1,22 @@
+# CloudWatch logging for backend + worker. Merge on EC2 (IAM must allow
+# logs:CreateLogStream etc.) — not for local: default json-file in docker-compose.yml.
+#
+# Loaded automatically when deploy-backend.sh appends:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.awslogs.yml
+services:
+  backend:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_DEFAULT_REGION:-us-east-1}
+        awslogs-group: /docbase/${ENVIRONMENT:-dev}/backend
+        awslogs-stream: backend
+        awslogs-create-group: "true"
+  worker:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_DEFAULT_REGION:-us-east-1}
+        awslogs-group: /docbase/${ENVIRONMENT:-dev}/worker
+        awslogs-stream: worker
+        awslogs-create-group: "true"
