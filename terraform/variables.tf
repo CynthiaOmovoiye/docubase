@@ -47,7 +47,7 @@ variable "log_retention_days" {
 variable "alarm_email" {
   description = "Email address for CloudWatch alarm notifications. Leave empty to skip SNS/email setup."
   type        = string
-  default     = ""
+  default     = "omovoiye@gmail.com"
 }
 
 # ─── EC2 ─────────────────────────────────────────────────────────────────────
