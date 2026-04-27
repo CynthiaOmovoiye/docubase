@@ -601,7 +601,7 @@ resource "aws_cloudwatch_dashboard" "main" {
           view          = "table"
           region        = "us-east-1"
           logGroupNames = [aws_cloudwatch_log_group.backend.name]
-          query         = "fields @timestamp, event, error | filter level = 'error' | sort @timestamp desc | limit 50"
+          queryString   = "fields @timestamp, event, error | filter level = 'error' | sort @timestamp desc | limit 50"
         }
       },
     ]
