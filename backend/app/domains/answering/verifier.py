@@ -199,8 +199,12 @@ def _is_workspace_conversational_query(query: str) -> bool:
         return True
     # Short "what is X" / "who is X" / "do you have X" entity queries are
     # conversational lookups — not structured technical RAG that needs ## headings.
+    # NOTE: "tell me about" is intentionally excluded here — it is only conversational
+    # when self-referential ("tell me about yourself", "tell me about this workspace"),
+    # which are already handled by the startswith block above. "tell me about <person>"
+    # or "tell me about <topic>" are content questions that should go through retrieval.
     if len(text) <= 80 and re.match(
-        r"^(what is|what's|who is|who's|do you have|tell me about|what about)\b",
+        r"^(what is|what's|who is|who's|do you have|what about)\b",
         lowered,
     ):
         return True
