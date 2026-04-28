@@ -11,8 +11,9 @@ uses **incremental** brief generation by default:
   - Without ``source_id`` (manual regenerate): merges each ``ready`` source
     sequentially, then promotes any ``processing`` sources on success.
 
-``run_memory_extraction()`` remains for tests and legacy tooling; it performs the
-older multi-pass architecture/risk extraction pipeline.
+``run_memory_extraction()`` remains for tests and legacy tooling: it rebuilds the
+per-twin knowledge graph, generates one ``memory_brief`` via ``generate_memory_brief``,
+embeds it, persists ``TwinConfig.memory_brief``, and refreshes workspace synthesis.
 """
 
 from __future__ import annotations
@@ -35,20 +36,10 @@ from app.domains.graph.extractor import extract_graph_from_chunks
 from app.domains.graph.service import get_graph_summary, rebuild_graph
 from app.domains.knowledge.evidence import hash_text
 from app.domains.memory.evidence import (
-    build_auth_flow_chunks,
-    build_change_summary_chunks,
-    build_feature_summary_chunks,
-    build_onboarding_map_chunks,
-    build_risk_summary_chunks,
     build_workspace_synthesis_content,
     load_doctwin_memory_evidence,
 )
-from app.domains.memory.extractor import (
-    _is_architecture_relevant,
-    extract_architecture_chunks,
-    extract_change_entry_chunks,
-    generate_memory_brief,
-)
+from app.domains.memory.extractor import generate_memory_brief
 from app.domains.memory.prompts import INCREMENTAL_KNOWLEDGE_BRIEF_SYSTEM
 from app.models.chunk import Chunk, ChunkLineage, ChunkType
 from app.models.source import Source, SourceStatus, SourceType
@@ -83,15 +74,13 @@ async def run_memory_extraction(
     Orchestrate the full memory extraction pass for a twin.
 
     Returns a stats dict regardless of success or failure:
-      {
-        "doctwin_id": str,
-        "status": "ready" | "failed",
-        "arch_chunks": int,
-        "risk_chunks": int,
-        "change_chunks": int,
-        "brief_generated": bool,
-        "error": str | None,
-      }
+
+      - ``doctwin_id``, ``status`` (``ready`` | ``failed`` | ``skipped``),
+      - ``brief_generated``, ``workspace_synthesis_generated``,
+      - optional ``reason`` when skipped, ``error`` when failed.
+
+    ``commit_history`` is accepted for API compatibility but does not change extraction;
+    only diagnostic logging uses it.
 
     Never raises — all exceptions are caught and reflected in the status.
     """
@@ -106,36 +95,16 @@ async def run_memory_extraction(
             "doctwin_id": doctwin_id,
             "status": "skipped",
             "reason": "extraction already in progress",
-            "arch_chunks": 0,
-            "feature_chunks": 0,
-            "auth_chunks": 0,
-            "onboarding_chunks": 0,
-            "risk_chunks": 0,
-            "change_chunks": 0,
             "brief_generated": False,
             "workspace_synthesis_generated": False,
-            "fact_digest_chars": 0,
-            "topic_digest_chars": 0,
-            "implementation_fact_rows": 0,
-            "phase5_exit": None,
             "error": None,
         }
 
     stats = {
         "doctwin_id": doctwin_id,
         "status": "failed",
-        "arch_chunks": 0,
-        "feature_chunks": 0,
-        "auth_chunks": 0,
-        "onboarding_chunks": 0,
-        "risk_chunks": 0,
-        "change_chunks": 0,
         "brief_generated": False,
         "workspace_synthesis_generated": False,
-        "fact_digest_chars": 0,
-        "topic_digest_chars": 0,
-        "implementation_fact_rows": 0,
-        "phase5_exit": None,
         "error": None,
     }
 
@@ -146,7 +115,7 @@ async def run_memory_extraction(
         # Load existing file-derived chunks for this twin (all sources)
         existing_chunks = await _load_doctwin_chunks(doctwin_id, db)
         structure_overview = await _build_structure_overview(doctwin_id, db)
-        evidence_bundle = await load_doctwin_memory_evidence(
+        await load_doctwin_memory_evidence(
             doctwin_id,
             db,
             structure_overview=structure_overview,
@@ -180,110 +149,35 @@ async def run_memory_extraction(
             logger.info("memory_chunks_cleared", doctwin_id=doctwin_id, deleted=deleted_count)
 
         # ── Knowledge graph build ─────────────────────────────────────────────
-        # Build before extraction passes so the graph context is available for
-        # the memory brief. Filter noise (migrations, lock files, build artefacts)
-        # before passing to the graph extractor.
-        relevant_chunks = [c for c in existing_chunks if _is_architecture_relevant(c)]
-        logger.debug(
-            "memory_extraction_relevant_chunks",
-            doctwin_id=doctwin_id,
-            count=len(relevant_chunks),
-        )
         deterministic_graph = await build_deterministic_graph(doctwin_id, db)
         llm_graph = await extract_graph_from_chunks(
-            relevant_chunks, doctwin_id, trace_id=trace_id
+            existing_chunks, doctwin_id, trace_id=trace_id
         )
         graph_extraction = merge_graph_extractions(deterministic_graph, llm_graph)
         await rebuild_graph(doctwin_id, graph_extraction, db)
 
-        # ── Pass 1: Architecture extraction ──────────────────────────────────
-        arch_chunk_dicts = await extract_architecture_chunks(
-            doctwin_id, existing_chunks, trace_id=trace_id
-        )
-        arch_rows = await _embed_and_write_chunks(arch_chunk_dicts, doctwin_id, db)
-        stats["arch_chunks"] = len(arch_rows)
-
-        # ── Pass 2: Deterministic feature/auth/onboarding memory ─────────────
-        feature_chunk_dicts = build_feature_summary_chunks(evidence_bundle)
-        feature_rows = await _embed_and_write_chunks(feature_chunk_dicts, doctwin_id, db)
-        stats["feature_chunks"] = len(feature_rows)
-
-        auth_chunk_dicts = build_auth_flow_chunks(evidence_bundle)
-        auth_rows = await _embed_and_write_chunks(auth_chunk_dicts, doctwin_id, db)
-        stats["auth_chunks"] = len(auth_rows)
-
-        onboarding_chunk_dicts = build_onboarding_map_chunks(evidence_bundle)
-        onboarding_rows = await _embed_and_write_chunks(onboarding_chunk_dicts, doctwin_id, db)
-        stats["onboarding_chunks"] = len(onboarding_rows)
-
-        # ── Pass 3: Deterministic risk extraction ─────────────────────────────
-        risk_chunk_dicts = build_risk_summary_chunks(evidence_bundle)
-        risk_rows = await _embed_and_write_chunks(risk_chunk_dicts, doctwin_id, db)
-        stats["risk_chunks"] = len(risk_rows)
-
-        # ── Pass 4: Change entry extraction ──────────────────────────────────
-        change_chunk_dicts = build_change_summary_chunks(evidence_bundle)
-        if not change_chunk_dicts and commit_history:
-            change_chunk_dicts = await extract_change_entry_chunks(
-                doctwin_id, commit_history, trace_id=trace_id
-            )
-        change_rows = await _embed_and_write_chunks(change_chunk_dicts, doctwin_id, db)
-        stats["change_chunks"] = len(change_rows)
-
         # ── Memory Brief generation ───────────────────────────────────────────
-        arch_text = next(
-            (c["content"] for c in arch_chunk_dicts if c["chunk_type"] == "architecture_summary"),
-            None,
-        )
         graph_context = await get_graph_summary(doctwin_id, db)
-        fact_digest = ""
-        topic_digest = ""
-        stats["implementation_fact_rows"] = 0
-        stats["fact_digest_chars"] = 0
-        stats["topic_digest_chars"] = 0
-        stats["phase5_exit"] = {}
         brief_text = await generate_memory_brief(
             doctwin_id=doctwin_id,
-            architecture_text=arch_text,
-            arch_chunk_dicts=arch_chunk_dicts,
-            risk_chunks=risk_chunk_dicts,
-            change_chunks=change_chunk_dicts,
+            architecture_text=None,
+            arch_chunk_dicts=[],
+            risk_chunks=[],
+            change_chunks=[],
             existing_chunks=existing_chunks,
-            feature_chunks=feature_chunk_dicts,
-            auth_flow_chunks=auth_chunk_dicts,
-            onboarding_chunks=onboarding_chunk_dicts,
             structure_overview=structure_overview,
             graph_context=graph_context or None,
-            implementation_fact_digest=fact_digest or None,
-            topic_artifact_digest=topic_digest or None,
             trace_id=trace_id,
         )
 
         if brief_text:
             # Store the brief as a chunk for RAG retrieval
-            brief_provenance = _collect_provenance(
-                arch_chunk_dicts
-                + feature_chunk_dicts
-                + auth_chunk_dicts
-                + onboarding_chunk_dicts
-                + risk_chunk_dicts
-                + change_chunk_dicts
-            )
             brief_chunk_dicts = [{
                 "chunk_type": "memory_brief",
                 "content": brief_text,
                 "source_ref": _memory_ref(doctwin_id),
                 "chunk_metadata": {
                     "extraction": "memory_brief",
-                    "provenance": brief_provenance,
-                    "artifact_labels": [
-                        "architecture_summary",
-                        "feature_summary",
-                        "auth_flow",
-                        "onboarding_map",
-                        "risk_note",
-                        "change_entry",
-                    ],
                 },
             }]
             await _embed_and_write_chunks(brief_chunk_dicts, doctwin_id, db)
@@ -303,18 +197,9 @@ async def run_memory_extraction(
         logger.info(
             "memory_extraction_complete",
             doctwin_id=doctwin_id,
-            arch_chunks=stats["arch_chunks"],
-            feature_chunks=stats["feature_chunks"],
-            auth_chunks=stats["auth_chunks"],
-            onboarding_chunks=stats["onboarding_chunks"],
-            risk_chunks=stats["risk_chunks"],
-            change_chunks=stats["change_chunks"],
             brief_generated=stats["brief_generated"],
             workspace_synthesis_generated=stats["workspace_synthesis_generated"],
-            fact_digest_chars=stats["fact_digest_chars"],
-            topic_digest_chars=stats["topic_digest_chars"],
-            implementation_fact_rows=stats["implementation_fact_rows"],
-            phase5_exit_pass=(stats.get("phase5_exit") or {}).get("phase5_exit_pass"),
+            status=stats["status"],
         )
 
     except Exception as exc:
@@ -739,23 +624,6 @@ async def _load_memory_artifact_labels_for_twin(doctwin_id: str, db: AsyncSessio
 def _brief_excerpt(brief: str) -> str:
     cleaned = " ".join(line.strip() for line in brief.splitlines() if line.strip() and not line.startswith("#"))
     return cleaned[:220] + ("..." if len(cleaned) > 220 else "")
-
-
-def _collect_provenance(chunk_dicts: list[dict]) -> list[dict]:
-    seen: set[tuple[str | None, str | None, str | None]] = set()
-    collected: list[dict] = []
-    for chunk in chunk_dicts:
-        for ref in (chunk.get("chunk_metadata") or {}).get("provenance", []):
-            key = (
-                ref.get("kind"),
-                ref.get("path"),
-                ref.get("qualified_name") or ref.get("symbol_name"),
-            )
-            if key in seen:
-                continue
-            seen.add(key)
-            collected.append(ref)
-    return collected[:40]
 
 
 # ── Incremental knowledge brief (raw chunk text → LLM, per source or full rebuild) ──

@@ -6,12 +6,12 @@ failure handling, and stats output. No real DB, no real Redis, no LLM calls.
 """
 
 import uuid
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.domains.graph.extractor import GraphExtractionResult
+from app.domains.memory.evidence import MemoryEvidenceBundle
 from app.domains.memory.service import (
     clear_memory_chunks_for_twin,
     get_memory_brief,
@@ -30,7 +30,6 @@ def _make_db_session(memory_brief_text: str | None = None):
     db.rollback = AsyncMock()
     db.add = MagicMock()
 
-    # TwinConfig mock row
     mock_config = MagicMock()
     mock_config.doctwin_id = uuid.UUID(doctwin_ID)
     mock_config.memory_brief = memory_brief_text
@@ -44,105 +43,26 @@ def _make_db_session(memory_brief_text: str | None = None):
     return db, mock_config
 
 
-def _patch_extractors(
-    arch_chunks=None,
-    risk_chunks=None,
-    change_chunks=None,
-    brief_text="# Brief\n\nSome content.",
-):
-    """Patch all four extractor functions with controllable return values."""
-    arch_chunks = arch_chunks or [
-        {
-            "chunk_type": "architecture_summary",
-            "content": "FastAPI backend",
-            "source_ref": f"__memory__/{doctwin_ID}",
-            "chunk_metadata": {},
-        }
-    ]
-    risk_chunks = risk_chunks or [
-        {
-            "chunk_type": "risk_note",
-            "content": "High risk: no error handling",
-            "source_ref": f"__memory__/{doctwin_ID}",
-            "chunk_metadata": {"severity": "high"},
-        }
-    ]
-    change_chunks = change_chunks or []
-
-    patches = {
-        "extract_architecture_chunks": AsyncMock(return_value=arch_chunks),
-        "extract_change_entry_chunks": AsyncMock(return_value=change_chunks),
-        "generate_memory_brief": AsyncMock(return_value=brief_text),
-    }
-    return patches
-
-
-def _make_memory_bundle():
-    return SimpleNamespace(
+def _evidence_bundle() -> MemoryEvidenceBundle:
+    return MemoryEvidenceBundle(
         doctwin_id=doctwin_ID,
         workspace_id="00000000-0000-0000-0000-000000000099",
-        indexed_files=[],
-        indexed_symbols=[],
-        indexed_relationships=[],
-        git_activities=[],
         structure_overview=[],
     )
 
 
-def _patch_memory_evidence(
-    *,
-    feature_chunks=None,
-    auth_chunks=None,
-    onboarding_chunks=None,
-    risk_chunks=None,
-    change_chunks=None,
-):
-    feature_chunks = feature_chunks or [
-        {
-            "chunk_type": "feature_summary",
-            "content": "Feature summary",
-            "source_ref": f"__memory__/{doctwin_ID}",
-            "chunk_metadata": {"provenance": []},
-        }
-    ]
-    auth_chunks = auth_chunks or [
-        {
-            "chunk_type": "auth_flow",
-            "content": "Auth flow",
-            "source_ref": f"__memory__/{doctwin_ID}",
-            "chunk_metadata": {"provenance": []},
-        }
-    ]
-    onboarding_chunks = onboarding_chunks or [
-        {
-            "chunk_type": "onboarding_map",
-            "content": "Onboarding map",
-            "source_ref": f"__memory__/{doctwin_ID}",
-            "chunk_metadata": {"provenance": []},
-        }
-    ]
-    risk_chunks = risk_chunks or [
-        {
-            "chunk_type": "risk_note",
-            "content": "High risk: no error handling",
-            "source_ref": f"__memory__/{doctwin_ID}",
-            "chunk_metadata": {"severity": "high", "provenance": []},
-        }
-    ]
-    change_chunks = change_chunks or []
+def _patch_generate_brief(brief_text: str = "# Brief\n\nSome content."):
+    return {"generate_memory_brief": AsyncMock(return_value=brief_text)}
+
+
+def _patch_memory_evidence():
     return {
-        "load_doctwin_memory_evidence": AsyncMock(return_value=_make_memory_bundle()),
-        "build_feature_summary_chunks": MagicMock(return_value=feature_chunks),
-        "build_auth_flow_chunks": MagicMock(return_value=auth_chunks),
-        "build_onboarding_map_chunks": MagicMock(return_value=onboarding_chunks),
-        "build_risk_summary_chunks": MagicMock(return_value=risk_chunks),
-        "build_change_summary_chunks": MagicMock(return_value=change_chunks),
+        "load_doctwin_memory_evidence": AsyncMock(return_value=_evidence_bundle()),
         "_rebuild_workspace_synthesis_for_twin": AsyncMock(return_value=True),
     }
 
 
 def _make_redis(acquired=True):
-    """Mock Redis client that returns `acquired` for SET NX."""
     redis = MagicMock()
     redis.set = AsyncMock(return_value=acquired)
     redis.delete = AsyncMock()
@@ -164,14 +84,13 @@ def _service_patch_kwargs(
     *,
     redis,
     graph,
-    ext,
+    brief_mocks,
     mem,
     embed_side_effect=None,
     embed_return=None,
     load_doctwin_chunks=None,
     build_structure_overview=None,
     clear_memory_chunks=0,
-    extract_architecture_chunks=None,
     set_brief_status=None,
     save_memory_brief=None,
 ):
@@ -192,26 +111,13 @@ def _service_patch_kwargs(
         "merge_graph_extractions": graph["merge_graph_extractions"],
         "rebuild_graph": graph["rebuild_graph"],
         "get_graph_summary": graph["get_graph_summary"],
-        "extract_architecture_chunks": (
-            extract_architecture_chunks
-            if extract_architecture_chunks is not None
-            else ext["extract_architecture_chunks"]
-        ),
-        "build_feature_summary_chunks": mem["build_feature_summary_chunks"],
-        "build_auth_flow_chunks": mem["build_auth_flow_chunks"],
-        "build_onboarding_map_chunks": mem["build_onboarding_map_chunks"],
-        "build_risk_summary_chunks": mem["build_risk_summary_chunks"],
-        "build_change_summary_chunks": mem["build_change_summary_chunks"],
-        "extract_change_entry_chunks": ext["extract_change_entry_chunks"],
-        "generate_memory_brief": ext["generate_memory_brief"],
+        "generate_memory_brief": brief_mocks["generate_memory_brief"],
         "_rebuild_workspace_synthesis_for_twin": mem["_rebuild_workspace_synthesis_for_twin"],
         "_embed_and_write_chunks": embed_mock,
         "_set_brief_status": set_brief_status if set_brief_status is not None else AsyncMock(),
         "_save_memory_brief": save_memory_brief if save_memory_brief is not None else AsyncMock(),
     }
 
-
-# ── Lock behaviour ────────────────────────────────────────────────────────────
 
 class TestRedisLock:
     @pytest.mark.asyncio
@@ -227,7 +133,6 @@ class TestRedisLock:
 
     @pytest.mark.asyncio
     async def test_lock_is_always_released(self):
-        """Lock must be released even when extraction raises an unexpected error."""
         db, _ = _make_db_session()
         redis = _make_redis(acquired=True)
 
@@ -242,14 +147,12 @@ class TestRedisLock:
         assert stats["status"] == "failed"
 
 
-# ── Stats output ──────────────────────────────────────────────────────────────
-
 class TestRunMemoryExtractionStats:
     @pytest.mark.asyncio
     async def test_successful_extraction_returns_ready_stats(self):
         db, _ = _make_db_session()
         redis = _make_redis(acquired=True)
-        ext = _patch_extractors()
+        brief_mocks = _patch_generate_brief()
         graph = _patch_graph_layers()
         mem = _patch_memory_evidence()
 
@@ -258,7 +161,7 @@ class TestRunMemoryExtractionStats:
             **_service_patch_kwargs(
                 redis=redis,
                 graph=graph,
-                ext=ext,
+                brief_mocks=brief_mocks,
                 mem=mem,
                 embed_side_effect=lambda chunks, *a, **kw: [MagicMock()] * len(chunks),
             ),
@@ -266,30 +169,19 @@ class TestRunMemoryExtractionStats:
             stats = await run_memory_extraction(doctwin_ID, db)
 
         assert stats["status"] == "ready"
-        assert stats["arch_chunks"] == 1
-        assert stats["feature_chunks"] == 1
-        assert stats["auth_chunks"] == 1
-        assert stats["onboarding_chunks"] == 1
-        assert stats["risk_chunks"] == 1
         assert stats["brief_generated"] is True
         assert stats["workspace_synthesis_generated"] is True
         assert stats["error"] is None
+        brief_mocks["generate_memory_brief"].assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_change_chunks_counted_when_commit_history_provided(self):
+    async def test_commit_history_does_not_change_pipeline(self):
+        """commit_history is logged only; extraction uses graph + brief."""
         db, _ = _make_db_session()
         redis = _make_redis(acquired=True)
-        change_chunks = [
-            {
-                "chunk_type": "change_entry",
-                "content": "Week of April 14: added memory",
-                "source_ref": f"__memory__/{doctwin_ID}",
-                "chunk_metadata": {},
-            }
-        ]
-        ext = _patch_extractors(change_chunks=change_chunks)
+        brief_mocks = _patch_generate_brief()
         graph = _patch_graph_layers()
-        mem = _patch_memory_evidence(change_chunks=change_chunks)
+        mem = _patch_memory_evidence()
         commits = [
             {
                 "sha": "abc",
@@ -307,43 +199,21 @@ class TestRunMemoryExtractionStats:
             **_service_patch_kwargs(
                 redis=redis,
                 graph=graph,
-                ext=ext,
+                brief_mocks=brief_mocks,
                 mem=mem,
                 embed_side_effect=lambda chunks, *a, **kw: [MagicMock()] * len(chunks),
             ),
         ):
             stats = await run_memory_extraction(doctwin_ID, db, commit_history=commits)
 
-        assert stats["change_chunks"] == 1
-
-    @pytest.mark.asyncio
-    async def test_no_commit_history_skips_change_extraction(self):
-        db, _ = _make_db_session()
-        redis = _make_redis(acquired=True)
-        ext = _patch_extractors()
-        graph = _patch_graph_layers()
-        mem = _patch_memory_evidence(change_chunks=[])
-
-        with patch.multiple(
-            "app.domains.memory.service",
-            **_service_patch_kwargs(
-                redis=redis,
-                graph=graph,
-                ext=ext,
-                mem=mem,
-                embed_side_effect=lambda chunks, *a, **kw: [MagicMock()] * len(chunks),
-            ),
-        ):
-            stats = await run_memory_extraction(doctwin_ID, db, commit_history=None)
-
-        ext["extract_change_entry_chunks"].assert_not_called()
-        assert stats["change_chunks"] == 0
+        assert stats["status"] == "ready"
+        assert stats["brief_generated"] is True
 
     @pytest.mark.asyncio
     async def test_failed_when_brief_generation_returns_empty(self):
         db, _ = _make_db_session()
         redis = _make_redis(acquired=True)
-        ext = _patch_extractors(brief_text="")
+        brief_mocks = _patch_generate_brief(brief_text="")
         graph = _patch_graph_layers()
         mem = _patch_memory_evidence()
 
@@ -352,7 +222,7 @@ class TestRunMemoryExtractionStats:
             **_service_patch_kwargs(
                 redis=redis,
                 graph=graph,
-                ext=ext,
+                brief_mocks=brief_mocks,
                 mem=mem,
                 embed_return=[],
             ),
@@ -363,45 +233,37 @@ class TestRunMemoryExtractionStats:
         assert stats["brief_generated"] is False
 
 
-# ── Never raises ──────────────────────────────────────────────────────────────
-
 class TestNeverRaises:
     @pytest.mark.asyncio
-    async def test_extractor_exception_does_not_propagate(self):
-        """run_memory_extraction must never raise — all errors are caught."""
+    async def test_brief_generation_exception_does_not_propagate(self):
         db, _ = _make_db_session()
         redis = _make_redis(acquired=True)
         graph = _patch_graph_layers()
         mem = _patch_memory_evidence()
+        brief_mocks = {"generate_memory_brief": AsyncMock(side_effect=RuntimeError("LLM exploded"))}
 
         with patch.multiple(
             "app.domains.memory.service",
             **_service_patch_kwargs(
                 redis=redis,
                 graph=graph,
-                ext=_patch_extractors(),
+                brief_mocks=brief_mocks,
                 mem=mem,
-                extract_architecture_chunks=AsyncMock(side_effect=RuntimeError("LLM exploded")),
                 set_brief_status=AsyncMock(),
             ),
         ):
-            # Must not raise
             stats = await run_memory_extraction(doctwin_ID, db)
 
         assert stats["status"] == "failed"
         assert "LLM exploded" in stats["error"]
-        # Lock must still have been released
         redis.delete.assert_called_once()
 
-
-# ── clear_memory_chunks_for_twin ──────────────────────────────────────────────
 
 class TestClearMemoryChunks:
     @pytest.mark.asyncio
     async def test_returns_deleted_count(self):
         db = MagicMock()
 
-        # Simulate 3 rows returned by RETURNING id
         mock_result = MagicMock()
         mock_result.fetchall = MagicMock(return_value=[MagicMock(), MagicMock(), MagicMock()])
         db.execute = AsyncMock(return_value=mock_result)
@@ -419,8 +281,6 @@ class TestClearMemoryChunks:
         count = await clear_memory_chunks_for_twin(doctwin_ID, db)
         assert count == 0
 
-
-# ── get_memory_brief ──────────────────────────────────────────────────────────
 
 class TestGetMemoryBrief:
     @pytest.mark.asyncio

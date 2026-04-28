@@ -122,7 +122,6 @@ def _extract_pdf_as_documentation(path: str, content: str) -> list[dict]:
 def extract_chunks(
     path: str,
     content: str,
-    allow_code_snippets: bool,
 ) -> list[dict]:
     """
     Main dispatch function.

@@ -203,7 +203,6 @@ async def process_connector_result(
             extracted = extract_chunks(
                 path=safe_path,
                 content=safe_content,
-                allow_code_snippets=allow_code_snippets,
             )
         except Exception as exc:
             logger.warning(

@@ -141,15 +141,12 @@ async def _hydrate_deterministic_chunk(
     source: Source,
     db: AsyncSession,
     hydrated_candidates_cache: dict[
-        tuple[str, str, str | None, bool],
+        tuple[str, str, str | None],
         dict[tuple[str, str | None], dict[str, Any]],
     ],
 ) -> dict[str, Any]:
     path = chunk_row.source_ref or ""
-    allow_code_snippets = bool(
-        ((source.index_health or {}).get("policy") or {}).get("allow_code_snippets")
-    )
-    cache_key = (str(source.id), path, chunk_row.snapshot_id, allow_code_snippets)
+    cache_key = (str(source.id), path, chunk_row.snapshot_id)
 
     if cache_key not in hydrated_candidates_cache:
         full_text = await _load_canonical_source_text(source, path, chunk_row.snapshot_id, db)
@@ -159,7 +156,6 @@ async def _hydrate_deterministic_chunk(
             hydrated_candidates_cache[cache_key] = _build_canonical_chunk_map(
                 path=path,
                 content=full_text,
-                allow_code_snippets=allow_code_snippets,
             )
 
     candidate_map = hydrated_candidates_cache[cache_key]
@@ -189,9 +185,8 @@ def _build_canonical_chunk_map(
     *,
     path: str,
     content: str,
-    allow_code_snippets: bool,
 ) -> dict[tuple[str, str | None], dict[str, Any]]:
-    candidates = extract_chunks(path=path, content=content, allow_code_snippets=allow_code_snippets)
+    candidates = extract_chunks(path=path, content=content)
     chunk_map: dict[tuple[str, str | None], dict[str, Any]] = {}
     for candidate in candidates:
         segment_id = candidate.get("segment_id") or build_segment_id(

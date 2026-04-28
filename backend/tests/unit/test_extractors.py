@@ -14,7 +14,7 @@ from app.domains.knowledge.extractors import (
 class TestDocumentationExtraction:
     def test_readme_produces_documentation_chunks(self):
         content = "# Overview\n\nThis project does X.\n\n## Features\n\nIt has Y and Z."
-        chunks = extract_chunks("README.md", content, allow_code_snippets=False)
+        chunks = extract_chunks("README.md", content)
         assert len(chunks) > 0
         assert all(c["chunk_type"] == "documentation" for c in chunks)
         assert all(c["source_ref"] == "README.md" for c in chunks)
@@ -44,7 +44,7 @@ class TestDocumentationExtraction:
     def test_long_text_is_split_into_multiple_chunks(self):
         # Create text longer than MAX_CHUNK_CHARS (2000)
         content = "# Long Section\n\n" + ("word " * 500)
-        chunks = extract_chunks("docs/guide.md", content, allow_code_snippets=False)
+        chunks = extract_chunks("docs/guide.md", content)
         assert len(chunks) >= 2, "Long text should produce multiple chunks"
 
 
@@ -53,14 +53,14 @@ class TestDocumentationExtraction:
 class TestPdfExtraction:
     def test_clean_text_produces_documentation_chunks(self):
         content = "--- Page 1 ---\nCynthia Omovoiye\nSoftware Engineer\n\nExperience:\nBuilt AI pipelines."
-        chunks = extract_chunks("Resume.pdf [abc123def456]", content, allow_code_snippets=False)
+        chunks = extract_chunks("Resume.pdf [abc123def456]", content)
         assert len(chunks) >= 1
         assert all(c["chunk_type"] == "documentation" for c in chunks)
 
     def test_binary_mojibake_is_rejected(self):
         # Simulate binary PDF bytes decoded as UTF-8 with replacement chars
         binary_like = "\ufffd" * 50 + "".join(chr(i) for i in range(1, 20)) + "\ufffd" * 50
-        chunks = extract_chunks("Resume.pdf [abc123def456]", binary_like, allow_code_snippets=False)
+        chunks = extract_chunks("Resume.pdf [abc123def456]", binary_like)
         assert chunks == []
 
     def test_drive_virtual_filename_routes_to_pdf_extractor(self):
@@ -69,7 +69,6 @@ class TestPdfExtraction:
         chunks = extract_chunks(
             "Cynthia_Omovoiye_Resume.pdf [11JmWkaOATrc7Fx9RIws4]",
             content,
-            allow_code_snippets=False,
         )
         assert len(chunks) >= 1
         assert all(c["chunk_type"] == "documentation" for c in chunks)
@@ -77,7 +76,7 @@ class TestPdfExtraction:
     def test_high_control_byte_density_is_rejected(self):
         # Simulate content with many control bytes (binary stream decoded as string)
         control_heavy = "Normal text " + "".join(chr(i) for i in range(1, 32)) * 20
-        chunks = extract_chunks("doc.pdf", control_heavy, allow_code_snippets=False)
+        chunks = extract_chunks("doc.pdf", control_heavy)
         assert chunks == []
 
     def test_is_binary_content_rejects_replacement_chars(self):
@@ -93,19 +92,19 @@ class TestPdfExtraction:
 class TestManualSource:
     def test_manual_notes_are_documentation(self):
         content = "This project implements a real-time chat system using WebSockets."
-        chunks = extract_chunks("manual/notes.md", content, allow_code_snippets=False)
+        chunks = extract_chunks("manual/notes.md", content)
         assert len(chunks) >= 1
         assert all(c["chunk_type"] == "documentation" for c in chunks)
 
     def test_txt_file_treated_as_documentation(self):
         content = "Plain text file content."
-        chunks = extract_chunks("notes.txt", content, allow_code_snippets=False)
+        chunks = extract_chunks("notes.txt", content)
         assert len(chunks) >= 1
         assert all(c["chunk_type"] == "documentation" for c in chunks)
 
     def test_unknown_extension_falls_back_to_documentation(self):
         content = "Some unknown format content."
-        chunks = extract_chunks("data.xyz", content, allow_code_snippets=False)
+        chunks = extract_chunks("data.xyz", content)
         assert len(chunks) >= 1
         # Should fall back to documentation
         assert all(c["chunk_type"] == "documentation" for c in chunks)
