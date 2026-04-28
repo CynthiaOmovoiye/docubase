@@ -23,9 +23,11 @@ from app.core.redis import get_redis
 from app.domains.ops.doctwin_memory_queue import enqueue_memory_brief_for_twin
 from app.domains.ops.platform_stats import fetch_platform_stats
 from app.domains.retrieval.diagnostics import collect_twin_rag_index_stats, preview_twin_retrieval
+from app.domains.users.service import create_operator_user
 from app.models.twin import Twin
 from app.models.user import User
 from app.schemas.admin import (
+    AdminCreateOperatorRequest,
     AdminIngestionLogsResponse,
     AdminPlatformStatsResponse,
     AdminRagChunkTypeRow,
@@ -33,6 +35,9 @@ from app.schemas.admin import (
     AdminRagSourceRow,
     AdminTwinMaintenanceResponse,
     AdminTwinRagDiagnosticsResponse,
+    AdminUserListResponse,
+    AdminUserRoleUpdate,
+    AdminUserRow,
 )
 
 router = APIRouter()
@@ -43,6 +48,97 @@ async def _require_twin(doctwin_id: uuid.UUID, db: AsyncSession) -> None:
     row = await db.execute(select(Twin.id).where(Twin.id == doctwin_id))
     if row.scalar_one_or_none() is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Twin not found")
+
+
+@router.get("/users", response_model=AdminUserListResponse)
+async def list_users(
+    current_user: User = Depends(get_superuser),
+    db: AsyncSession = Depends(get_db),
+    consumers_only: bool = Query(
+        False,
+        description="When true, return only consumer accounts (exclude platform operators).",
+    ),
+):
+    """
+    Registered accounts (max 500, newest first). Superuser only.
+
+    Use ``consumers_only=true`` for the signups view — operators are system accounts and stay
+    on the Admin users list only.
+    """
+    stmt = select(User).order_by(User.created_at.desc()).limit(500)
+    if consumers_only:
+        stmt = stmt.where(User.is_superuser.is_(False))
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+    logger.info(
+        "admin_users_list",
+        admin_user_id=str(current_user.id),
+        count=len(rows),
+        consumers_only=consumers_only,
+    )
+    return AdminUserListResponse(users=[AdminUserRow.model_validate(u) for u in rows])
+
+
+@router.post(
+    "/users/operators",
+    response_model=AdminUserRow,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_operator(
+    payload: AdminCreateOperatorRequest,
+    current_user: User = Depends(get_superuser),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create a new operator account (superuser).
+
+    The email must not belong to an existing user. Does not auto-create a workspace.
+    """
+    user = await create_operator_user(payload, db)
+
+    logger.info(
+        "admin_operator_created",
+        admin_user_id=str(current_user.id),
+        target_user_id=str(user.id),
+        email=user.email,
+    )
+    return AdminUserRow.model_validate(user)
+
+
+@router.patch("/users/{user_id}", response_model=AdminUserRow)
+async def update_user_superuser_flag(
+    user_id: uuid.UUID,
+    payload: AdminUserRoleUpdate,
+    current_user: User = Depends(get_superuser),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Promote or demote platform admin (`is_superuser`).
+
+    Cannot remove your own superuser access (prevents lockout).
+    """
+    if user_id == current_user.id and not payload.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot remove your own superuser access",
+        )
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    target.is_superuser = payload.is_superuser
+    db.add(target)
+    await db.flush()
+
+    logger.info(
+        "admin_user_superuser_updated",
+        admin_user_id=str(current_user.id),
+        target_user_id=str(user_id),
+        is_superuser=payload.is_superuser,
+    )
+    return AdminUserRow.model_validate(target)
 
 
 @router.get("/stats", response_model=AdminPlatformStatsResponse)

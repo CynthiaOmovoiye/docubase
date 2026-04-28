@@ -209,7 +209,7 @@ migrate-history:
 	docker compose exec backend alembic history --verbose
 
 seed:
-	docker compose exec backend python scripts/seed.py
+	docker compose exec backend env PYTHONPATH=/app python scripts/seed.py
 
 # ─── Tests ────────────────────────────────────────────────────────────────────
 test:

@@ -2,7 +2,40 @@
 
 from __future__ import annotations
 
+import uuid
+from datetime import datetime
+
 from pydantic import BaseModel, Field
+
+from app.schemas.users import UserRegisterRequest
+
+
+class AdminCreateOperatorRequest(UserRegisterRequest):
+    """Provision a new platform operator account. Email must not exist."""
+
+    pass
+
+
+class AdminUserRow(BaseModel):
+    """Public-safe user row for operator lists (no password hash)."""
+
+    id: uuid.UUID
+    email: str
+    display_name: str | None
+    is_active: bool
+    is_verified: bool
+    is_superuser: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AdminUserListResponse(BaseModel):
+    users: list[AdminUserRow]
+
+
+class AdminUserRoleUpdate(BaseModel):
+    is_superuser: bool
 
 
 class AdminPlatformStatsResponse(BaseModel):

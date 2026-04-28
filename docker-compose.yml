@@ -49,6 +49,8 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      # Repo-root .env for scripts (e.g. `make seed`) — readable at `/app/project.env` inside the container
+      - ./.env:/app/project.env:ro
       - uploads_data:/var/lib/docbase/uploads
     depends_on:
       db:

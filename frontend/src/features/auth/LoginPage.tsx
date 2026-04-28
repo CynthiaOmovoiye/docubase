@@ -19,7 +19,9 @@ export default function LoginPage() {
     setError(null);
     try {
       await login(email, password);
-      navigate(from, { replace: true });
+      const signedIn = useAuthStore.getState().user;
+      const destination = signedIn?.is_superuser ? "/admin/dashboard" : from;
+      navigate(destination, { replace: true });
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { message?: string } } })?.response?.data?.message

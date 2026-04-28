@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -15,7 +15,7 @@ interface NavEntry {
   isActive: (pathname: string) => boolean;
 }
 
-const NAV_ITEMS: NavEntry[] = [
+const BASE_NAV: NavEntry[] = [
   {
     label: "Dashboard",
     to: "/dashboard",
@@ -46,6 +46,20 @@ export default function AppShell({ children }: AppShellProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
+
+  const navItems = useMemo(() => {
+    if (!user?.is_superuser) return BASE_NAV;
+    return [
+      {
+        label: "Dashboard",
+        to: "/admin/dashboard",
+        icon: <IconShield />,
+        isActive: (pathname: string) => pathname.startsWith("/admin"),
+      },
+    ];
+  }, [user?.is_superuser]);
+
+  const homePath = user?.is_superuser ? "/admin/dashboard" : "/dashboard";
   const logout = useAuthStore((s) => s.logout);
   const isMobile = useIsMobile();
 
@@ -106,7 +120,7 @@ export default function AppShell({ children }: AppShellProps) {
           </button>
         )}
 
-        <Link to="/dashboard" style={s.logoRow} onClick={closeDrawer}>
+        <Link to={homePath} style={s.logoRow} onClick={closeDrawer}>
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
             <rect width="32" height="32" rx="10" fill="url(#shell-brand)" />
             <circle cx="16" cy="16" r="6.5" fill="white" fillOpacity="0.96" />
@@ -121,14 +135,14 @@ export default function AppShell({ children }: AppShellProps) {
 
           <div style={s.logoCopy}>
             <span style={s.logoText}>docbase</span>
-            <span style={s.logoSub}>Owner console</span>
+            <span style={s.logoSub}>{user?.is_superuser ? "Platform admin" : "Owner console"}</span>
           </div>
         </Link>
 
         <div style={s.navArea}>
           <div style={s.navLabel}>Navigation</div>
           <nav style={s.nav}>
-            {NAV_ITEMS.map((item) => {
+            {navItems.map((item) => {
               const active = item.isActive(location.pathname);
               return (
                 <Link
@@ -147,14 +161,16 @@ export default function AppShell({ children }: AppShellProps) {
             })}
           </nav>
 
-          <div style={s.helperCard}>
-            <div style={s.helperEyebrow}>Owner flow</div>
-            <div style={s.helperTitle}>Start with workspaces</div>
-            <p style={s.helperBody}>
-              Create workspaces first, then add twins inside them. Workspace chat routes
-              each question to the best twin automatically.
-            </p>
-          </div>
+          {!user?.is_superuser && (
+            <div style={s.helperCard}>
+              <div style={s.helperEyebrow}>Owner flow</div>
+              <div style={s.helperTitle}>Start with workspaces</div>
+              <p style={s.helperBody}>
+                Create workspaces first, then add twins inside them. Workspace chat routes
+                each question to the best twin automatically.
+              </p>
+            </div>
+          )}
         </div>
 
         <div style={s.sidebarBottom}>
@@ -223,6 +239,14 @@ function IconPlugs() {
       <rect x="7" y="2" width="10" height="8" rx="2" />
       <path d="M9 2v3" />
       <path d="M15 2v3" />
+    </svg>
+  );
+}
+
+function IconShield() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
     </svg>
   );
 }

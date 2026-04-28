@@ -82,6 +82,36 @@ async def register_user(
     return user, tokens
 
 
+async def create_operator_user(
+    payload: UserRegisterRequest,
+    db: AsyncSession,
+) -> User:
+    """
+    Provision a new platform operator account (superuser).
+
+    Does not create a consumer workspace — operators oversee the platform only.
+    Email must not already exist (raises ConflictError).
+
+    Operators are marked verified so email verification is not required for console access.
+    """
+    email_norm = str(payload.email).strip().lower()
+    existing = await db.execute(select(User).where(User.email == email_norm))
+    if existing.scalar_one_or_none():
+        raise ConflictError("An account with this email already exists")
+
+    user = User(
+        email=email_norm,
+        hashed_password=hash_password(payload.password),
+        display_name=payload.display_name,
+        is_superuser=True,
+        is_verified=True,
+        is_active=True,
+    )
+    db.add(user)
+    await db.flush()
+    return user
+
+
 async def login_user(
     payload: UserLoginRequest,
     db: AsyncSession,
