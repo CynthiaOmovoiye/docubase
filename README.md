@@ -352,6 +352,142 @@ The passive evaluator (`evaluate_response_async`) runs after persist and pushes 
 - Rate-limited, no authentication required
 - Technical internals never visible to visitors
 
+### UI screenshots
+
+Captured from the owner dashboard (desktop and mobile). Paths are relative to the repo root.
+
+#### Desktop — dashboard and lists
+
+<p align="center">
+  <img src="screenshots/Desktop_Dashboard_Screen.png" alt="Desktop dashboard" width="780" /><br />
+  <sub>Dashboard</sub>
+</p>
+
+<p align="center">
+  <img src="screenshots/Desktop_Workspace_List_Screen.png" alt="Desktop workspace list" width="780" /><br />
+  <sub>Workspace list</sub>
+</p>
+
+<p align="center">
+  <img src="screenshots/Desktop_Twins_List_Screen.png" alt="Desktop twins list" width="780" /><br />
+  <sub>Twins list</sub>
+</p>
+
+#### Desktop — twin configuration and workspace chat
+
+<p align="center">
+  <img src="screenshots/Desktop_Twin_Config_Screen.png" alt="Desktop twin configuration" width="780" /><br />
+  <sub>Twin configuration</sub>
+</p>
+
+<p align="center">
+  <img src="screenshots/Desktop_Workspace_Chat_Screen.png" alt="Desktop workspace chat" width="780" /><br />
+  <sub>Workspace chat</sub>
+</p>
+
+#### Desktop — sources and Google Drive
+
+<p align="center">
+  <img src="screenshots/Desktop_Google_Drive_Integration_Screen.png" alt="Desktop Google Drive integration" width="780" /><br />
+  <sub>Google Drive integration</sub>
+</p>
+
+<p align="center">
+  <img src="screenshots/Desktop_Manage_sources_modal.png" alt="Desktop manage sources modal" width="780" /><br />
+  <sub>Manage sources modal</sub>
+</p>
+
+<p align="center">
+  <img src="screenshots/Add_source_modal.png" alt="Add source modal" width="780" /><br />
+  <sub>Add source modal</sub>
+</p>
+
+#### Desktop — create twin and sharing
+
+<p align="center">
+  <img src="screenshots/Desktop_Create_Twin_Modal.png" alt="Desktop create twin modal" width="780" /><br />
+  <sub>Create twin modal</sub>
+</p>
+
+<p align="center">
+  <img src="screenshots/Desktop_Share_Workspace_URL_Modal.png" alt="Desktop share workspace URL modal" width="780" /><br />
+  <sub>Share workspace URL modal</sub>
+</p>
+
+#### Mobile
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="screenshots/Mobile_Dashboard_Screen.png" alt="Mobile dashboard" width="360" /><br />
+      <sub>Dashboard</sub>
+    </td>
+    <td align="center">
+      <img src="screenshots/Mobile_Workspaces_Screen.png" alt="Mobile workspaces" width="360" /><br />
+      <sub>Workspaces</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="screenshots/Mobile_Twin_Sources_Screen.png" alt="Mobile twin sources" width="360" /><br />
+      <sub>Twin sources</sub>
+    </td>
+    <td align="center">
+      <img src="screenshots/Mobile_Create_Workspace_Modal.png" alt="Mobile create workspace modal" width="360" /><br />
+      <sub>Create workspace modal</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="screenshots/Mobile_Overlay_Navbar.png" alt="Mobile overlay navigation" width="360" /><br />
+      <sub>Overlay navigation</sub>
+    </td>
+    <td align="center">
+      <img src="screenshots/Mobile_Overlay_Sources_List.png" alt="Mobile overlay sources list" width="360" /><br />
+      <sub>Overlay sources list</sub>
+    </td>
+  </tr>
+</table>
+
+### Sample conversations
+
+**Public twin — grounded product question**
+
+```text
+Visitor: What does the uploaded brief say about pricing for the pilot?
+
+Assistant: The pilot pricing section in the brief describes [structure as retrieved from
+your indexed sources — e.g. fee model, billing cadence, what is included]. If you need
+a line-item comparison with another document, say which file names to weigh against.
+```
+
+**Workspace share — cross-project comparison**
+
+```text
+Visitor: Compare how Project A and Project B handle authentication.
+
+Assistant: **Project A** — [evidence-backed summary from retrieved chunks, with source cues].
+**Project B** — [same]. Both answers are limited to material present in your workspace sources;
+anything not indexed should be called out explicitly.
+```
+
+**Conversational turn (workspace verifier)**
+
+For small-talk style turns, the workspace verifier avoids replacing natural replies with internal evidence templates — see [`verifier.py`](backend/app/domains/answering/verifier.py) and workspace conversational detection in the chat service.
+
+### Accessibility and mobile responsiveness
+
+Evidence in the frontend (not an audit certificate):
+
+| Mechanism | Implementation |
+|-----------|----------------|
+| **Responsive breakpoint** | [`useIsMobile`](frontend/src/hooks/useIsMobile.ts) defaults to **768px**; owner and marketing pages branch layout (e.g. stacked layout vs. side navigation) |
+| **Navigation semantics** | [`MarketingNav`](frontend/src/features/marketing/components/MarketingNav.tsx) uses `aria-label="Main navigation"`; [`AppShell`](frontend/src/components/AppShell.tsx) exposes **Open navigation** / **Close navigation** on the drawer pattern |
+| **Decorative chrome** | `aria-hidden="true"` on non-interactive overlays and icons where appropriate (e.g. twin detail, workspace chat, mobile backdrop) |
+| **Disclosure state** | Marketing surfaces use `aria-expanded` where sections expand/collapse (e.g. pricing FAQ-style UI) |
+
+Keyboard and screen-reader testing should still be run on a staging build; the table above documents intentional attributes and hooks for reviewers.
+
 ---
 
 ## Security Model
@@ -361,7 +497,6 @@ The passive evaluator (`evaluate_response_async`) runs after persist and pushes 
 | Tier | Content | Configurable? |
 |------|---------|--------------|
 | Always blocked | `.env`, secrets, keys, credentials, private keys | Never |
-| Opt-in | Code snippets (scoped sections, never full files) | Owner enables per twin |
 | Always available | Structure, docs, summaries, architecture | Cannot be disabled |
 
 Enforced at **three layers:** ingestion (policy check + secret scan), retrieval (chunk filtering), and pre-LLM (final pass before context is assembled).
@@ -375,11 +510,59 @@ Enforced at **three layers:** ingestion (policy check + secret scan), retrieval 
 | Area | Approach |
 |------|----------|
 | **Domain structure** | `app/domains/*` — thin API routers, domain services, explicit Pydantic contracts |
-| **Tests** | `backend/tests/unit/` covers chat routing, verifier, quality gate JSON parsing, generators with mocked LLM; integration tests for DB paths |
+| **Tests** | `backend/tests/unit/` — see [Quality assurance](#quality-assurance-tests-and-ci) for counts and coverage |
 | **Logging** | Structured JSON; never echoes source file contents or full chunk bodies; `X-Request-ID` correlates API → ARQ worker logs |
 | **Secrets** | All config via `.env` / `app/core/config.py`; no hardcoded values anywhere in the codebase |
 | **API versioning** | All routes under `/api/v1/`; API docs at `/api/docs` |
 | **Background jobs** | All idempotent — safe to retry; Redis lock on memory brief prevents concurrent twin writes |
+
+---
+
+## Quality assurance, tests, and CI
+
+### Offline evaluation benchmark (golden suite)
+
+Production chat uses live LLM and retrieval; **offline regression** targets deterministic rules on structured outputs and metrics — no paid API calls in CI.
+
+| Artifact | Role |
+|----------|------|
+| [`backend/tests/golden/repo_intelligence_suite.json`](backend/tests/golden/repo_intelligence_suite.json) | **8 fixed cases** spanning personas (`engineer`, `recruiter`, `pm`) and modes (`implementation`, `onboarding`, `workspace_comparison`, `project_status`, `risk_review`, `change_review`, `recruiter_summary`) |
+| [`backend/app/domains/evaluation/golden.py`](backend/app/domains/evaluation/golden.py) | Loads the suite, summarises coverage, and evaluates a draft answer against [`AnswerQualityMetrics`](backend/app/domains/evaluation/metrics.py) (e.g. flags **unbounded negative claims** when evidence does not bound absence statements) |
+| [`backend/tests/unit/test_evaluation_golden.py`](backend/tests/unit/test_evaluation_golden.py) | Asserts the suite covers the personas/modes above and that metric combinations fail/succeed as expected |
+
+This is a **metric-level** offline benchmark: it guards evaluator contracts and dangerous answer shapes. End-to-end RAG scoring against a held-out corpus is a separate concern (Langfuse traces and operator review in production).
+
+**Run:** `cd backend && pytest tests/unit/test_evaluation_golden.py -q`
+
+### Automated tests (counts)
+
+| Scope | Count | Notes |
+|-------|------:|-------|
+| Backend unit tests | **262** | Collected across **30** test modules under `backend/tests/unit/` (policy, retrieval, verifier, quality gate, memory, chat, connectors, etc.) |
+| Backend integration | **0** | `backend/tests/integration/` is reserved; paths that need Postgres use patterns compatible with future integration tests |
+
+**Commands:** `make test`, `make test-unit`, `make test-integration` (see [`Makefile`](Makefile)); same targets run `pytest` inside the `backend` Docker service.
+
+### Coverage
+
+Line coverage uses **pytest-cov** over the application package:
+
+```bash
+make test-cov   # docker compose exec backend pytest --cov=app --cov-report=term-missing
+```
+
+
+### CI and quality gates
+
+| Gate | Where | What it enforces |
+|------|--------|------------------|
+| **Terraform** | [`deploy.yml`](.github/workflows/deploy.yml) | Plans/applies infrastructure; workspace isolation per environment |
+| **Frontend build** | same workflow | `npm run build` — TypeScript + Vite must compile for the SPA bundle pushed to S3 |
+| **Deploy health** | post-SSM | Backend `/api/health` checked after `docker compose up` on EC2 |
+| **Secrets scan** | local / optional CI | `make check-secrets` — [`scripts/check-secrets.sh`](scripts/check-secrets.sh) |
+| **Lint** | local | `make lint` — Ruff on `app` + `tests`, ESLint on `frontend` |
+
+The deploy workflow **does not** run pytest or Ruff today; release discipline expects **`make test`** and **`make lint`** (or equivalent) before merging to `main`, as documented in the [`Makefile`](Makefile) help text.
 
 ---
 
@@ -436,8 +619,8 @@ docubase/
 │   ├── architecture.md      Full domain model and data flow
 │   ├── rag-pipeline.md      Complete RAG pipeline walkthrough (step-by-step)
 │   ├── demo-prep-pipeline.md  CI/CD, infrastructure, and observability deep-dive
-│   ├── workspace.md         Directory layout guide
-│   └── adr/                 Architecture decision records
+│   └── workspace.md         Directory layout guide
+├── screenshots/             README UI captures (desktop + mobile)
 ├── scripts/                 Developer setup helpers
 └── .github/workflows/       CI/CD (deploy.yml, destroy.yml)
 ```
