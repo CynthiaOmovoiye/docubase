@@ -4,6 +4,8 @@
 
 Owners attach knowledge sources — Google Drive folders, PDFs, markdown files, URLs, or manual notes — and docbase turns them into a grounded, on-policy chat surface. Visitors ask questions in natural language. The system retrieves the most relevant passages, generates a faithful answer, and judges that answer before it is ever shown — all without exposing raw secrets, proprietary implementation details, or unbounded speculation.
 
+**Hosted app:** [https://d183l0m646fzr.cloudfront.net](https://d183l0m646fzr.cloudfront.net) — sign up, create twins, attach sources, and share public pages.
+
 ---
 
 ## Why This Exists
