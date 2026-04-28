@@ -194,7 +194,7 @@ class TestHydration:
         assert hydrated[0]["content"] == "stale"
 
     @pytest.mark.asyncio
-    async def test_hydrates_strict_documentation_chunk_when_hash_matches(self):
+    async def test_hydrates_strict_documentation_chunk_jwt_content(self):
         chunk_id = "8f2d291f-48e6-4936-bdfc-99c1cb0b7df9"
         hydrated_text = "Authentication\n\nJWT tokens guard protected routes."
         chunk_row = SimpleNamespace(

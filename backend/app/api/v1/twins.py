@@ -37,9 +37,6 @@ from app.domains.twins.service import (
     update_doctwin_config,
     update_twin,
 )
-from app.domains.retrieval.router import retrieve_packet_for_twin
-from app.models.chunk import Chunk
-from app.models.source import Source
 from app.models.twin import TwinConfig
 from app.models.user import User
 from app.schemas.twins import (

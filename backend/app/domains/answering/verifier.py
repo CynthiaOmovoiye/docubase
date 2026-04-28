@@ -211,11 +211,9 @@ def _is_workspace_conversational_query(query: str) -> bool:
         return True
     if re.match(r"^(thanks|thank you|thx|cheers|bye|goodbye)\b", lowered):
         return True
-    if len(text) < 64 and re.match(
-        r"^(ok|okay|yes|no|sure|sounds good|nice to meet you)\b", lowered
-    ):
-        return True
-    return False
+    return bool(
+        len(text) < 64 and re.match(r"^(ok|okay|yes|no|sure|sounds good|nice to meet you)\b", lowered)
+    )
 
 
 @dataclass(slots=True)

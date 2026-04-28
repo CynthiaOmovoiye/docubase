@@ -187,7 +187,8 @@ async def update_doctwin_config(
 async def _unique_doctwin_slug(
     base: str, workspace_id: uuid.UUID, db: AsyncSession
 ) -> str:
-    import random, string
+    import random
+    import string
     slug = base
     for _ in range(10):
         result = await db.execute(

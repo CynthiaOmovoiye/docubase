@@ -111,6 +111,4 @@ def query_prefers_workspace_aggregate_over_single_twin(query: str) -> bool:
         return True
     if re.search(r"\bprojects\s+you(\s+have|\s+'ve|'ve)?\b", lowered):
         return True
-    if re.search(r"\blist\s+(your\s+)?projects\b", lowered):
-        return True
-    return False
+    return bool(re.search(r"\blist\s+(your\s+)?projects\b", lowered))

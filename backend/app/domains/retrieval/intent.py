@@ -123,10 +123,12 @@ Return ONLY valid JSON. No explanation. No markdown. No code blocks.
 Examples:
 
 Query: "what does the Eshicare SA brief say about pricing?"
-{"intent":"specific","path_hints":["eshicare-sa-brief"],"expanded_query":"Eshicare SA brief pricing details cost structure"}
+{"intent":"specific","path_hints":["eshicare-sa-brief"],
+"expanded_query":"Eshicare SA brief pricing details cost structure"}
 
 Query: "what projects have you built?"
-{"intent":"general","path_hints":[],"expanded_query":"projects built portfolio work experience technical implementations"}
+{"intent":"general","path_hints":[],
+"expanded_query":"projects built portfolio work experience technical implementations"}
 
 Query: "tell me about yourself"
 {"intent":"general","path_hints":[],"expanded_query":"background profile identity skills experience summary"}

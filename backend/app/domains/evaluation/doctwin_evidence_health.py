@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 def build_doctwin_evidence_health_summary(
-    sources: list["Source"],
+    sources: list[Source],
     memory_brief_status: str | None = None,
 ) -> dict:
     """

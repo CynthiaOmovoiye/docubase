@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.domains.answering.llm_provider import LLMResponse
 from app.domains.evaluation.quality_gate import (

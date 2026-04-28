@@ -141,16 +141,18 @@ def _decode_drive_file_body(data: bytes, *, name: str, mime: str) -> str | None:
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         "application/vnd.ms-powerpoint",
     }
-    if ext in (".docx", ".doc") or mime in docx_mimes:
-        if ext in (".docx", ".doc") or (len(data) >= 4 and data[:4] == _ZIP_MAGIC):
-            text = _extract_office_text(data, "docx", name)
-            if text and text.strip():
-                return text
-    if ext == ".pptx" or mime in pptx_mimes:
-        if ext == ".pptx" or (len(data) >= 4 and data[:4] == _ZIP_MAGIC):
-            text = _extract_office_text(data, "pptx", name)
-            if text and text.strip():
-                return text
+    if (ext in (".docx", ".doc") or mime in docx_mimes) and (
+        ext in (".docx", ".doc") or (len(data) >= 4 and data[:4] == _ZIP_MAGIC)
+    ):
+        text = _extract_office_text(data, "docx", name)
+        if text and text.strip():
+            return text
+    if (ext == ".pptx" or mime in pptx_mimes) and (
+        ext == ".pptx" or (len(data) >= 4 and data[:4] == _ZIP_MAGIC)
+    ):
+        text = _extract_office_text(data, "pptx", name)
+        if text and text.strip():
+            return text
 
     # A PDF mis-labelled as text/plain and named ``.txt`` / ``.md`` still has ``%PDF`` in bytes.
     if align_pdf_bytes(data) is not None and ext in _native_text_exts:

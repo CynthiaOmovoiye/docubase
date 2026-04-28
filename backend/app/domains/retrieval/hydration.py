@@ -22,7 +22,7 @@ from app.core.logging import get_logger
 from app.domains.integrations.service import resolve_access_token
 from app.domains.knowledge.evidence import build_segment_id, hash_text
 from app.domains.knowledge.extractors import extract_chunks
-from app.models.chunk import Chunk, ChunkLineage, ChunkType
+from app.models.chunk import Chunk, ChunkLineage
 from app.models.source import Source, SourceIndexMode, SourceType
 
 logger = get_logger(__name__)

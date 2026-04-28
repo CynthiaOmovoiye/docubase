@@ -1,7 +1,6 @@
 from app.domains.retrieval.intent import QueryIntent
 from app.domains.retrieval.packets import (
     EvidenceFileRef,
-    EvidenceSymbolRef,
     build_evidence_packet,
 )
 from app.domains.retrieval.planner import build_retrieval_plan

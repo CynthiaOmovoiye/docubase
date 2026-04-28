@@ -37,13 +37,15 @@ from sqlalchemy.orm import selectinload
 
 from app.core.logging import get_logger
 from app.core.observability import get_langfuse
-from app.domains.chat.routing_heuristics import (
-    WORKSPACE_ROUTE_ALIAS_STOPWORDS as _WORKSPACE_ROUTE_ALIAS_STOPWORDS,
-    query_prefers_workspace_aggregate_over_single_twin as _workspace_query_prefers_aggregate_over_single_twin,
-)
 from app.domains.answering.generator import generate_answer, generate_workspace_answer
 from app.domains.answering.llm_provider import LLMResponse
 from app.domains.answering.verifier import verify_workspace_answer
+from app.domains.chat.routing_heuristics import (
+    WORKSPACE_ROUTE_ALIAS_STOPWORDS as _WORKSPACE_ROUTE_ALIAS_STOPWORDS,
+)
+from app.domains.chat.routing_heuristics import (
+    query_prefers_workspace_aggregate_over_single_twin as _workspace_query_prefers_aggregate_over_single_twin,
+)
 from app.domains.evaluation.answer_authority import build_answer_authority_diagnosis
 from app.domains.evaluation.latency import build_chat_latency_report
 from app.domains.evaluation.metrics import build_workspace_quality_metrics
@@ -126,7 +128,8 @@ _WORKSPACE_COVERAGE_RE = re.compile(
     r"which twins|what twins|"
     # "which/what projects" only intercept when clearly asking about workspace scope,
     # NOT when an action verb follows ("have you built", "did you work on", etc.).
-    r"(?:which|what) projects (?:do you (?:have|cover|serve|support)|can you (?:help|cover|answer)|are (?:available|in this workspace))|"
+    r"(?:which|what) projects (?:do you (?:have|cover|serve|support)"
+    r"|can you (?:help|cover|answer)|are (?:available|in this workspace))|"
     r"what can you help with|what can you cover|"
     r"what do you cover|what are you serving|what projects can you help with"
     r")\b",
@@ -363,8 +366,6 @@ async def send_message(
     generation_elapsed_ms = 0.0
     verification_elapsed_ms = 0.0
     quality_metrics = None
-    verification = None
-    answer_from_workspace_aggregate = False
 
     # Load twin config for policy decisions
     doctwin_config = await _load_doctwin_config(session.doctwin_id, db) if session.doctwin_id else None
@@ -464,7 +465,6 @@ async def send_message(
                     trace_id=trace_id,
                     pipeline_trace_id=pipeline_trace_id,
                 )
-                answer_from_workspace_aggregate = True
                 retrieval_elapsed_ms += workspace_metrics["retrieval_ms"]
                 generation_elapsed_ms += workspace_metrics["generation_ms"]
                 verification_elapsed_ms += workspace_metrics["verification_ms"]
@@ -1289,8 +1289,6 @@ async def _answer_across_workspace(
     retrieval_started_at = perf_counter()
     generation_elapsed_ms = 0.0
     verification_elapsed_ms = 0.0
-    retry_requested = False
-
     project_contexts: list[dict] = []
     merged_chunks: list[dict] = []
     seen_chunk_ids: set[str] = set()

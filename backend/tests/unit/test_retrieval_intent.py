@@ -10,8 +10,9 @@ Covers:
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.domains.retrieval.intent import (
     QueryAnalysis,
@@ -20,7 +21,6 @@ from app.domains.retrieval.intent import (
     classify_intent,
     extract_path_hint,
 )
-
 
 # ── regex-only helpers ────────────────────────────────────────────────────────
 

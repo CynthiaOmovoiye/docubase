@@ -109,9 +109,7 @@ def _looks_like_xref_table_or_tail(text: str) -> bool:
         return True
     if r >= 0.02 and "startxref" in low and "%%eof" in low.replace(" ", ""):
         return True
-    if "trailer<<" in t.replace(" ", "") and r >= 0.02:
-        return True
-    return False
+    return "trailer<<" in t.replace(" ", "") and r >= 0.02
 
 
 def _readable_char_ratio(text: str) -> float:
@@ -137,9 +135,7 @@ def _readable_char_ratio(text: str) -> float:
             return True
         if 0x2000 <= cp <= 0x206F:  # general punctuation (curly quotes, em-dash …)
             return True
-        if 0x4E00 <= cp <= 0x9FFF:  # CJK unified ideographs
-            return True
-        return False
+        return 0x4E00 <= cp <= 0x9FFF  # CJK unified ideographs
 
     return sum(1 for c in text if _ok(c)) / len(text)
 
@@ -208,9 +204,7 @@ def _accept_extracted_prose(text: str | None) -> bool:
         return False
     if pdf_syntax_noise_score(text) > 0.025:
         return False
-    if _readable_char_ratio(text) < 0.70:
-        return False
-    return True
+    return not _readable_char_ratio(text) < 0.70
 
 
 def extract_readable_pdf_text_from_bytes(data: bytes, *, name: str = "") -> str | None:

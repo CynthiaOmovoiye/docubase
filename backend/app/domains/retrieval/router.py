@@ -18,7 +18,6 @@ Intent-aware retrieval:
   return even when preferred types have no matches yet.
 """
 
-import inspect
 import uuid
 from pathlib import PurePosixPath
 from typing import Any
@@ -43,7 +42,7 @@ from app.domains.retrieval.packets import (
     RetrievalEvidencePacket,
     build_evidence_packet,
 )
-from app.domains.retrieval.planner import RetrievalMode, build_retrieval_plan
+from app.domains.retrieval.planner import build_retrieval_plan
 from app.models.chunk import Chunk
 from app.models.source import Source, SourceStatus
 from app.models.twin import Twin, TwinConfig
