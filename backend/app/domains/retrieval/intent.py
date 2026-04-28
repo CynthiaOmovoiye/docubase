@@ -52,6 +52,13 @@ _PATH_HINT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Conversational meta questions about the assistant — expanded_query would only
+# pollute retrieval (see planner test: identity queries skip LLM expansion).
+_IDENTITY_META_RE = re.compile(
+    r"\b(?:what\s+(?:is|'s)\s+your\s+name\b|who\s+are\s+you\b)\b",
+    re.IGNORECASE,
+)
+
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
@@ -164,6 +171,9 @@ async def analyse_query(query: str) -> QueryAnalysis:
     stripped = query.strip()
     if not stripped:
         return QueryAnalysis(intent=QueryIntent.general)
+
+    if _IDENTITY_META_RE.search(stripped):
+        return QueryAnalysis(intent=QueryIntent.general, expanded_query="")
 
     try:
         # Import here to avoid circular imports at module load time.

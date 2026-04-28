@@ -510,7 +510,7 @@ Enforced at **three layers:** ingestion (policy check + secret scan), retrieval 
 | Area | Approach |
 |------|----------|
 | **Domain structure** | `app/domains/*` — thin API routers, domain services, explicit Pydantic contracts |
-| **Tests** | `backend/tests/unit/` — see [Quality assurance](#quality-assurance-tests-and-ci) for counts and coverage |
+| **Tests** | `backend/tests/unit/` (default `pytest`); `backend/tests/integration/` for Postgres-backed flows — see [Quality assurance](#quality-assurance-tests-and-ci) |
 | **Logging** | Structured JSON; never echoes source file contents or full chunk bodies; `X-Request-ID` correlates API → ARQ worker logs |
 | **Secrets** | All config via `.env` / `app/core/config.py`; no hardcoded values anywhere in the codebase |
 | **API versioning** | All routes under `/api/v1/`; API docs at `/api/docs` |
@@ -538,17 +538,17 @@ This is a **metric-level** offline benchmark: it guards evaluator contracts and 
 
 | Scope | Count | Notes |
 |-------|------:|-------|
-| Backend unit tests | **262** | Collected across **30** test modules under `backend/tests/unit/` (policy, retrieval, verifier, quality gate, memory, chat, connectors, etc.) |
-| Backend integration | **0** | `backend/tests/integration/` is reserved; paths that need Postgres use patterns compatible with future integration tests |
+| Backend unit tests | **245** | Collected under `backend/tests/unit/` (policy, retrieval, verifier, quality gate, memory, chat, connectors, etc.) — default `pytest` collection and CI |
+| Backend integration | **5** | `backend/tests/integration/` — ingestion, retrieval, chat persistence, quality-gate orchestration, delta sync; requires Postgres + migrations (e.g. `make up` then `make test-integration`) |
 
-**Commands:** `make test`, `make test-unit`, `make test-integration` (see [`Makefile`](Makefile)); same targets run `pytest` inside the `backend` Docker service.
+**Commands:** `make test` / `make test-unit` (unit); `make test-integration` (integration). Targets run `pytest` inside the `backend` Docker service when using Docker Compose — see [`Makefile`](Makefile).
 
 ### Coverage
 
 Line coverage uses **pytest-cov** over the application package:
 
 ```bash
-make test-cov   # docker compose exec backend pytest --cov=app --cov-report=term-missing
+make test-cov   # docker compose exec backend pytest tests/unit --cov=app --cov-report=term-missing
 ```
 
 

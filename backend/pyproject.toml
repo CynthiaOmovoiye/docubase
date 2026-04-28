@@ -90,7 +90,8 @@ ignore = ["B008"]  # FastAPI Depends() pattern
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+# Default collection matches CI (`pytest tests/unit`). Integration tests: `pytest tests/integration`.
+testpaths = ["tests/unit"]
 
 [tool.mypy]
 python_version = "3.11"

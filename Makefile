@@ -51,10 +51,10 @@ help:
 	@echo "  make seed              Seed dev database"
 	@echo ""
 	@echo "TESTS"
-	@echo "  make test              Run all tests"
-	@echo "  make test-unit         Run unit tests (verbose)"
-	@echo "  make test-integration  Run integration tests (verbose)"
-	@echo "  make test-cov          Run tests with coverage report"
+	@echo "  make test              Run backend unit tests (matches CI)"
+	@echo "  make test-unit         Same as test, verbose"
+	@echo "  make test-integration  Postgres-backed integration suite (requires `make up`)"
+	@echo "  make test-cov          Unit tests with pytest-cov over `app/`"
 	@echo ""
 	@echo "CODE QUALITY"
 	@echo "  make lint              Run ruff + frontend linter"
@@ -213,7 +213,7 @@ seed:
 
 # ─── Tests ────────────────────────────────────────────────────────────────────
 test:
-	docker compose exec backend pytest
+	docker compose exec backend pytest tests/unit
 
 test-unit:
 	docker compose exec backend pytest tests/unit -v
@@ -222,7 +222,7 @@ test-integration:
 	docker compose exec backend pytest tests/integration -v
 
 test-cov:
-	docker compose exec backend pytest --cov=app --cov-report=term-missing
+	docker compose exec backend pytest tests/unit --cov=app --cov-report=term-missing
 
 # ─── Code Quality ─────────────────────────────────────────────────────────────
 lint:

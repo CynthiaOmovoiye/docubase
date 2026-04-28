@@ -126,6 +126,18 @@ class TestAnalyseQuery:
         assert result.intent == QueryIntent.general
 
     @pytest.mark.asyncio
+    async def test_identity_meta_query_skips_llm(self):
+        """Who-you-are questions need no retrieval expansion; skip provider call."""
+        with patch(
+            "app.domains.answering.llm_provider.get_llm_provider"
+        ) as mock_get:
+            result = await analyse_query("What is your name?")
+
+        mock_get.assert_not_called()
+        assert result.intent == QueryIntent.general
+        assert result.expanded_query == ""
+
+    @pytest.mark.asyncio
     async def test_llm_success_returns_structured_analysis(self):
         """
         Happy path: well-formed LLM JSON → intent, path_hints, expanded_query

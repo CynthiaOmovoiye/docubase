@@ -16,5 +16,8 @@ os.environ.setdefault(
     "postgresql+asyncpg://doctwin_user:doctwin_pass@localhost:5434/doctwin_db",
 )
 os.environ.setdefault("JWT_SECRET_KEY", "pytest-jwt-secret-key-minimum-32-chars")
+# Align with alembic `0005_vector_dims_1024`: chunks.embedding is vector(1024).
+os.environ.setdefault("EMBEDDING_DIMENSIONS", "1024")
+os.environ.setdefault("EMBEDDING_PROVIDER", "local")
 
 
