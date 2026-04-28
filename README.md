@@ -562,7 +562,7 @@ make test-cov   # docker compose exec backend pytest --cov=app --cov-report=term
 | **Secrets scan** | local / optional CI | `make check-secrets` — [`scripts/check-secrets.sh`](scripts/check-secrets.sh) |
 | **Lint** | local | `make lint` — Ruff on `app` + `tests`, ESLint on `frontend` |
 
-The deploy workflow **does not** run pytest or Ruff today; release discipline expects **`make test`** and **`make lint`** (or equivalent) before merging to `main`, as documented in the [`Makefile`](Makefile) help text.
+A dedicated `quality` CI job runs pytest and Ruff before any deploy job starts — see the `quality` step in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
 
 ---
 
@@ -572,7 +572,7 @@ The deploy workflow **does not** run pytest or Ruff today; release discipline ex
 # Prerequisites: Docker, Docker Compose, Python 3.11+, Node 20+
 
 # 1. Clone and set up environment
-git clone https://github.com/your-org/docubase.git
+git clone https://github.com/your-org/docubase.git 
 cd docubase
 cp .env.example .env          # fill in API keys
 ./scripts/setup.sh            # installs deps, runs migrations
@@ -594,7 +594,7 @@ make test                     # or: cd backend && pytest
 ## Repository Map
 
 ```
-docubase/
+docubase/                         ← repository root (GitHub repo: docubase)
 ├── backend/
 │   ├── app/
 │   │   ├── api/v1/          API routers (sources, twins, chat, sharing, ...)
@@ -612,9 +612,8 @@ docubase/
 │       ├── features/        Owner dashboard, marketing pages, public share UI
 │       ├── components/      Shared UI components
 │       └── hooks/           Shared hooks (useIsMobile, etc.)
-├── infra/
-│   ├── terraform/           EC2, S3, CloudFront, IAM, SSM, CloudWatch
-│   └── docker-compose*.yml  Service definitions
+├── terraform/               EC2, S3, CloudFront, IAM, SSM, CloudWatch
+├── docker-compose*.yml      Service definitions
 ├── docs/
 │   ├── architecture.md      Full domain model and data flow
 │   ├── rag-pipeline.md      Complete RAG pipeline walkthrough (step-by-step)

@@ -154,6 +154,10 @@ class Settings(BaseSettings):
     chat_quality_gate_enabled: bool = True
     # Extra generation rounds after the first draft (0 = gate only logs accept/reject, no regen).
     chat_quality_gate_max_regenerations: int = 2
+    # When True (default): if the judge LLM call itself fails (timeout, malformed JSON, provider
+    # error), serve the current draft rather than raising. Set False in high-trust environments
+    # where serving an unjudged answer is unacceptable — the chat call will 500 instead.
+    chat_quality_gate_fail_open: bool = True
 
     # ─── OAuth integrations ───────────────────────────────────────────────────
     # Google OAuth 2.0 credentials (from Google Cloud Console)

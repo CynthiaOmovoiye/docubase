@@ -161,8 +161,10 @@ async def apply_workspace_aggregate_quality_gate(
                 conversation_excerpt=conv_excerpt,
             )
         except Exception as exc:
-            logger.warning("quality_gate_eval_failed", error=str(exc), workspace=str(workspace_id))
-            break
+            if settings.chat_quality_gate_fail_open:
+                logger.warning("quality_gate_eval_failed", error=str(exc), workspace=str(workspace_id))
+                break
+            raise
 
         logger.info(
             "quality_gate_workspace",
@@ -260,8 +262,10 @@ async def apply_twin_path_quality_gate(
                 conversation_excerpt=conv_excerpt,
             )
         except Exception as exc:
-            logger.warning("quality_gate_eval_failed", error=str(exc), path="twin")
-            break
+            if settings.chat_quality_gate_fail_open:
+                logger.warning("quality_gate_eval_failed", error=str(exc), path="twin")
+                break
+            raise
 
         logger.info(
             "quality_gate_twin",
